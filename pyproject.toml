@@ -8,8 +8,10 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "torchrl==0.11.1",
+  "torch>=2.11.0",
+  "torchvision>=0.26.0",
 ]
+
 
 [project.scripts]
 physics-informed-flow-map = "physics_informed_flow_map:main"
@@ -18,13 +20,28 @@ physics-informed-flow-map = "physics_informed_flow_map:main"
 requires = ["uv_build>=0.11.5,<0.12.0"]
 build-backend = "uv_build"
 
+
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { index = "pytorch-cpu", marker = "sys_platform != 'linux'" },
+  { index = "pytorch-cu130", marker = "sys_platform == 'linux'" },
 ]
 torchvision = [
-  { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { index = "pytorch-cpu", marker = "sys_platform != 'linux'" },
+  { index = "pytorch-cu130", marker = "sys_platform == 'linux'" },
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+
 
 [tool.uv.workspace]
 members = [
