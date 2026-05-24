@@ -45,5 +45,6 @@ explicit = true
 
 [tool.uv.workspace]
 members = [
-".",
+  ".",
+  "packages/mfm-meta-flow-map-main",
 ]
