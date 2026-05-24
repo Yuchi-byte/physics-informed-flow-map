@@ -99,6 +99,10 @@ class LossWeightingNetwork(nn.Module):
         self.clamp_min = clamp_min
         self.clamp_max = clamp_max
 
+    def _record_weighting_stats(self, weighting):
+        """Record weighting statistics for logging."""
+        self._weighting_stats.append(weighting.detach().mean().item())
+
     def forward(self, t, t_cond):
         t_emb = self.emb_noise_t(self.emb_fourier(t))
         t_cond_emb = self.emb_noise_t_cond(self.emb_fourier(t_cond))
