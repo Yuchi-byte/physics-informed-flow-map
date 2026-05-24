@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+  "ruff>=0.15.14",
   "torch>=2.11.0",
   "torchvision>=0.26.0",
 ]
@@ -47,4 +48,11 @@ explicit = true
 members = [
   ".",
   "packages/mfm-meta-flow-map-main",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.2.0",
+    "jupyter>=1.1.1",
+    "nbconvert>=7.17.1",
 ]

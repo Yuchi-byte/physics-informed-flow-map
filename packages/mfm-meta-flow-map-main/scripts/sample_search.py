@@ -19,10 +19,8 @@ import torch.distributed as dist
 
 from mfm.models.model_wrapper import SIModelWrapper
 from mfm.utils.evaluation import set_seed
-from mfm.utils.image_reward_utils import (get_image_reward_model,
-                                              load_image_reward_fn)
-from mfm.utils.steering import (euler_sampler_tree_search,
-                                    get_imagenet_vae_fn)
+from mfm.utils.image_reward_utils import get_image_reward_model, load_image_reward_fn
+from mfm.utils.steering import euler_sampler_tree_search, get_imagenet_vae_fn
 
 
 def save_images_individual(samples, save_dir):
@@ -135,8 +133,8 @@ def main(cfg: DictConfig):
         range(0, samples_needed_this_gpu, batch_size), desc=f"Rank {rank} Sampling"
     ):
         x0_batch = x0[
-            rank * samples_needed_this_gpu
-            + batch_start : rank * samples_needed_this_gpu
+            rank * samples_needed_this_gpu + batch_start : rank
+            * samples_needed_this_gpu
             + batch_start
             + batch_size * cfg.particles
         ]
