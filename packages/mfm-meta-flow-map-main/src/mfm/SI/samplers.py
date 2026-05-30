@@ -180,9 +180,10 @@ def kernel_sampler_fn(
                 )
 
                 alpha_u, beta_u = SI.get_coefficients(u)
-                alpha_u, beta_u = broadcast_to_shape(
-                    alpha_u, x1.shape
-                ), broadcast_to_shape(beta_u, x1.shape)
+                alpha_u, beta_u = (
+                    broadcast_to_shape(alpha_u, x1.shape),
+                    broadcast_to_shape(beta_u, x1.shape),
+                )
                 xu = alpha_u * noise + beta_u * x1
                 xs = xu
 
