@@ -154,9 +154,7 @@ def extract_posterior_velocity(
                 v_star_cond = v_star_mg * (1 - omega) + omega * v_star_uncond
                 v_star = v_star_uncond + broadcast_to_shape(
                     cfg_scales, v_star_uncond.shape
-                ) * (
-                    v_star_cond - v_star_uncond
-                )  # b_t(x_t)
+                ) * (v_star_cond - v_star_uncond)  # b_t(x_t)
             elif checkpoint_type == "sit":
                 v_star_uncond, v_star_cond = model_guidance_target(
                     teacher_model,
@@ -209,9 +207,10 @@ def get_consistency_loss_fn(cfg, SI):
         t_cond = t_cond.to(device)
 
         alpha_t_cond, beta_t_cond = SI.get_coefficients(t_cond)  # Shape: [B,]
-        alpha_t_cond, beta_t_cond = broadcast_to_shape(
-            alpha_t_cond, x1.shape
-        ), broadcast_to_shape(beta_t_cond, x1.shape)
+        alpha_t_cond, beta_t_cond = (
+            broadcast_to_shape(alpha_t_cond, x1.shape),
+            broadcast_to_shape(beta_t_cond, x1.shape),
+        )
 
         noise_cond = torch.randn_like(x1, device=x1.device)
         xt_cond = alpha_t_cond * noise_cond + beta_t_cond * x1
@@ -229,9 +228,9 @@ def get_consistency_loss_fn(cfg, SI):
             fm_target = x1 - x0
 
             if cfg.loss.model_guidance:
-                assert (
-                    len(cfg.model.model_guidance_class_ws) > 0
-                ), "Model guidance class weights must be provided."
+                assert len(cfg.model.model_guidance_class_ws) > 0, (
+                    "Model guidance class weights must be provided."
+                )
                 cfg_scales = generate_cfg_values(
                     cfg.model.model_guidance_class_ws,
                     cfg.loss.model_guidance_base_prob,
@@ -309,9 +308,9 @@ def get_consistency_loss_fn(cfg, SI):
         # Distilled FM
         if cfg.loss.distill_fm:
             if cfg.loss.model_guidance:
-                assert (
-                    len(cfg.model.model_guidance_class_ws) > 0
-                ), "Model guidance class weights must be provided."
+                assert len(cfg.model.model_guidance_class_ws) > 0, (
+                    "Model guidance class weights must be provided."
+                )
                 cfg_scales = generate_cfg_values(
                     cfg.model.model_guidance_class_ws,
                     cfg.loss.model_guidance_base_prob,
