@@ -96,7 +96,7 @@ def main(cfg: DictConfig):
             0, 1000, (samples_needed_this_gpu,), device=device
         )
 
-        kwargs = {"class_labels": class_labels, "cfg_scale": cfg.cfg_scale}
+    kwargs = {"class_labels": class_labels, "cfg_scale": cfg.cfg_scale}
 
     with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
         if cfg.sampler == "kernel":
