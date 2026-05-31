@@ -1,8 +1,5 @@
 """
-Generate images using the pretrained MFM-XL/2 checkpoint — CPU compatible.
-
-The official scripts/sample.py hardcodes NCCL + CUDA. This script strips those
-out and runs the same pipeline on CPU (or GPU if available).
+Generate images using the pretrained MFM-XL/2 checkpoint (GPU).
 
 Prerequisites — run once:
     # 1. Download the pretrained MFM checkpoint (~2.7 GB)
@@ -14,22 +11,23 @@ Usage:
     uv run python experiments/pretrained_sample.py
     uv run python experiments/pretrained_sample.py --n_samples 4 --cfg_scale 2.5
     uv run python experiments/pretrained_sample.py --classes 207 360 985
-    uv run python experiments/pretrained_sample.py --sampler_steps 2
+    uv run python experiments/pretrained_sample.py --class_names "golden retriever" "daisy" "volcano"
+    uv run python experiments/pretrained_sample.py --sampler_steps 4
 
-ImageNet class examples:
+ImageNet class examples (by index):
     207  = golden retriever
     360  = otter
     985  = daisy
     980  = volcano
     388  = giant panda
 
-Estimated runtime on CPU (M-series Mac):
-    n_samples=1, sampler_steps=1  →  ~2–5 min
-    n_samples=4, sampler_steps=1  →  ~5–15 min
-    n_samples=4, sampler_steps=4  →  ~20–60 min
+Estimated runtime on A4000 GPU:
+    n_samples=4, sampler_steps=1  →  ~4s
+    n_samples=4, sampler_steps=4  →  ~15s
 """
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -38,34 +36,26 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from diffusers import AutoencoderKL
+from PIL import Image as PILImage
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "packages/mfm-meta-flow-map-main/src"))
 
 from mfm.SI import Linear
-from mfm.SI.samplers import kernel_sampler_fn, consistency_sampler_fn
+from mfm.SI.samplers import kernel_sampler_fn
 from mfm.models import DiTMFM
 from mfm.models.model_wrapper import SIModelWrapper
 
 
-# ── ImageNet class names (subset) ──────────────────────────────────────────────
-IMAGENET_NAMES = {
-    207: "golden retriever",
-    360: "otter",
-    985: "daisy",
-    980: "volcano",
-    388: "giant panda",
-    1: "goldfish",
-    130: "flamingo",
-    279: "arctic fox",
-    291: "lion",
-    340: "zebra",
-}
+# ── ImageNet class names (all 1000) ────────────────────────────────────────────
+_CLASSES_JSON = ROOT / "packages/mfm-meta-flow-map-main/src/mfm/losses/imagenet_classes.json"
+IMAGENET_NAMES: list[str] = json.loads(_CLASSES_JSON.read_text())  # index = class id
+NAME_TO_CLASS: dict[str, int] = {name.lower(): i for i, name in enumerate(IMAGENET_NAMES)}
 
 
 # ── Args ───────────────────────────────────────────────────────────────────────
 def parse_args():
-    p = argparse.ArgumentParser(description="MFM pretrained inference (CPU-compatible)")
+    p = argparse.ArgumentParser(description="MFM pretrained inference")
     p.add_argument(
         "--ckpt",
         type=str,
@@ -84,18 +74,25 @@ def parse_args():
     p.add_argument(
         "--sampler_steps",
         type=int,
-        default=1,
-        help="Consistency sampler steps (1 = direct jump, faster)",
+        default=4,
+        help="Consistency sampler steps (1 = single jump/fastest, 4+ = better quality)",
     )
     p.add_argument(
         "--classes",
         type=int,
         nargs="*",
         default=None,
-        help="ImageNet class indices to generate (default: random)",
+        help="ImageNet class indices to generate (e.g. 207 985)",
+    )
+    p.add_argument(
+        "--class_names",
+        type=str,
+        nargs="*",
+        default=None,
+        help="ImageNet class names to generate (e.g. 'golden retriever' 'daisy')",
     )
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--output_dir", type=str, default=str(ROOT / "outputs"))
+    p.add_argument("--output_dir", type=str, default=str(ROOT / "outputs/pretrained_sample"))
     return p.parse_args()
 
 
@@ -160,7 +157,7 @@ def load_model(ckpt_path: str, device: torch.device) -> SIModelWrapper:
         num_heads=16,
         label_dim=1000,
         encoder_depth=20,
-        attn_func="base",  # CPU-safe standard attention
+        attn_func="base",  # standard PyTorch attention (no FlashAttention dependency)
         is_zero_data=True,
         use_joint_attention=False,
         preserve_t_cond_0=False,
@@ -218,7 +215,8 @@ def generate(
     print(f"\nGenerating {n_samples} images")
     print(f"  Sampler steps : {sampler_steps}  (1 = single direct jump)")
     print(f"  CFG scale     : {cfg_scale}")
-    print(f"  Classes       : {class_labels.tolist()}")
+    named = [(c, IMAGENET_NAMES[c]) for c in class_labels.tolist()]
+    print(f"  Classes       : {named}")
     print(f"  Device        : {device}")
     print()
 
@@ -266,7 +264,7 @@ def save(
             img = samples[i].permute(1, 2, 0).cpu().numpy()
             ax.imshow(img)
             cls = class_labels[i].item()
-            ax.set_title(IMAGENET_NAMES.get(cls, f"class {cls}"), fontsize=9)
+            ax.set_title(IMAGENET_NAMES[cls], fontsize=9)
         ax.axis("off")
 
     fig.suptitle(
@@ -282,11 +280,9 @@ def save(
     print(f"\nSaved →  {path}")
 
     # Also save individual PNGs
-    from PIL import Image as PILImage
-
     for i, img_tensor in enumerate(samples):
         img_np = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype("uint8")
-        individual = out / f"pretrained_{i:03d}_class{class_labels[i].item()}.png"
+        individual = out / f"{i:03d}_{IMAGENET_NAMES[class_labels[i].item()].replace(' ', '_')}.png"
         PILImage.fromarray(img_np).save(individual)
 
     print(f"Saved {n} individual PNGs to {out}/")
@@ -295,18 +291,30 @@ def save(
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
     args = parse_args()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda")
     torch.manual_seed(args.seed)
 
-    print(f"Device : {device}")
-    if device.type == "cpu":
-        print("Running on CPU — expect ~2–5 min per image for the XL model.")
-        print(
-            "Tip: reduce --n_samples and use --sampler_steps 1 for fastest results.\n"
-        )
+    print(f"Device : {device}  ({torch.cuda.get_device_name(0)})")
 
-    # Class labels
-    if args.classes:
+    # Class labels — resolved from names, indices, or random
+    if args.class_names:
+        indices = []
+        for name in args.class_names:
+            key = name.lower()
+            if key not in NAME_TO_CLASS:
+                # Fall back to partial match
+                matches = [n for n in NAME_TO_CLASS if key in n]
+                if not matches:
+                    raise ValueError(f"Unknown class name: '{name}'. No match in ImageNet-1k.")
+                key = matches[0]
+                print(f"  '{name}' → '{key}' (class {NAME_TO_CLASS[key]})")
+            indices.append(NAME_TO_CLASS[key])
+        labels = torch.tensor(indices[: args.n_samples], device=device)
+        # Pad with random if fewer names than n_samples
+        if len(labels) < args.n_samples:
+            extra = torch.randint(0, 1000, (args.n_samples - len(labels),), device=device)
+            labels = torch.cat([labels, extra])
+    elif args.classes:
         labels = torch.tensor(args.classes[: args.n_samples], device=device)
         # Pad with random if fewer classes than n_samples
         if len(labels) < args.n_samples:
