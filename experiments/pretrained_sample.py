@@ -221,18 +221,19 @@ def generate(
     print()
 
     start = time.time()
-    samples = kernel_sampler_fn(
-        model=model,
-        shape=latent_shape,
-        shape_decoded=image_shape,
-        SI=Linear(t_max=1.0),
-        n_samples=n_samples,
-        n_batch_size=n_samples,
-        n_steps=sampler_steps,
-        inverse_scaler_fn=decode_fn,
-        class_labels=class_labels,
-        cfg_scale=cfg_scale,
-    )
+    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        samples = kernel_sampler_fn(
+            model=model,
+            shape=latent_shape,
+            shape_decoded=image_shape,
+            SI=Linear(t_max=1.0),
+            n_samples=n_samples,
+            n_batch_size=n_samples,
+            n_steps=sampler_steps,
+            inverse_scaler_fn=decode_fn,
+            class_labels=class_labels,
+            cfg_scale=cfg_scale,
+        )
     elapsed = time.time() - start
     print(
         f"Generated {n_samples} images in {elapsed:.1f}s  "
@@ -273,16 +274,19 @@ def save(
     )
     plt.tight_layout()
 
-    name = f"pretrained_cfg{cfg_scale}_steps{sampler_steps}.png"
-    path = out / name
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    class_slug = "_".join(IMAGENET_NAMES[c].replace(" ", "-") for c in class_labels.tolist())
+    param_slug = f"cfg{cfg_scale}_steps{sampler_steps}"
+
+    grid_name = f"{param_slug}__{class_slug}.png"
+    plt.savefig(out / grid_name, dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"\nSaved →  {path}")
+    print(f"\nSaved grid →  {out / grid_name}")
 
     # Also save individual PNGs
     for i, img_tensor in enumerate(samples):
         img_np = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype("uint8")
-        individual = out / f"{i:03d}_{IMAGENET_NAMES[class_labels[i].item()].replace(' ', '_')}.png"
+        cls_name = IMAGENET_NAMES[class_labels[i].item()].replace(" ", "-")
+        individual = out / f"{i:03d}__{cls_name}__{param_slug}.png"
         PILImage.fromarray(img_np).save(individual)
 
     print(f"Saved {n} individual PNGs to {out}/")
