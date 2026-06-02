@@ -52,16 +52,18 @@ def main(cfg: DictConfig):
     print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
 
     # instantiate model
-    model = instantiate(cfg.model)
-    SI = instantiate(cfg.SI)
+    model = instantiate(cfg.model)  # builds DiTMFM from sit_xl_2.yaml
+    SI = instantiate(cfg.SI)  # builds the linear SI.
     model = SIModelWrapper(model, SI, cfg.use_parametrization)
     model.to(device)
 
     # load checkpoint
     map_location = {"cuda:%d" % 0: "cuda:%d" % device}
-    
-    checkpoint = torch.load(ckpt_path, map_location=map_location)
-    checkpoint = {k[6:] if k.startswith("model.") else k: v for k, v in checkpoint.items()}
+
+    checkpoint = torch.load(ckpt_path, map_location=map_location)  # loads mfm-xl2.pt.
+    checkpoint = {
+        k[6:] if k.startswith("model.") else k: v for k, v in checkpoint.items()
+    }  # strips "model." prefix.
     missing, _ = model.load_state_dict(checkpoint, strict=False)
     print(f"Rank {rank}: Loaded checkpoint with missing keys: {missing}")
 
@@ -87,14 +89,10 @@ def main(cfg: DictConfig):
     if cfg.classes:  # filter
         classes = torch.tensor(cfg.classes, device=device)
         class_labels = classes[
-            torch.randint(
-                0, len(classes), (samples_needed_this_gpu,), device=device
-            )
+            torch.randint(0, len(classes), (samples_needed_this_gpu,), device=device)
         ]
     else:  # all classes
-        class_labels = torch.randint(
-            0, 1000, (samples_needed_this_gpu,), device=device
-        )
+        class_labels = torch.randint(0, 1000, (samples_needed_this_gpu,), device=device)
 
     kwargs = {"class_labels": class_labels, "cfg_scale": cfg.cfg_scale}
 
@@ -123,7 +121,7 @@ def main(cfg: DictConfig):
                 inverse_scaler_fn=decode_fn,
                 **kwargs,
             )
-    
+
     samples = (
         samples.to("cpu")
         .mul(255.0)

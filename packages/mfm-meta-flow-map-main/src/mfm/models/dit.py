@@ -14,6 +14,7 @@ import math
 import numpy as np
 import torch
 import torch.nn as nn
+
 # from timm.models.vision_transformer import Attention, PatchEmbed, Mlp
 from timm.models.vision_transformer import Mlp, PatchEmbed
 
@@ -423,12 +424,12 @@ class DiT(nn.Module):
         x_cfg_scale = kwargs.get("x_cond_scale", torch.ones_like(s))  # [N,] or None
         if x_cfg_scale is None:
             x_cfg_scale = torch.ones_like(s)
-        assert (
-            kwargs.get("cfg_scales", None) is None
-        ), "wrong argument name for cfg scales"
-        assert (
-            kwargs.get("x_cond_scales", None) is None
-        ), "wrong argument name for x cond scales"
+        assert kwargs.get("cfg_scales", None) is None, (
+            "wrong argument name for cfg scales"
+        )
+        assert kwargs.get("x_cond_scales", None) is None, (
+            "wrong argument name for x cond scales"
+        )
 
         x_emb = self.x_embedder(x)
         B, L, D = x_emb.shape
@@ -480,7 +481,7 @@ class DiT(nn.Module):
         if self.is_zero_data:
             return -x
 
-        return x
+        return x  # even though the input x is an image, when x is returned it is semantically the predicted velocity. Throughout the function x has been overwritten: image --> token activation --> transformer hidden state --> project back to patch space --> velocity.
 
 
 class DiTMFM(BaseModel):

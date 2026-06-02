@@ -244,9 +244,7 @@ def main(cfg: DictConfig):
 
         gathered_labels = torch.cat(label_gather_list, dim=0)[: cfg.num_samples]
         labels_npy_path = f"{sample_folder_dir}/labels.npy"
-        np.save(
-            labels_npy_path, gathered_labels.to("cpu", dtype=torch.int64).numpy()
-        )
+        np.save(labels_npy_path, gathered_labels.to("cpu", dtype=torch.int64).numpy())
 
 
 if __name__ == "__main__":
