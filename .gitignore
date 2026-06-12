@@ -29,6 +29,7 @@ build/
 # IDE
 .idea/
 .vscode/
+.claude/
 
 # Model weights
 *.pt

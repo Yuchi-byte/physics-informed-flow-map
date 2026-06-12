@@ -1,5 +1,8 @@
 # Below are some notes made on how the environment is set from scratch. 
 
+# to set up claude, install Claude Code in a pod with this command: curl -fsSL https://claude.ai/install.sh | bash
+# when running claude, might encounter error '--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons'. Run: IS_SANDBOX=1  claude --dangerously-skip-permissions
+
 # uv sync. This creates a venv. 
 
 # uv run script.py (if this doesn't work, sometimes it's because we need torchrun to do the DDP). make sure the file path is precise. 
@@ -9,7 +12,7 @@
 # if there are unfound modules, do uv add package_name. This will update uv.lock and pyproject.toml automatically. 
 
 # download mfm-xl2.pt 
-# hf download adh1s/mfm --include "mfm-xl2.pt" --local-dir ckpts
+# uv run hf download adh1s/mfm --include "mfm-xl2.pt" --local-dir ckpts
 
 # download the models before running the sample_steered.py script. This will ensure that the models are cached and ready to use when the script is run. So the script doesn't take too long to run. 
 from imscore.hps.model import HPSv2
@@ -32,7 +35,7 @@ AutoProcessor.from_pretrained('laion/CLIP-ViT-H-14-laion2B-s32B-b79K')
 print('All done.')
 
 # To run the sample_steered.py script, use the following command. Note to use uv run, torchrun, put the file path, '\' at the end of the line, and ++. 
-uv run torchrun --nnodes=1 --nproc_per_node=1 packages/mfm-meta-flow-map-main/scripts/sample_steered.py per_proc_batch_size=4 
+# uv run torchrun --nnodes=1 --nproc_per_node=1 packages/mfm-meta-flow-map-main/scripts/sample_steered.py per_proc_batch_size=4 
 # per_proc_batch_size=4 instread of 32 to make the effective batch down so we don't encounter GPUT out of memory issues. 
 
 
