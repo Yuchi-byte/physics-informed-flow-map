@@ -30,6 +30,27 @@ build/
 .idea/
 .vscode/
 
+# Model weights
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+
+# Outputs and checkpoints
+outputs/
+ckpts/
+
+# Data
+data/
+
+# Weights & Biases
+wandb/
+
+# Environment / secrets
+.env
+.env*
+
 # Misc
 *.log
 *.tmp
