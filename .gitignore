@@ -44,6 +44,7 @@ ckpts/
 
 # Data
 data/
+csv/
 
 # Weights & Biases
 wandb/
