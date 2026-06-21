@@ -43,7 +43,6 @@ outputs/
 ckpts/
 
 # Data
-data/
 csv/
 
 # Weights & Biases

@@ -1,0 +1,43 @@
+defaults:
+  - _self_
+  - model: sit_xl_2
+  - SI: linear
+
+resume_from_checkpoint: null
+data_dir: ${hydra:runtime.cwd}/data
+
+dataset:
+  img_resolution: 256   # resize/crop target; change to match your images
+
+wandb:
+  project: flow-matching-custom
+  name: run1
+
+hydra:
+  run:
+    dir: ${hydra:runtime.cwd}/outputs/${now:%Y-%m-%d_%H-%M-%S}
+
+seed: 42
+
+lr:
+  val: 0.0001
+  warmup_steps: 2000
+
+trainer:
+  num_train_steps: 100000
+  batch_size: 16
+  ema:
+    decay: 0.9999
+  devices: "auto"
+  num_nodes: 1
+  num_workers: 4
+  log_every_n_steps: 25
+  accumulate_grad_batches: 1
+  precision: "bf16-mixed"
+  gradient_clip_val: 1.5
+  checkpoint_every_n_steps: 10000
+
+sampling:
+  every_n_steps: 5000
+  n_samples: 16       # number of images to generate for the wandb grid
+  n_steps: 50         # NFE for the sampler
