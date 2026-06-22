@@ -19,8 +19,8 @@ snapshot_download(
 )
 EOF
 ```
-also try: 
-uv run hf download ashynf/OpenFWI --repo-type dataset --include "*FlatVel*" "*FlatFault*" --local-dir /workspace/data/openfwi
+This one definitly works:
+uv run hf download ashynf/OpenFWI --repo-type dataset --include "*CurveVel*" --local-dir /workspace/data/openfwi
 
 uv run huggingface-cli download ashynf/OpenFWI --repo-type dataset --include "*FlatVel*" "*FlatFault*"  --local-dir /workspace/data/openfwi
 

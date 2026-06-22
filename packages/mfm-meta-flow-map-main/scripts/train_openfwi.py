@@ -266,6 +266,7 @@ class SamplingCallback(Callback):
 
 @hydra.main(config_path="../conf/", config_name="config_train_openfwi.yaml", version_base="1.3")
 def main(cfg: DictConfig):
+    print("start main()")
     seed_everything(cfg.seed, workers=True)
 
     wandb_logger = WandbLogger(
@@ -278,10 +279,9 @@ def main(cfg: DictConfig):
     model = instantiate(cfg.model)
     SI    = instantiate(cfg.SI)
     model = SIModelWrapper(model, SI, use_parametrization=False)
+    print("finish initialising model")
 
     datamodule = CustomImageDataModule(cfg)
-    datamodule.prepare_data()
-    datamodule.setup(stage="fit")
 
     train_module = FlowMatchingModule(cfg, model, SI)
 
@@ -293,7 +293,14 @@ def main(cfg: DictConfig):
     else:
         # pixel-space: shape matches the model's input directly
         image_shape = (cfg.model.in_channels, cfg.model.input_size, cfg.model.input_size)
+    
+    OmegaConf.set_struct(cfg, False)
+    cfg.work_dir = os.path.join(
+        hydra.utils.get_original_cwd(),
+        hydra.core.hydra_config.HydraConfig.get().runtime.output_dir,
+    )
 
+    print("before ema_callback")
     ema_callback = EMAWeightAveraging(cfg.trainer.ema.decay)
     checkpoint_callback = ModelCheckpoint(
         dirpath=f"{cfg.work_dir}/checkpoints",
@@ -303,11 +310,7 @@ def main(cfg: DictConfig):
     )
     sampling_callback = SamplingCallback(cfg, SI, image_shape)
 
-    OmegaConf.set_struct(cfg, False)
-    cfg.work_dir = os.path.join(
-        hydra.utils.get_original_cwd(),
-        hydra.core.hydra_config.HydraConfig.get().runtime.output_dir,
-    )
+    print("before trainer")
 
     trainer = pl.Trainer(
         logger=wandb_logger,
@@ -317,17 +320,17 @@ def main(cfg: DictConfig):
         num_nodes=cfg.trainer.num_nodes,
         log_every_n_steps=cfg.trainer.log_every_n_steps,
         callbacks=[ema_callback, checkpoint_callback, sampling_callback],
-        strategy=DDPStrategy(find_unused_parameters=False),
+        strategy=DDPStrategy(find_unused_parameters=True),
         accumulate_grad_batches=cfg.trainer.accumulate_grad_batches,
         precision=cfg.trainer.precision,
         gradient_clip_val=cfg.trainer.gradient_clip_val,
+        num_sanity_val_steps=0,
     )
-
+    print("trainer set. Starting trainer.fit")
     trainer.fit(train_module, datamodule=datamodule,
                 ckpt_path=cfg.get("resume_from_checkpoint", None))
+    print("end of main")
 
 
 if __name__ == "__main__":
-    import torch.multiprocessing as mp
-    mp.set_start_method("spawn", force=True)
     main()
