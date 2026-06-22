@@ -1,0 +1,25 @@
+_target_: mfm.models.DiTMFM
+learn_loss_weighting: false
+
+# FWI velocity maps: 1-channel, 64x64 pixels (resized from native 70x70)
+# patch_size=4 → 16x16=256 tokens (same count as the VAE+DiT-XL setup)
+input_size: 64
+patch_size: 4
+in_channels: 1
+encoder_depth: 20
+
+# backbone — same width/depth as DiT-XL for capacity
+hidden_size: 1152
+depth: 28
+num_heads: 16
+
+# unconditional: single dummy class
+label_dim: 1
+model_guidance_class_ws: []
+model_guidance_x_cond_ws: []
+
+use_joint_attention: false
+preserve_t_cond_0: false
+attn_func: "base"
+is_zero_data: false
+init: scratch

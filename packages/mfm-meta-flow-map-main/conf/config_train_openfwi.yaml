@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - model: sit_xl_2
+  - model: dit_fwi
   - SI: linear
 
 resume_from_checkpoint: null
@@ -11,8 +11,9 @@ data_dir: /workspace/data/openfwi
 
 dataset:
   name: openfwi
-  img_resolution: 256   # velocity maps are 70x70 natively; upsampled for the VAE
-  img_channels: 1       # grayscale; the training script broadcasts to 3ch for the VAE
+  img_resolution: 64    # resize 70x70 → 64x64 to match model input_size
+  img_channels: 1
+  use_vae: false        # pixel-space training — no VAE needed
 
 wandb:
   project: flow-matching-fwi

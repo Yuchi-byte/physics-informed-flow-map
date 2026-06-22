@@ -1,22 +1,10 @@
 """
-Simple flow matching training on custom images (no teacher, no distillation, no CFG).
+Flow matching training on OpenFWI velocity maps (no teacher, no distillation, no CFG).
 
-Data layout expected:
-    data/
-      train/
-        images/      <- one subfolder per "class"; use a single folder for unconditional
-          img001.jpg
-          ...
-      val/
-        images/
-          img100.jpg
-          ...
+Pixel-space training — no VAE. The DiT operates directly on 64x64 grayscale maps.
 
 Run:
-    python scripts/train_custom.py \
-        data_dir=/path/to/data \
-        dataset.img_resolution=256 \
-        trainer.batch_size=16
+    python scripts/train_openfwi.py data_dir=/workspace/data/openfwi
 """
 
 import math
@@ -134,39 +122,44 @@ class FlowMatchingModule(pl.LightningModule):
         self.model = model
         self.SI = SI
         self.cfg = cfg
+        self.use_vae = cfg.dataset.get("use_vae", True)
 
-        self._vae_container = []
-        vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse")
-        vae.eval()
-        for p in vae.parameters():
-            p.requires_grad = False
-        self._vae_container.append(vae)
-        self.register_buffer("latents_scale", torch.tensor([0.18215] * 4).view(1, 4, 1, 1))
-        self.register_buffer("latents_bias",  torch.zeros(1, 4, 1, 1))
+        if self.use_vae:
+            self._vae_container = []
+            vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse")
+            vae.eval()
+            for p in vae.parameters():
+                p.requires_grad = False
+            self._vae_container.append(vae)
+            self.register_buffer("latents_scale", torch.tensor([0.18215] * 4).view(1, 4, 1, 1))
+            self.register_buffer("latents_bias",  torch.zeros(1, 4, 1, 1))
 
     @property
     def vae(self):
-        return self._vae_container[0]
+        return self._vae_container[0] if self.use_vae else None
 
     def setup(self, stage):
-        self.vae.to(self.device)
+        if self.use_vae:
+            self.vae.to(self.device)
 
     @torch.no_grad()
     def _encode(self, x):
-        # VAE expects 3-channel input; broadcast grayscale if needed
+        if not self.use_vae:
+            return x
         if x.shape[1] == 1:
             x = x.expand(-1, 3, -1, -1)
         with torch.amp.autocast("cuda", enabled=False):
-            x_f = x.to(self.vae.dtype)
-            latents = self.vae.encode(x_f).latent_dist.sample()
+            latents = self.vae.encode(x.to(self.vae.dtype)).latent_dist.sample()
         return ((latents - self.latents_bias) * self.latents_scale).to(x.dtype)
 
     @torch.no_grad()
-    def _decode(self, latents):
-        latents_f = (latents / self.latents_scale + self.latents_bias)
+    def _decode(self, x):
+        if not self.use_vae:
+            return x.clamp(-1, 1)
+        latents_f = x / self.latents_scale + self.latents_bias
         with torch.amp.autocast("cuda", enabled=False):
             images = self.vae.decode(latents_f.to(self.vae.dtype)).sample
-        return inverse_image_scaler(images.to(latents.dtype)).clamp(0, 1)
+        return inverse_image_scaler(images.to(x.dtype)).clamp(0, 1)
 
     def _fm_loss(self, x1):
         N = x1.shape[0]
@@ -253,6 +246,13 @@ class SamplingCallback(Callback):
 
         nrow = math.ceil(math.sqrt(n))
         grid = torchvision.utils.make_grid(images.cpu(), nrow=nrow)
+
+        # Save grid to disk
+        samples_dir = os.path.join(self.cfg.work_dir, "samples")
+        os.makedirs(samples_dir, exist_ok=True)
+        torchvision.utils.save_image(grid, os.path.join(samples_dir, f"step_{step:07d}.png"))
+
+        # Also log to WandB
         pl_module.logger.experiment.log({
             "val/samples": [wandb.Image(grid)],
             "global_step": step,
@@ -285,9 +285,14 @@ def main(cfg: DictConfig):
 
     train_module = FlowMatchingModule(cfg, model, SI)
 
-    # VAE outputs 4-ch latents at 1/8th spatial resolution
-    latent_size = cfg.dataset.img_resolution // 8
-    image_shape = (4, latent_size, latent_size)
+    use_vae = cfg.dataset.get("use_vae", True)
+    if use_vae:
+        # VAE downsamples 8× and outputs 4 channels
+        spatial = cfg.dataset.img_resolution // 8
+        image_shape = (4, spatial, spatial)
+    else:
+        # pixel-space: shape matches the model's input directly
+        image_shape = (cfg.model.in_channels, cfg.model.input_size, cfg.model.input_size)
 
     ema_callback = EMAWeightAveraging(cfg.trainer.ema.decay)
     checkpoint_callback = ModelCheckpoint(

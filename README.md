@@ -15,10 +15,16 @@ snapshot_download(
     repo_type="dataset",
     local_dir="/workspace/data/openfwi",
     local_dir_use_symlinks=False,
-    allow_patterns=["*FlatVel*"],   # remove to get all ~667 GB
+    allow_patterns=["*FlatVel*", "*FlatFault*"], 
 )
 EOF
 ```
+also try: 
+uv run hf download ashynf/OpenFWI --repo-type dataset --include "*FlatVel*" "*FlatFault*" --local-dir /workspace/data/openfwi
+
+uv run huggingface-cli download ashynf/OpenFWI --repo-type dataset --include "*FlatVel*" "*FlatFault*"  --local-dir /workspace/data/openfwi
+
+
 
 No train/val split in the raw files: the dataset does an 80/20 random split automatically.
 
