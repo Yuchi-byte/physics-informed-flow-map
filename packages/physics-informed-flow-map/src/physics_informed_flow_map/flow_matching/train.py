@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Callable
 
 import torch
@@ -72,6 +73,10 @@ def train(
     device: torch.device,
     num_classes: int | None = None,
     log: Callable[..., None] | None = None,
+    eval_every: int = 0,
+    on_eval: Callable[[BaseModel, int], float | None] | None = None,
+    ckpt_every: int = 0,
+    on_checkpoint: Callable[..., None] | None = None,
 ) -> list[dict[str, float]]:
     label_dim = num_classes or 0
     loss_fn = get_consistency_loss_fn(_fm_loss_cfg(label_dim), Linear(t_max=1.0))
@@ -81,6 +86,7 @@ def train(
     model.train()
     data_iter = iter(loader)
     history: list[dict[str, float]] = []
+    best_metric = math.inf
     for step in range(n_steps):
         try:
             x1, labels = next(data_iter)
@@ -97,12 +103,27 @@ def train(
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
 
-        rec = {
-            "step": float(step),
-            "fm_loss": float(opt_losses["fm_loss"].item()),
-            "total": float(total.item()),
-        }
+        rec: dict[str, float] = {"step": float(step), "total": float(total.item())}
+        for name, value in opt_losses.items():
+            rec[name] = float(value.item())
         history.append(rec)
         if log is not None:
             log(**rec)
+
+        is_best = False
+        if on_eval is not None and eval_every and (step + 1) % eval_every == 0:
+            model.eval()
+            metric = on_eval(model, step)
+            model.train()
+            if metric is not None and metric < best_metric:
+                best_metric = metric
+                is_best = True
+
+        if on_checkpoint is not None and (
+            is_best or (ckpt_every and (step + 1) % ckpt_every == 0)
+        ):
+            on_checkpoint(model, step, is_best=is_best, is_final=False)
+
+    if on_checkpoint is not None:
+        on_checkpoint(model, n_steps - 1, is_best=False, is_final=True)
     return history
