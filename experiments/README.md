@@ -12,47 +12,53 @@ experiments/
 ├── JOURNAL.md                # one verdict line per concluded finding
 ├── new.py                    # scaffold the next framework
 └── NNNN_slug/
-    ├── run.py                # entry point: Config + VARIANTS + main()
+    ├── run.py                # entry point: @hydra.main + Config subclass
+    ├── conf/
+    │   ├── config.yaml       # base defaults + hydra block
+    │   └── experiment/       # config groups (default, smoke, …)
     ├── <helpers>.py          # framework-specific machinery
     └── report.md             # Hypothesis → Setup → Results → Decision
 ```
 
 ## Anatomy of a framework
 
-- **`run.py`** declares a typed `Config` (subclass of
-  `physics_informed_flow_map.experiment.Config`), a `VARIANTS` dict of named
-  presets, and a `main()` that resolves the config and drives the run.
-- Config resolution: `Config.resolve(variant, overrides)` merges
-  `defaults <- variant <- key=value CLI args`, then validates strictly
-  (`extra="forbid"` — a typo'd override is an error, not a silent no-op).
-- The run lifecycle is owned by the harness: `start_run(...)` →
-  `run.log(**metrics)` per step → `run.finish(verdict, **summary)`.
+- **`run.py`** is a `@hydra.main` entry point. It declares a typed `Config`
+  subclass (`physics_informed_flow_map.experiment.Config`), composes a
+  `DictConfig` from `conf/`, validates it via `Config.from_dictconfig(cfg)`
+  (strict — `extra="forbid"`, a typo'd override is an error), then drives the run.
+- **`conf/`** holds the Hydra config: `config.yaml` (base defaults + the `hydra`
+  block) and `experiment/*.yaml` config groups (variants, each starting with
+  `# @package _global_`). Select a variant with `experiment=<name>`.
+- The run lifecycle is owned by the harness: `start_run(experiment, run_dir, config)`
+  → `run.log(**metrics)` per step → `run.finish(verdict, **summary)`. Tracking goes
+  to Weights & Biases; checkpoints are saved locally.
 
 ## Where results land
 
-Everything a run *produces* goes to the git-ignored `runs/` at the repo root:
+Tracking (config, metrics, sample images, verdict) goes to **Weights & Biases**.
+Local artifacts land in the git-ignored `runs/` at the repo root:
 
 ```
-runs/<framework>/<UTC-stamp>/
-├── manifest.json    # argv, resolved config, git commit + dirty-diff digest, env
-├── metrics.jsonl    # append-only, one record per run.log call
-├── result.json      # {"verdict": ..., ...summary}
-└── <checkpoints, samples, plots — framework-specific>
+runs/<framework>/<UTC-stamp>/        # = hydra.run.dir
+├── .hydra/config.yaml               # Hydra's composed-config snapshot
+├── checkpoints/step_<N>.pt          # local checkpoints (final always saved)
+└── samples*.png                     # eval images (also logged to wandb)
 ```
 
-Every run is reproducible from its manifest (git commit + config).
+The verdict is recorded in the wandb run summary and printed to the console.
+wandb captures the git commit + a diff patch natively, so runs stay reproducible.
 
 ## Running
 
 ```bash
-uv run python experiments/NNNN_slug/run.py [variant] [key=value ...]
+WANDB_MODE=online uv run python experiments/NNNN_slug/run.py [experiment=<variant>] [key=value ...]
 ```
 
 Examples:
 
 ```bash
-uv run python experiments/0001_mnist_pipeline/run.py smoke
-uv run python experiments/0001_mnist_pipeline/run.py default n_steps=500 lr=5e-4
+uv run python experiments/0001_flow_matching/run.py experiment=smoke
+uv run python experiments/0001_flow_matching/run.py experiment=mnist eval_every=500 ckpt_every=1000
 ```
 
 ## Conventions

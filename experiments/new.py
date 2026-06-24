@@ -32,36 +32,37 @@ def next_number() -> int:
 RUN_STUB = '''\
 """{title}
 
-    uv run python experiments/{dirname}/run.py [variant] [key=value ...]
+    uv run python experiments/{dirname}/run.py                    # default
+    uv run python experiments/{dirname}/run.py experiment=smoke
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
+import hydra
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig
+from pydantic import Field
+
 from physics_informed_flow_map.experiment import Config, start_run
+
+EXPERIMENT = "{dirname}"
 
 
 class {cls}(Config):
     seed: int = 0
     # TODO: declare typed knobs here.
-    gate: float = 0.0  # verdict threshold, asserted in code
+    gate: float = Field(0.0)  # verdict threshold, asserted in code
 
 
-VARIANTS: dict[str, dict[str, object]] = {{
-    "default": {{}},
-    "smoke": {{}},  # trivial budget for a fast end-to-end plumbing check
-}}
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(dcfg: DictConfig) -> None:
+    cfg = {cls}.from_dictconfig(dcfg)
+    assert isinstance(cfg, {cls})
 
-
-def main() -> None:
-    argv = sys.argv[1:]
-    variant = argv[0] if argv and "=" not in argv[0] else "default"
-    overrides = argv[1:] if argv and "=" not in argv[0] else argv
-    cfg = {cls}.resolve(VARIANTS[variant], overrides)
-
-    run = start_run(Path(__file__).parent, cfg.dump())
+    run_dir = Path(HydraConfig.get().runtime.output_dir)
+    run = start_run(EXPERIMENT, run_dir, cfg.dump())
     # TODO: do the work; call run.log(**metrics) per step.
     run.finish("todo")
 
@@ -69,6 +70,32 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 '''
+
+CONFIG_STUB = """\
+defaults:
+  - _self_
+  - experiment: default
+
+seed: 0
+gate: 0.0
+
+hydra:
+  run:
+    dir: runs/{dirname}/${{now:%Y-%m-%dT%H-%M-%SZ}}
+  job:
+    chdir: false
+"""
+
+EXPERIMENT_DEFAULT_STUB = """\
+# @package _global_
+# TODO: default-variant overrides.
+"""
+
+EXPERIMENT_SMOKE_STUB = """\
+# @package _global_
+# Trivial budget for a fast end-to-end plumbing check (no strength claim).
+gate: 1000000000.0
+"""
 
 REPORT_STUB = """\
 # {number} — {title}
@@ -81,12 +108,12 @@ Status: open
 
 ## Setup
 
-`run.py [variant]` — config, loop steps, stack.
+`run.py [experiment=<variant>] [key=value ...]` — config, loop steps, stack.
 
 ## Results
 
-Cite run directories under `runs/{dirname}/`; quote numbers from
-`metrics.jsonl` / `result.json`.
+Cite run directories under `runs/{dirname}/`; quote numbers + the verdict from the
+wandb run (config / metrics / summary). Checkpoints live in `<run>/checkpoints/`.
 
 ## Decision
 
@@ -107,16 +134,21 @@ def main() -> None:
     target = EXPERIMENTS / dirname
     if target.exists():
         sys.exit(f"refusing to overwrite existing {target}")
-    target.mkdir()
+    (target / "conf" / "experiment").mkdir(parents=True)
 
     (target / "run.py").write_text(
         RUN_STUB.format(title=title, dirname=dirname, cls=cls)
     )
+    (target / "conf" / "config.yaml").write_text(CONFIG_STUB.format(dirname=dirname))
+    (target / "conf" / "experiment" / "default.yaml").write_text(
+        EXPERIMENT_DEFAULT_STUB
+    )
+    (target / "conf" / "experiment" / "smoke.yaml").write_text(EXPERIMENT_SMOKE_STUB)
     (target / "report.md").write_text(
         REPORT_STUB.format(number=f"{number:04d}", title=title, dirname=dirname)
     )
     print(f"scaffolded experiments/{dirname}/")
-    print(f"  edit experiments/{dirname}/run.py")
+    print(f"  edit experiments/{dirname}/run.py and conf/")
 
 
 if __name__ == "__main__":
