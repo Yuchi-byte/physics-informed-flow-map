@@ -74,7 +74,8 @@ class Run:
         self.run.summary["verdict"] = verdict
         for key, value in summary.items():
             self.run.summary[key] = value
-        print(f"[{self.experiment}] verdict={verdict}")
+        extra = " ".join(f"{key}={value}" for key, value in summary.items())
+        print(f"[{self.experiment}] verdict={verdict} {extra}".rstrip())
         self.run.finish()
 
 
