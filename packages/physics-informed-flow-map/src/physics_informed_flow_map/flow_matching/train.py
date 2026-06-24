@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 import torch
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from mfm.SI import Linear
 from mfm.losses.losses import get_consistency_loss_fn
@@ -68,14 +69,14 @@ def train(
     model: BaseModel,
     loader: DataLoader,
     *,
-    n_steps: int,
+    n_epochs: int,
     lr: float,
     device: torch.device,
     num_classes: int | None = None,
     log: Callable[..., None] | None = None,
-    eval_every: int = 0,
+    eval_every_epochs: int = 0,
     on_eval: Callable[[BaseModel, int], float | None] | None = None,
-    ckpt_every: int = 0,
+    ckpt_every_epochs: int = 0,
     on_checkpoint: Callable[..., None] | None = None,
 ) -> list[dict[str, float]]:
     label_dim = num_classes or 0
@@ -84,46 +85,53 @@ def train(
 
     model = model.to(device)
     model.train()
-    data_iter = iter(loader)
     history: list[dict[str, float]] = []
     best_metric = math.inf
-    for step in range(n_steps):
-        try:
-            x1, labels = next(data_iter)
-        except StopIteration:
-            data_iter = iter(loader)
-            x1, labels = next(data_iter)
-        x1 = x1.to(device)
-        labels = labels.to(device)
+    step = 0
+    for epoch in range(n_epochs):
+        for x1, labels in tqdm(
+            loader, desc=f"epoch {epoch + 1}/{n_epochs}", leave=False
+        ):
+            x1 = x1.to(device)
+            labels = labels.to(device)
 
-        optimizer.zero_grad()
-        opt_losses, _ = loss_fn(model, None, x1, labels, step=step)
-        total = sum(opt_losses.values())
-        total.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
+            optimizer.zero_grad()
+            opt_losses, _ = loss_fn(model, None, x1, labels, step=step)
+            total = sum(opt_losses.values())
+            total.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
 
-        rec: dict[str, float] = {"step": float(step), "total": float(total.item())}
-        for name, value in opt_losses.items():
-            rec[name] = float(value.item())
-        history.append(rec)
-        if log is not None:
-            log(**rec)
+            rec: dict[str, float] = {
+                "step": float(step),
+                "epoch": float(epoch),
+                "total": float(total.item()),
+            }
+            for name, value in opt_losses.items():
+                rec[name] = float(value.item())
+            history.append(rec)
+            if log is not None:
+                log(**rec)
+            step += 1
 
         is_best = False
-        if on_eval is not None and eval_every and (step + 1) % eval_every == 0:
+        if (
+            on_eval is not None
+            and eval_every_epochs
+            and (epoch + 1) % eval_every_epochs == 0
+        ):
             model.eval()
-            metric = on_eval(model, step)
+            metric = on_eval(model, epoch)
             model.train()
             if metric is not None and metric < best_metric:
                 best_metric = metric
                 is_best = True
 
         if on_checkpoint is not None and (
-            is_best or (ckpt_every and (step + 1) % ckpt_every == 0)
+            is_best or (ckpt_every_epochs and (epoch + 1) % ckpt_every_epochs == 0)
         ):
-            on_checkpoint(model, step, is_best=is_best, is_final=False)
+            on_checkpoint(model, epoch, is_best=is_best, is_final=False)
 
     if on_checkpoint is not None:
-        on_checkpoint(model, n_steps - 1, is_best=False, is_final=True)
+        on_checkpoint(model, n_epochs - 1, is_best=False, is_final=True)
     return history
