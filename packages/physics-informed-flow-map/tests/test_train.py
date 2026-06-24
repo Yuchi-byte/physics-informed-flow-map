@@ -83,3 +83,31 @@ def test_train_hooks_fire_on_cadence() -> None:
     assert [c[0] for c in ckpts if c[1]] == [4, 9]  # best at each eval
     finals = [c for c in ckpts if c[2]]
     assert len(finals) == 1 and finals[0][0] == 9  # exactly one final, last step
+
+
+def test_train_checkpoint_cadence_without_eval() -> None:
+    torch.manual_seed(0)
+    spec = DATASETS["gaussians"]
+    loader = DataLoader(spec.make_dataset(), batch_size=16, shuffle=True)
+    model = build_model(spec.shape, spec.num_classes, mlp_width=16, mlp_depth=2)
+
+    ckpts: list[tuple[int, bool, bool]] = []
+
+    def on_checkpoint(m: object, step: int, *, is_best: bool, is_final: bool) -> None:
+        ckpts.append((step, is_best, is_final))
+
+    train(
+        model,
+        loader,
+        n_steps=10,
+        lr=1e-3,
+        device=torch.device("cpu"),
+        ckpt_every=4,
+        on_checkpoint=on_checkpoint,
+    )
+
+    # No eval -> never a best; cadence fires at (step+1) % 4 == 0 -> steps 3, 7.
+    assert all(not is_best for _, is_best, _ in ckpts)
+    assert [step for step, _, is_final in ckpts if not is_final] == [3, 7]
+    finals = [c for c in ckpts if c[2]]
+    assert len(finals) == 1 and finals[0][0] == 9  # exactly one final, last step

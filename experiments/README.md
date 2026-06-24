@@ -54,6 +54,10 @@ wandb captures the git commit + a diff patch natively, so runs stay reproducible
 WANDB_MODE=online uv run python experiments/NNNN_slug/run.py [experiment=<variant>] [key=value ...]
 ```
 
+First runs (or any machine without a wandb login) should use `WANDB_MODE=disabled`
+for a no-tracking plumbing check, or `WANDB_MODE=offline` to record locally and
+`wandb sync` later; `online` requires `wandb login`.
+
 Examples:
 
 ```bash

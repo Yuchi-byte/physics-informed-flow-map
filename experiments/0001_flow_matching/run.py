@@ -130,7 +130,9 @@ def main(dcfg: DictConfig) -> None:
     )
     final_png = run.ckpt_dir.parent / "samples.png"
     spec.visualize(samples, final_png)
-    run.log_image("samples_final", final_png)
+    # Log past the last training step so wandb's monotonic step counter never
+    # collides with a periodic on_eval image logged at n_steps-1.
+    run.log_image("samples_final", final_png, step=cfg.n_steps)
 
     if cfg.dataset == "gaussians":
         ref = real_reference(dataset, cfg.n_eval_samples, device)
