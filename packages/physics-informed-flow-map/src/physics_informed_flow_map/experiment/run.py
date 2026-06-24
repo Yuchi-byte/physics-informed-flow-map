@@ -1,24 +1,24 @@
-"""Run lifecycle: a manifest-pinned output directory under the git-ignored ``runs/``.
+"""Run lifecycle backed by Weights & Biases.
 
-``start_run`` creates ``runs/<experiment>/<UTC-stamp>/`` and writes ``manifest.json``
-(argv, resolved config, git commit + dirty-diff digest, python/torch/cuda/gpu env).
-:meth:`Run.log` appends one JSON record per call to ``metrics.jsonl``; :meth:`Run.finish`
-writes ``result.json`` with the verdict. Every run is reproducible from its manifest.
+``start_run`` opens a wandb run (config = resolved experiment config + git/env
+metadata) and prepares a local ``checkpoints/`` dir inside the Hydra-provided run
+directory. :class:`Run` streams scalars (:meth:`log`), images (:meth:`log_image`),
+and model checkpoints/artifacts to it; :meth:`finish` records the verdict in the
+run summary. No local JSON is written — wandb is the single source of truth.
 """
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
-import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from hashlib import sha256
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import torch
+import wandb
+
+DEFAULT_PROJECT = "physics-informed-flow-map"
 
 
 def _git(*args: str) -> str:
@@ -29,58 +29,79 @@ def _git(*args: str) -> str:
         return ""
 
 
-def _repo_root() -> Path:
-    root = _git("rev-parse", "--show-toplevel")
-    return Path(root) if root else Path.cwd()
-
-
-@dataclass
-class Run:
-    """A live experiment run. Owns its output directory and streams metrics to it."""
-
-    dir: Path
-    experiment: str
-    _step: int = field(default=0, repr=False)
-
-    def log(self, **metrics: Any) -> None:
-        """Append one record (auto step counter + wall time) to ``metrics.jsonl``."""
-        record = {"step": self._step, "time": time.time(), **metrics}
-        with (self.dir / "metrics.jsonl").open("a") as fh:
-            fh.write(json.dumps(record) + "\n")
-        self._step += 1
-
-    def finish(self, verdict: str, **summary: Any) -> None:
-        """Write ``result.json`` with the verdict and any summary scalars."""
-        result = {"verdict": verdict, **summary}
-        (self.dir / "result.json").write_text(json.dumps(result, indent=2))
-        print(f"\n[{self.experiment}] verdict={verdict}  →  {self.dir}")
-
-
-def start_run(experiment_dir: Path, config: dict[str, Any]) -> Run:
-    """Create ``runs/<experiment>/<UTC-stamp>/`` and pin a manifest.
-
-    ``experiment_dir`` is the framework directory (``__file__``'s parent); its name
-    (e.g. ``0001_mnist_pipeline``) names the run group. ``config`` is the resolved
-    config dict (``Config.dump()``).
-    """
-    experiment = Path(experiment_dir).name
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
-    run_dir = _repo_root() / "runs" / experiment / stamp
-    run_dir.mkdir(parents=True, exist_ok=True)
-
-    diff = _git("diff", "HEAD")
-    manifest = {
-        "experiment": experiment,
-        "started": stamp,
-        "argv": sys.argv,
-        "config": config,
+def _env() -> dict[str, Any]:
+    """Reproducibility metadata folded into the wandb run config."""
+    return {
         "git_commit": _git("rev-parse", "HEAD"),
-        "git_diff_sha256": sha256(diff.encode()).hexdigest() if diff else "",
         "python": sys.version.split()[0],
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
         "gpu": (torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"),
     }
-    (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+
+@dataclass
+class Run:
+    """A live experiment run wrapping a wandb run and a local checkpoint dir."""
+
+    run: Any  # wandb Run handle
+    experiment: str
+    ckpt_dir: Path
+
+    def log(self, **metrics: Any) -> None:
+        """Log scalars at ``metrics['step']`` (if present) to wandb."""
+        step = metrics.pop("step", None)
+        self.run.log(metrics, step=int(step) if step is not None else None)
+
+    def log_image(self, key: str, path: Path, *, step: int | None = None) -> None:
+        """Log an image file under ``key`` to wandb."""
+        self.run.log({key: wandb.Image(str(path))}, step=step)
+
+    def save_checkpoint(self, model: torch.nn.Module, step: int, **meta: Any) -> Path:
+        """Save ``model`` state (+ metadata) to ``checkpoints/step_<step>.pt``."""
+        path = self.ckpt_dir / f"step_{step}.pt"
+        torch.save({"model": model.state_dict(), "step": step, **meta}, path)
+        return path
+
+    def log_artifact(self, path: Path, *, name: str, aliases: list[str]) -> None:
+        """Upload a checkpoint file as a wandb model artifact under ``aliases``."""
+        artifact = wandb.Artifact(name, type="model")
+        artifact.add_file(str(path))
+        self.run.log_artifact(artifact, aliases=aliases)
+
+    def finish(self, verdict: str, **summary: Any) -> None:
+        """Record the verdict + summary scalars and close the wandb run."""
+        self.run.summary["verdict"] = verdict
+        for key, value in summary.items():
+            self.run.summary[key] = value
+        print(f"[{self.experiment}] verdict={verdict}")
+        self.run.finish()
+
+
+def start_run(
+    experiment: str,
+    run_dir: Path,
+    config: dict[str, Any],
+    *,
+    project: str = DEFAULT_PROJECT,
+    name: str | None = None,
+) -> Run:
+    """Open a wandb run and prepare ``run_dir/checkpoints/``.
+
+    ``experiment`` names the run group; ``run_dir`` is the Hydra run directory
+    (``HydraConfig.get().runtime.output_dir``); ``config`` is ``Config.dump()``.
+    Connectivity is wandb-native via ``WANDB_MODE`` (default online).
+    """
+    run_dir = Path(run_dir)
+    ckpt_dir = run_dir / "checkpoints"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    run = wandb.init(
+        project=project,
+        name=name,
+        group=experiment,
+        dir=str(run_dir),
+        config={**config, **_env()},
+    )
     print(f"[{experiment}] run → {run_dir}")
-    return Run(dir=run_dir, experiment=experiment)
+    return Run(run=run, experiment=experiment, ckpt_dir=ckpt_dir)
