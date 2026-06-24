@@ -74,7 +74,9 @@ def build_model(
     if len(spec.shape) == 1:
         return VelocityMLP(dim=spec.shape[0], width=mlp_width, depth=mlp_depth)
     if len(spec.shape) == 3:
-        c, h, _ = spec.shape
+        c, h, w = spec.shape
+        if h != w:
+            raise ValueError(f"DiTMFM requires square images, got {spec.shape}")
         dit = DiTMFM(
             learn_loss_weighting=False,
             input_size=h,

@@ -31,3 +31,10 @@ def test_image_model_forward_backward():
     spec = DatasetSpec(shape=(1, 32, 32), num_classes=10, make_dataset=lambda: None, visualize=lambda *_: None)
     model = build_model(spec, dit_hidden=32, dit_depth=1, num_heads=4)
     _fwd_bwd(model, torch.randn(2, 1, 32, 32))
+
+
+def test_non_square_image_rejected():
+    import pytest
+    spec = DatasetSpec(shape=(1, 16, 32), num_classes=None, make_dataset=lambda: None, visualize=lambda *_: None)
+    with pytest.raises(ValueError):
+        build_model(spec)
