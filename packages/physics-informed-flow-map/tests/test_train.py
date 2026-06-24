@@ -6,7 +6,7 @@ from physics_informed_flow_map.flow_matching.models import build_model
 from physics_informed_flow_map.flow_matching.train import train
 
 
-def test_train_runs_and_logs():
+def test_train_runs_and_logs() -> None:
     torch.manual_seed(0)
     spec = DATASETS["gaussians"]
     ds = spec.make_dataset()

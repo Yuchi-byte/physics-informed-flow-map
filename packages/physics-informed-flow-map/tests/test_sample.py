@@ -9,7 +9,7 @@ from physics_informed_flow_map.flow_matching.sample import (
 )
 
 
-def test_energy_distance_zero_for_same_distribution():
+def test_energy_distance_zero_for_same_distribution() -> None:
     torch.manual_seed(0)
     x = torch.randn(2000, 2)
     y = torch.randn(2000, 2)
@@ -18,14 +18,14 @@ def test_energy_distance_zero_for_same_distribution():
     assert energy_distance(x, far) > energy_distance(x, y)
 
 
-def test_sample_shape():
+def test_sample_shape() -> None:
     spec = DATASETS["gaussians"]
     model = build_model(spec, mlp_width=16, mlp_depth=2)
     out = sample(model, 32, spec.shape, sampler_steps=5, device=torch.device("cpu"))
     assert out.shape == (32, 2)
 
 
-def test_real_reference():
+def test_real_reference() -> None:
     ds = DATASETS["gaussians"].make_dataset()
     ref = real_reference(ds, 100, torch.device("cpu"))
     assert ref.shape == (100, 2)

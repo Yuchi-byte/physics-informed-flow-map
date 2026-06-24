@@ -1,6 +1,6 @@
 # 0001 — Flow matching on various datasets
 
-Status: open
+Status: closed
 
 ## Hypothesis
 
@@ -18,9 +18,21 @@ generic FM training (`flow_matching.train`) → ODE sampling
 
 ## Results
 
-Cite run directories under `runs/0001_flow_matching/`; quote `energy_distance` /
-`final_loss` from `result.json` and inspect `samples.png`.
+Run directory: `runs/0001_flow_matching/2026-06-24T204300Z`
+
+- `energy_distance`: 0.009576 (gate: 0.5 — well within margin)
+- `final_loss`: 8.677 (down from ~18.3 at step 0; ~2.1× reduction)
+- `verdict`: pass
+
+`samples.png` shows 8 distinct, well-separated blobs arranged on a ring with no
+merged or missing modes. The fit is visually clean.
+
+Loss decreased from ~18.3 (step 0) to ~8.7 (step 1999), confirming meaningful
+learning. Energy distance of 0.0096 is 52× below the 0.5 gate, so no gate
+recalibration was required.
 
 ## Decision
 
-Adopted / Falsified / Parked. Mirror the verdict line to `../JOURNAL.md`.
+Status: closed
+
+Adopted — 8 modes recovered, energy distance 0.0096 < 0.5 gate, verdict pass.

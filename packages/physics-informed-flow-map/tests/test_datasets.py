@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from physics_informed_flow_map.flow_matching.datasets import DATASETS
 
 
-def test_registry_metadata():
+def test_registry_metadata() -> None:
     for name, spec in DATASETS.items():
         assert isinstance(spec.shape, tuple) and all(d > 0 for d in spec.shape)
         assert spec.num_classes is None or spec.num_classes > 0
@@ -18,7 +18,7 @@ def test_registry_metadata():
     assert DATASETS["mnist"].num_classes == 10
 
 
-def test_gaussians_samples_and_loader():
+def test_gaussians_samples_and_loader() -> None:
     spec = DATASETS["gaussians"]
     ds = spec.make_dataset()
     x1, label = ds[0]
@@ -30,7 +30,7 @@ def test_gaussians_samples_and_loader():
     assert lb.shape == (16,)
 
 
-def test_gaussians_visualize(tmp_path: Path):
+def test_gaussians_visualize(tmp_path: Path) -> None:
     spec = DATASETS["gaussians"]
     samples = torch.randn(64, 2)
     out = tmp_path / "scatter.png"
