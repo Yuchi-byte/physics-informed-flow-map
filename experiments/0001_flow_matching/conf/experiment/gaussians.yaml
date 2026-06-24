@@ -5,4 +5,6 @@ defaults:
 
 gate: 0.5
 training:
-  n_epochs: 5
+  n_epochs: 100
+sampling:
+  sampler_steps: 200

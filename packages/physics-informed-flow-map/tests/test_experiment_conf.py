@@ -27,7 +27,7 @@ def _load_run_module() -> ModuleType:
 @pytest.mark.parametrize(
     "variant,dataset_name,model_kind,n_epochs",
     [
-        ("gaussians", "gaussians", "mlp", 5),
+        ("gaussians", "gaussians", "mlp", 100),
         ("mnist", "mnist", "dit", 50),
         ("smoke", "gaussians", "mlp", 1),
     ],
