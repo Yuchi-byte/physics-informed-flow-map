@@ -24,6 +24,7 @@ class DatasetSpec:
     num_classes: int | None
     make_dataset: Callable[[], Dataset]
     visualize: Callable[[Tensor, Path], None]
+    requires_download: bool = False  # True if make_dataset hits the network
 
 
 def _make_gaussians(
@@ -83,6 +84,10 @@ DATASETS: dict[str, DatasetSpec] = {
         shape=(2,), num_classes=None, make_dataset=_make_gaussians, visualize=_viz_scatter
     ),
     "mnist": DatasetSpec(
-        shape=(1, 32, 32), num_classes=10, make_dataset=_make_mnist, visualize=_viz_grid
+        shape=(1, 32, 32),
+        num_classes=10,
+        make_dataset=_make_mnist,
+        visualize=_viz_grid,
+        requires_download=True,
     ),
 }

@@ -75,7 +75,8 @@ def main() -> None:
         dataset, batch_size=cfg.batch_size, shuffle=True, drop_last=True, num_workers=0
     )
     model = build_model(
-        spec,
+        spec.shape,
+        spec.num_classes,
         mlp_width=cfg.mlp_width,
         mlp_depth=cfg.mlp_depth,
         dit_hidden=cfg.dit_hidden,

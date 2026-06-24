@@ -11,7 +11,7 @@ def test_train_runs_and_logs() -> None:
     spec = DATASETS["gaussians"]
     ds = spec.make_dataset()
     loader = DataLoader(ds, batch_size=128, shuffle=True)
-    model = build_model(spec, mlp_width=64, mlp_depth=3)
+    model = build_model(spec.shape, spec.num_classes, mlp_width=64, mlp_depth=3)
 
     logged: list[dict] = []
     history = train(

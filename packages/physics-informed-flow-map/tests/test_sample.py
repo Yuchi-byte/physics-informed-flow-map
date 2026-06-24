@@ -20,7 +20,7 @@ def test_energy_distance_zero_for_same_distribution() -> None:
 
 def test_sample_shape() -> None:
     spec = DATASETS["gaussians"]
-    model = build_model(spec, mlp_width=16, mlp_depth=2)
+    model = build_model(spec.shape, spec.num_classes, mlp_width=16, mlp_depth=2)
     out = sample(model, 32, spec.shape, sampler_steps=5, device=torch.device("cpu"))
     assert out.shape == (32, 2)
 

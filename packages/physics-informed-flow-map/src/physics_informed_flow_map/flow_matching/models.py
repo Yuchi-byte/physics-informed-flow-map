@@ -7,6 +7,7 @@ unchanged. The MLP subclasses BaseModel — it does not modify the mfm library.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -16,8 +17,6 @@ from mfm.SI import Linear
 from mfm.models import DiTMFM
 from mfm.models.base_model import BaseModel
 from mfm.models.model_wrapper import SIModelWrapper
-
-from physics_informed_flow_map.flow_matching.datasets import DatasetSpec
 
 
 class TimeEmbedding(nn.Module):
@@ -63,7 +62,8 @@ class VelocityMLP(BaseModel):  # type: ignore[misc]
 
 
 def build_model(
-    spec: DatasetSpec,
+    shape: tuple[int, ...],
+    num_classes: int | None = None,
     *,
     mlp_width: int = 256,
     mlp_depth: int = 4,
@@ -71,12 +71,17 @@ def build_model(
     dit_depth: int = 4,
     num_heads: int = 4,
 ) -> BaseModel:
-    if len(spec.shape) == 1:
-        return VelocityMLP(dim=spec.shape[0], width=mlp_width, depth=mlp_depth)
-    if len(spec.shape) == 3:
-        c, h, w = spec.shape
+    """Build the velocity model for a per-sample ``shape``.
+
+    ``len(shape) == 1`` → :class:`VelocityMLP`; ``len(shape) == 3`` →
+    ``SIModelWrapper(DiTMFM)``. Knobs not relevant to the chosen model are ignored.
+    """
+    if len(shape) == 1:
+        return VelocityMLP(dim=shape[0], width=mlp_width, depth=mlp_depth)
+    if len(shape) == 3:
+        c, h, w = shape
         if h != w:
-            raise ValueError(f"DiTMFM requires square images, got {spec.shape}")
+            raise ValueError(f"DiTMFM requires square images, got {shape}")
         dit = DiTMFM(
             learn_loss_weighting=False,
             input_size=h,
@@ -85,11 +90,25 @@ def build_model(
             hidden_size=dit_hidden,
             depth=dit_depth,
             num_heads=num_heads,
-            label_dim=spec.num_classes or 1,
+            label_dim=num_classes or 1,
             encoder_depth=2,
             attn_func="base",
             is_zero_data=True,
             learn_sigma=False,
         )
         return SIModelWrapper(dit, Linear(t_max=1.0), use_parametrization=False)
-    raise ValueError(f"unsupported sample shape {spec.shape}")
+    raise ValueError(f"unsupported sample shape {shape}")
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    """A velocity-model architecture and the input contract it serves."""
+
+    sample_shape: tuple[int, ...]  # representative per-sample shape it handles
+    num_classes: int | None
+
+
+MODELS: dict[str, ModelSpec] = {
+    "velocity_mlp": ModelSpec(sample_shape=(2,), num_classes=None),
+    "dit": ModelSpec(sample_shape=(1, 32, 32), num_classes=10),
+}
