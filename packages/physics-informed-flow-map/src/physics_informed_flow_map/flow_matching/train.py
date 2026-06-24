@@ -24,6 +24,7 @@ class _Cfg:
 
 
 def _fm_loss_cfg(label_dim: int) -> _Cfg:
+    class_dropout_prob = 0.1 if label_dim > 0 else 0.0
     return _Cfg(
         SI=_Cfg(t_max=1.0),
         trainer=_Cfg(
@@ -35,7 +36,7 @@ def _fm_loss_cfg(label_dim: int) -> _Cfg:
             # warmup beyond any run length so pure FM keeps only the diagonal term.
             num_warmup_steps=10**12,
             anneal_end_step=10**12,
-            class_dropout_prob=0.0,
+            class_dropout_prob=class_dropout_prob,
         ),
         model=_Cfg(
             label_dim=label_dim,
@@ -69,9 +70,10 @@ def train(
     n_steps: int,
     lr: float,
     device: torch.device,
+    num_classes: int | None = None,
     log: Callable[..., None] | None = None,
 ) -> list[dict[str, float]]:
-    label_dim = 0  # unconditional FM; class_labels are ignored by the velocity models
+    label_dim = num_classes or 0
     loss_fn = get_consistency_loss_fn(_fm_loss_cfg(label_dim), Linear(t_max=1.0))
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 

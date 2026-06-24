@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import torch
+from pydantic import Field
 
 from physics_informed_flow_map.experiment import Config, start_run
 from physics_informed_flow_map.flow_matching.datasets import DATASETS
@@ -28,11 +29,11 @@ from physics_informed_flow_map.flow_matching.train import train
 class FlowMatchingConfig(Config):
     seed: int = 0
     dataset: str = "gaussians"
-    n_steps: int = 2000
+    n_steps: int = Field(2000, gt=0)
     batch_size: int = 256
     lr: float = 1e-3
-    sampler_steps: int = 100
-    n_eval_samples: int = 2048
+    sampler_steps: int = Field(100, gt=0)
+    n_eval_samples: int = Field(2048, gt=0)
     gate: float = 0.5
     mlp_width: int = 256
     mlp_depth: int = 4
@@ -81,7 +82,7 @@ def main() -> None:
         dit_depth=cfg.dit_depth,
     ).to(device)
 
-    history = train(model, loader, n_steps=cfg.n_steps, lr=cfg.lr, device=device, log=run.log)
+    history = train(model, loader, n_steps=cfg.n_steps, lr=cfg.lr, device=device, num_classes=spec.num_classes, log=run.log)
     final_loss = history[-1]["total"]
 
     samples = sample(model, cfg.n_eval_samples, spec.shape, sampler_steps=cfg.sampler_steps, device=device)
