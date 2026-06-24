@@ -95,6 +95,11 @@ def main(dcfg: DictConfig) -> None:
         drop_last=True,
         num_workers=0,
     )
+    if len(loader) == 0:
+        raise SystemExit(
+            f"empty loader: dataset ({len(dataset)} samples) is smaller than "
+            f"batch_size={cfg.training.batch_size} with drop_last=True"
+        )
     model = build_model(cfg.dataset.shape, cfg.dataset.num_classes, cfg.model).to(
         device
     )
@@ -111,6 +116,8 @@ def main(dcfg: DictConfig) -> None:
         cfg.dataset.visualize(s, p)
         run.log_image("samples", p)
         if isinstance(cfg.dataset, GaussiansDatasetConfig):
+            # 'best'-tracking metric: deliberately the cheaper n_eval_viz budget,
+            # not the final verdict's n_eval_samples.
             ref = real_reference(dataset, cfg.sampling.n_eval_viz, device)
             return energy_distance(s, ref)
         return None
