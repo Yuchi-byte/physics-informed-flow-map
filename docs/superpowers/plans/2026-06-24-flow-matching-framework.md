@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Never edit the `mfm` library** (`packages/mfm-meta-flow-map-main/`). All new code lives in `packages/physics-informed-flow-map/` or `experiments/`.
-- Pure flow matching = `mfm` loss with `data_fm=True`, `distill_fm=False`, model built with `learn_loss_weighting=False`, and trainer `t_cond_0_rate=1.0`.
+- Pure flow matching = `mfm` loss with `data_fm=True`, `distill_fm=False`, model built with `learn_loss_weighting=False`, and trainer `t_cond_0_rate=1.0`. The off-diagonal consistency/distillation term in mfm's loss is gated by `step > num_warmup_steps` (independent of `distill_fm`), so `num_warmup_steps` must be parked beyond any run length to keep that term OFF.
 - The model `.v(...)` is called by `mfm` with extra kwargs (`class_labels=`, `cfg_scale=`); every `.v` signature must accept `**kwargs`.
 - Verdicts are asserted in code via a `gate`, never by eye (harness contract, `experiments/README.md`).
 - Run artifacts go to the git-ignored `runs/`; the harness (`physics_informed_flow_map.experiment`) owns `start_run` / `Run.log` / `Run.finish`.
@@ -534,8 +534,11 @@ def _fm_loss_cfg(label_dim: int) -> _Cfg:
             t_cond_warmup_steps=0,
             t_cond_0_rate=1.0,  # always condition on pure noise → standard FM
             t_cond_power=1.0,
-            num_warmup_steps=0,
-            anneal_end_step=1,
+            # mfm's off-diagonal consistency/distillation term is gated by
+            # `step > num_warmup_steps` (independent of distill_fm). Park the
+            # warmup beyond any run length so pure FM keeps only the diagonal term.
+            num_warmup_steps=10**12,
+            anneal_end_step=10**12,
             class_dropout_prob=0.0,
         ),
         model=_Cfg(
