@@ -75,6 +75,7 @@ def train(
     loss_fn = get_consistency_loss_fn(_fm_loss_cfg(label_dim), Linear(t_max=1.0))
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
+    model = model.to(device)
     model.train()
     data_iter = iter(loader)
     history: list[dict[str, float]] = []
