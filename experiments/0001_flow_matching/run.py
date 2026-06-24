@@ -48,7 +48,7 @@ VARIANTS: dict[str, dict[str, object]] = {
         "n_steps": 3000,
         "batch_size": 128,
         "sampler_steps": 50,
-        "gate": 5.0,
+        "gate": 240.0,
     },
     "smoke": {"dataset": "gaussians", "n_steps": 20, "n_eval_samples": 256, "gate": 1e9},
 }
