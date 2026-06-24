@@ -41,6 +41,8 @@ build/
 # Outputs and checkpoints
 outputs/
 ckpts/
+# Experiment run artifacts (manifest, metrics, samples, checkpoints)
+runs/
 reward_experiments/
 # Generated training artifacts inside vendored reference packages
 trained_models/
@@ -66,3 +68,6 @@ wandb/
 # Misc
 *.log
 *.tmp
+
+# Subagent-driven-development scratch (briefs, reports, review packages)
+.superpowers/
