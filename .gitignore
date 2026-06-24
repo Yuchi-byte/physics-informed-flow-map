@@ -41,6 +41,16 @@ build/
 # Outputs and checkpoints
 outputs/
 ckpts/
+reward_experiments/
+# Generated training artifacts inside vendored reference packages
+trained_models/
+**/trained_models/
+
+# Generated media (samples, plots, animations). Doc/README assets are committed
+# explicitly with `git add -f` and remain tracked.
+*.gif
+*.mp4
+*.webp
 
 # Data
 csv/
