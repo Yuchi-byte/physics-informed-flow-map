@@ -1,18 +1,20 @@
-"""Typed experiment configuration: a pydantic schema with OmegaConf override merge.
+"""Typed experiment configuration: a pydantic schema validated from Hydra output.
 
 Each experiment framework subclasses :class:`Config`, declaring its knobs as typed
-fields (nest further :class:`Config` subclasses for grouped knobs). ``resolve``
-composes the field defaults with an optional variant preset and ``key=value`` CLI
-overrides, then validates the result. Unknown keys are rejected (``extra="forbid"``),
-so a typo'd override fails loudly instead of being silently ignored.
+fields. A ``run.py`` entry point composes a Hydra ``DictConfig`` from its ``conf/``
+tree, then calls :meth:`Config.from_dictconfig` to validate it into the schema.
+Unknown keys are rejected (``extra="forbid"``), so a typo'd override fails loudly
+instead of being silently ignored.
 """
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, TypeVar
 
 from omegaconf import DictConfig, OmegaConf
 from pydantic import BaseModel, ConfigDict
+
+T = TypeVar("T", bound="Config")
 
 
 class Config(BaseModel):
@@ -21,30 +23,16 @@ class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
-    def resolve(
-        cls,
-        variant: dict[str, Any] | None = None,
-        overrides: list[str] | None = None,
-    ) -> "Config":
-        """Compose ``defaults <- variant <- overrides`` and validate into the schema.
+    def from_dictconfig(cls: type[T], cfg: DictConfig) -> T:
+        """Validate a Hydra-composed ``DictConfig`` into this typed schema.
 
-        ``variant`` is a preset dict (e.g. an entry from a framework's ``VARIANTS``);
-        ``overrides`` is a dotlist of ``key=value`` / ``a.b=value`` strings (typically
-        ``sys.argv[1:]``). Later sources win.
+        Resolves interpolations, converts to a plain container, then validates.
+        ``extra="forbid"`` turns any key not declared on the subclass into a
+        ``ValidationError``.
         """
-        merged = OmegaConf.create(cls().model_dump())
-        if variant:
-            merged = cast(
-                DictConfig, OmegaConf.merge(merged, OmegaConf.create(variant))
-            )
-        if overrides:
-            merged = cast(
-                DictConfig,
-                OmegaConf.merge(merged, OmegaConf.from_dotlist(list(overrides))),
-            )
-        container = OmegaConf.to_container(merged, resolve=True)
+        container = OmegaConf.to_container(cfg, resolve=True)
         return cls.model_validate(container)
 
     def dump(self) -> dict[str, Any]:
-        """JSON-ready dict of the resolved config, pinned into the run manifest."""
+        """JSON-ready dict of the resolved config, pinned into the wandb run."""
         return self.model_dump(mode="json")
