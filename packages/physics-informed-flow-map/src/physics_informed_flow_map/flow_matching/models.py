@@ -1,22 +1,27 @@
-"""Velocity models. A small MLP for low-dim data; mfm's DiT for images.
+"""Velocity models + a discriminated-union model config.
 
-Both implement mfm's BaseModel.v interface so mfm's loss/sampler drive them
-unchanged. The MLP subclasses BaseModel — it does not modify the mfm library.
+Both architectures implement mfm's BaseModel.v interface so mfm's loss/sampler
+drive them unchanged. The MLP subclasses BaseModel — it does not modify the mfm
+library. ``build_model`` dispatches on the (discriminated-union) model config.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Annotated, Literal
 
 import torch
 import torch.nn as nn
+from pydantic import Field
 from torch import Tensor
 
 from mfm.SI import Linear
 from mfm.models import DiTMFM
 from mfm.models.base_model import BaseModel
 from mfm.models.model_wrapper import SIModelWrapper
+
+from physics_informed_flow_map.experiment import Config
 
 
 class TimeEmbedding(nn.Module):
@@ -71,35 +76,53 @@ class VelocityMLP(BaseModel):  # type: ignore[misc]
         return result
 
 
-def build_model(
-    shape: tuple[int, ...],
-    num_classes: int | None = None,
-    *,
-    mlp_width: int = 256,
-    mlp_depth: int = 4,
-    dit_hidden: int = 128,
-    dit_depth: int = 4,
-    num_heads: int = 4,
-) -> BaseModel:
-    """Build the velocity model for a per-sample ``shape``.
+class MLPModelConfig(Config):
+    """Config for the MLP velocity field (vector data)."""
 
-    ``len(shape) == 1`` → :class:`VelocityMLP`; ``len(shape) == 3`` →
-    ``SIModelWrapper(DiTMFM)``. Knobs not relevant to the chosen model are ignored.
+    kind: Literal["mlp"] = "mlp"
+    width: int = 256
+    depth: int = 4
+
+
+class DiTModelConfig(Config):
+    """Config for the DiT velocity field (image data)."""
+
+    kind: Literal["dit"] = "dit"
+    hidden: int = 128
+    depth: int = 4
+    num_heads: int = 4
+    patch_size: int = 4
+
+
+ModelConfig = Annotated[MLPModelConfig | DiTModelConfig, Field(discriminator="kind")]
+
+
+def build_model(
+    shape: tuple[int, ...], num_classes: int | None, cfg: ModelConfig
+) -> BaseModel:
+    """Build the velocity model for a per-sample ``shape`` from a model config.
+
+    ``MLPModelConfig`` requires vector data (``len(shape) == 1``);
+    ``DiTModelConfig`` requires square images (``len(shape) == 3``, H == W).
     """
-    if len(shape) == 1:
-        return VelocityMLP(dim=shape[0], width=mlp_width, depth=mlp_depth)
-    if len(shape) == 3:
+    if isinstance(cfg, MLPModelConfig):
+        if len(shape) != 1:
+            raise ValueError(f"mlp model requires vector data, got {shape}")
+        return VelocityMLP(dim=shape[0], width=cfg.width, depth=cfg.depth)
+    if isinstance(cfg, DiTModelConfig):
+        if len(shape) != 3:
+            raise ValueError(f"dit model requires image data, got {shape}")
         c, h, w = shape
         if h != w:
             raise ValueError(f"DiTMFM requires square images, got {shape}")
         dit = DiTMFM(
             learn_loss_weighting=False,
             input_size=h,
-            patch_size=4,
+            patch_size=cfg.patch_size,
             in_channels=c,
-            hidden_size=dit_hidden,
-            depth=dit_depth,
-            num_heads=num_heads,
+            hidden_size=cfg.hidden,
+            depth=cfg.depth,
+            num_heads=cfg.num_heads,
             label_dim=num_classes or 1,
             encoder_depth=2,
             attn_func="base",
@@ -107,18 +130,19 @@ def build_model(
             learn_sigma=False,
         )
         return SIModelWrapper(dit, Linear(t_max=1.0), use_parametrization=False)
-    raise ValueError(f"unsupported sample shape {shape}")
+    raise ValueError(f"unsupported model config {cfg!r}")
 
 
 @dataclass(frozen=True)
-class ModelSpec:
-    """A velocity-model architecture and the input contract it serves."""
+class ModelCase:
+    """A model config paired with a representative input contract (for tests/tooling)."""
 
-    sample_shape: tuple[int, ...]  # representative per-sample shape it handles
+    config: ModelConfig
+    sample_shape: tuple[int, ...]
     num_classes: int | None
 
 
-MODELS: dict[str, ModelSpec] = {
-    "velocity_mlp": ModelSpec(sample_shape=(2,), num_classes=None),
-    "dit": ModelSpec(sample_shape=(1, 32, 32), num_classes=10),
+MODELS: dict[str, ModelCase] = {
+    "mlp": ModelCase(MLPModelConfig(), (2,), None),
+    "dit": ModelCase(DiTModelConfig(), (1, 32, 32), 10),
 }

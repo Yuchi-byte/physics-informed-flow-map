@@ -16,34 +16,32 @@ def dataset_name(request: pytest.FixtureRequest) -> str:
 
 
 def test_registry_metadata(dataset_name: str) -> None:
-    spec = DATASETS[dataset_name]
-    assert isinstance(spec.shape, tuple) and all(d > 0 for d in spec.shape)
-    assert spec.num_classes is None or spec.num_classes > 0
-    assert callable(spec.make_dataset)
-    assert callable(spec.visualize)
-    assert isinstance(spec.requires_download, bool)
+    cfg = DATASETS[dataset_name]
+    assert isinstance(cfg.shape, tuple) and all(d > 0 for d in cfg.shape)
+    assert cfg.num_classes is None or cfg.num_classes > 0
+    assert isinstance(cfg.requires_download, bool)
 
 
-def test_make_dataset_shapes(dataset_name: str) -> None:
-    spec = DATASETS[dataset_name]
-    if spec.requires_download:
+def test_build_shapes(dataset_name: str) -> None:
+    cfg = DATASETS[dataset_name]
+    if cfg.requires_download:
         pytest.skip(f"{dataset_name} requires download; exercised by the live run")
-    ds = spec.make_dataset()
+    ds = cfg.build()
     x1, label = ds[0]
-    assert x1.shape == spec.shape
-    if spec.num_classes is None:
+    assert x1.shape == cfg.shape
+    if cfg.num_classes is None:
         assert int(label) == 0
     else:
-        assert 0 <= int(label) < spec.num_classes
+        assert 0 <= int(label) < cfg.num_classes
     loader = DataLoader(ds, batch_size=16)
     xb, lb = next(iter(loader))
-    assert xb.shape == (16, *spec.shape)
+    assert xb.shape == (16, *cfg.shape)
     assert lb.shape == (16,)
 
 
 def test_visualize_writes_file(dataset_name: str, tmp_path: Path) -> None:
-    spec = DATASETS[dataset_name]
-    samples = torch.randn(16, *spec.shape)
+    cfg = DATASETS[dataset_name]
+    samples = torch.randn(16, *cfg.shape)
     out = tmp_path / f"{dataset_name}.png"
-    spec.visualize(samples, out)
+    cfg.visualize(samples, out)
     assert out.exists() and out.stat().st_size > 0

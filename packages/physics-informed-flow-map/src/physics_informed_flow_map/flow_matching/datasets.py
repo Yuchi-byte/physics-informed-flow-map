@@ -1,11 +1,14 @@
-"""Dataset abstraction + registry. Swapping datasets = changing one config key."""
+"""Dataset configs (discriminated union). Swapping datasets = changing one group.
+
+Each variant owns its build + metadata; the module-level ``_make_*``/``_viz_*``
+helpers do the actual work and are delegated to.
+"""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, cast
+from typing import Annotated, Literal, cast
 
 import matplotlib
 
@@ -14,17 +17,11 @@ import matplotlib.pyplot as plt
 import torch
 import torchvision
 import torchvision.transforms as T
+from pydantic import Field
 from torch import Tensor
 from torch.utils.data import Dataset, TensorDataset
 
-
-@dataclass
-class DatasetSpec:
-    shape: tuple[int, ...]
-    num_classes: int | None
-    make_dataset: Callable[[], Dataset]
-    visualize: Callable[[Tensor, Path], None]
-    requires_download: bool = False  # True if make_dataset hits the network
+from physics_informed_flow_map.experiment import Config
 
 
 def _make_gaussians(
@@ -81,18 +78,66 @@ def _viz_grid(samples: Tensor, path: Path) -> None:
     plt.close(fig)
 
 
-DATASETS: dict[str, DatasetSpec] = {
-    "gaussians": DatasetSpec(
-        shape=(2,),
-        num_classes=None,
-        make_dataset=_make_gaussians,
-        visualize=_viz_scatter,
-    ),
-    "mnist": DatasetSpec(
-        shape=(1, 32, 32),
-        num_classes=10,
-        make_dataset=_make_mnist,
-        visualize=_viz_grid,
-        requires_download=True,
-    ),
+class GaussiansDatasetConfig(Config):
+    """2D mixture-of-Gaussians toy dataset."""
+
+    name: Literal["gaussians"] = "gaussians"
+    n_modes: int = 8
+    radius: float = 4.0
+    std: float = 0.5
+    n_samples: int = 100_000
+
+    @property
+    def requires_download(self) -> bool:
+        return False
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return (2,)
+
+    @property
+    def num_classes(self) -> int | None:
+        return None
+
+    def build(self) -> Dataset:
+        return _make_gaussians(self.n_samples, self.n_modes, self.radius, self.std)
+
+    def visualize(self, samples: Tensor, path: Path) -> None:
+        _viz_scatter(samples, path)
+
+
+class MNISTDatasetConfig(Config):
+    """MNIST digits, resized to a square and normalised to [-1, 1]."""
+
+    name: Literal["mnist"] = "mnist"
+    image_size: int = 32
+    data_dir: str = "data"
+
+    @property
+    def requires_download(self) -> bool:
+        return True
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return (1, self.image_size, self.image_size)
+
+    @property
+    def num_classes(self) -> int | None:
+        return 10
+
+    def build(self) -> Dataset:
+        return _make_mnist(self.data_dir, self.image_size)
+
+    def visualize(self, samples: Tensor, path: Path) -> None:
+        _viz_grid(samples, path)
+
+
+DatasetConfig = Annotated[
+    GaussiansDatasetConfig | MNISTDatasetConfig, Field(discriminator="name")
+]
+
+
+DATASETS: dict[str, DatasetConfig] = {
+    "gaussians": GaussiansDatasetConfig(),
+    "mnist": MNISTDatasetConfig(),
 }
