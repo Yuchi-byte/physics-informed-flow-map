@@ -1,4 +1,8 @@
 # @package _global_
-dataset: gaussians
-n_steps: 2000
+defaults:
+  - override /model: mlp
+  - override /dataset: gaussians
+
 gate: 0.5
+training:
+  n_epochs: 5

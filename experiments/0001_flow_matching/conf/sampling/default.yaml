@@ -1,0 +1,3 @@
+sampler_steps: 100
+n_eval_samples: 2048
+n_eval_viz: 64

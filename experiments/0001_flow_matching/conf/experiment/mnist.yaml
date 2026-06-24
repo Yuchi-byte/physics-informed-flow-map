@@ -1,6 +1,11 @@
 # @package _global_
-dataset: mnist
-n_steps: 3000
-batch_size: 128
-sampler_steps: 50
+defaults:
+  - override /model: dit
+  - override /dataset: mnist
+
 gate: 240.0
+training:
+  n_epochs: 50
+  batch_size: 128
+sampling:
+  sampler_steps: 50

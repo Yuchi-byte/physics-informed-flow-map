@@ -1,23 +1,13 @@
 defaults:
   - _self_
+  - model: mlp
+  - dataset: gaussians
+  - training: default
+  - sampling: default
   - experiment: gaussians
 
 seed: 0
-dataset: gaussians
-n_steps: 2000
-batch_size: 256
-lr: 0.001
-sampler_steps: 100
-n_eval_samples: 2048
 gate: 0.5
-mlp_width: 256
-mlp_depth: 4
-dit_hidden: 128
-dit_depth: 4
-eval_every: 0
-ckpt_every: 0
-artifact_every: 0
-n_eval_viz: 64
 
 hydra:
   run:
