@@ -37,3 +37,11 @@ disallow_any_explicit = false
 [[tool.mypy.overrides]]
 module = ["mfm.*", "diffusers.*", "torchvision.*", "matplotlib.*", "torchdiffeq.*"]
 ignore_missing_imports = true
+
+[tool.ruff]
+# Never lint/format the vendored reference packages — they are upstream code.
+extend-exclude = [
+  "packages/mfm-meta-flow-map-main",
+  "packages/PBFM",
+  "packages/PhysicsInformedDiffusionModels-main",
+]

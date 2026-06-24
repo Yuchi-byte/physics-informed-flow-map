@@ -36,7 +36,9 @@ def _make_gaussians(
 ) -> Dataset:
     g = torch.Generator().manual_seed(seed)
     angles = 2 * math.pi * torch.arange(n_modes) / n_modes
-    centers = torch.stack([radius * torch.cos(angles), radius * torch.sin(angles)], dim=1)
+    centers = torch.stack(
+        [radius * torch.cos(angles), radius * torch.sin(angles)], dim=1
+    )
     idx = torch.randint(0, n_modes, (n_samples,), generator=g)
     x = centers[idx] + std * torch.randn(n_samples, 2, generator=g)
     labels = torch.zeros(n_samples, dtype=torch.long)
@@ -66,7 +68,7 @@ def _viz_scatter(samples: Tensor, path: Path) -> None:
 
 
 def _viz_grid(samples: Tensor, path: Path) -> None:
-    s = ((samples.detach().cpu().clamp(-1, 1) + 1) / 2)
+    s = (samples.detach().cpu().clamp(-1, 1) + 1) / 2
     n = min(64, len(s))
     ncols = 8
     nrows = (n + ncols - 1) // ncols
@@ -81,7 +83,10 @@ def _viz_grid(samples: Tensor, path: Path) -> None:
 
 DATASETS: dict[str, DatasetSpec] = {
     "gaussians": DatasetSpec(
-        shape=(2,), num_classes=None, make_dataset=_make_gaussians, visualize=_viz_scatter
+        shape=(2,),
+        num_classes=None,
+        make_dataset=_make_gaussians,
+        visualize=_viz_scatter,
     ),
     "mnist": DatasetSpec(
         shape=(1, 32, 32),

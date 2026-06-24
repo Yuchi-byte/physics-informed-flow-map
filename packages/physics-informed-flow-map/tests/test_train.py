@@ -15,7 +15,12 @@ def test_train_runs_and_logs() -> None:
 
     logged: list[dict] = []
     history = train(
-        model, loader, n_steps=50, lr=1e-3, device=torch.device("cpu"), log=lambda **r: logged.append(r)
+        model,
+        loader,
+        n_steps=50,
+        lr=1e-3,
+        device=torch.device("cpu"),
+        log=lambda **r: logged.append(r),
     )
 
     assert len(history) == 50

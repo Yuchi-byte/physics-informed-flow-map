@@ -23,9 +23,7 @@ import torch
 
 def _git(*args: str) -> str:
     try:
-        out = subprocess.run(
-            ["git", *args], capture_output=True, text=True, check=True
-        )
+        out = subprocess.run(["git", *args], capture_output=True, text=True, check=True)
         return out.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return ""
@@ -81,9 +79,7 @@ def start_run(experiment_dir: Path, config: dict[str, Any]) -> Run:
         "python": sys.version.split()[0],
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
-        "gpu": (
-            torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
-        ),
+        "gpu": (torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"),
     }
     (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
     print(f"[{experiment}] run → {run_dir}")

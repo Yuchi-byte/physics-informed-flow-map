@@ -34,9 +34,14 @@ class Config(BaseModel):
         """
         merged = OmegaConf.create(cls().model_dump())
         if variant:
-            merged = cast(DictConfig, OmegaConf.merge(merged, OmegaConf.create(variant)))
+            merged = cast(
+                DictConfig, OmegaConf.merge(merged, OmegaConf.create(variant))
+            )
         if overrides:
-            merged = cast(DictConfig, OmegaConf.merge(merged, OmegaConf.from_dotlist(list(overrides))))
+            merged = cast(
+                DictConfig,
+                OmegaConf.merge(merged, OmegaConf.from_dotlist(list(overrides))),
+            )
         container = OmegaConf.to_container(merged, resolve=True)
         return cls.model_validate(container)
 

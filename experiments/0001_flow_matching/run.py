@@ -50,7 +50,12 @@ VARIANTS: dict[str, dict[str, object]] = {
         "sampler_steps": 50,
         "gate": 240.0,
     },
-    "smoke": {"dataset": "gaussians", "n_steps": 20, "n_eval_samples": 256, "gate": 1e9},
+    "smoke": {
+        "dataset": "gaussians",
+        "n_steps": 20,
+        "n_eval_samples": 256,
+        "gate": 1e9,
+    },
 }
 
 
@@ -83,17 +88,33 @@ def main() -> None:
         dit_depth=cfg.dit_depth,
     ).to(device)
 
-    history = train(model, loader, n_steps=cfg.n_steps, lr=cfg.lr, device=device, num_classes=spec.num_classes, log=run.log)
+    history = train(
+        model,
+        loader,
+        n_steps=cfg.n_steps,
+        lr=cfg.lr,
+        device=device,
+        num_classes=spec.num_classes,
+        log=run.log,
+    )
     final_loss = history[-1]["total"]
 
-    samples = sample(model, cfg.n_eval_samples, spec.shape, sampler_steps=cfg.sampler_steps, device=device)
+    samples = sample(
+        model,
+        cfg.n_eval_samples,
+        spec.shape,
+        sampler_steps=cfg.sampler_steps,
+        device=device,
+    )
     spec.visualize(samples, run.dir / "samples.png")
 
     if cfg.dataset == "gaussians":
         ref = real_reference(dataset, cfg.n_eval_samples, device)
         metric = energy_distance(samples, ref)
         verdict = "pass" if metric < cfg.gate else "fail"
-        run.finish(verdict, energy_distance=metric, final_loss=final_loss, gate=cfg.gate)
+        run.finish(
+            verdict, energy_distance=metric, final_loss=final_loss, gate=cfg.gate
+        )
     else:
         verdict = "pass" if final_loss < cfg.gate else "fail"
         run.finish(verdict, final_loss=final_loss, gate=cfg.gate)

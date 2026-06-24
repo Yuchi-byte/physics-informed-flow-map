@@ -44,7 +44,9 @@ class VelocityMLP(BaseModel):  # type: ignore[misc]
     Ignores t_cond/x_cond/class_labels (unconditional flow matching).
     """
 
-    def __init__(self, dim: int, width: int = 256, depth: int = 4, time_dim: int = 128) -> None:
+    def __init__(
+        self, dim: int, width: int = 256, depth: int = 4, time_dim: int = 128
+    ) -> None:
         super().__init__()
         self.time_embed = TimeEmbedding(time_dim)
         layers: list[nn.Module] = []
@@ -55,7 +57,15 @@ class VelocityMLP(BaseModel):  # type: ignore[misc]
         layers += [nn.Linear(in_dim, dim)]
         self.net = nn.Sequential(*layers)
 
-    def v(self, s: Tensor, t: Tensor, x: Tensor, t_cond: Tensor, x_cond: Tensor, **kwargs: object) -> Tensor:
+    def v(
+        self,
+        s: Tensor,
+        t: Tensor,
+        x: Tensor,
+        t_cond: Tensor,
+        x_cond: Tensor,
+        **kwargs: object,
+    ) -> Tensor:
         temb = self.time_embed(s)
         result: Tensor = self.net(torch.cat([x, temb], dim=-1))
         return result
