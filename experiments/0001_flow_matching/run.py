@@ -1,18 +1,22 @@
-"""Train flow matching on swappable datasets (2D Gaussians, MNIST).
+"""Train flow matching on swappable datasets (2D Gaussians, MNIST) via Hydra.
 
-    uv run python experiments/0001_flow_matching/run.py gaussians
-    uv run python experiments/0001_flow_matching/run.py mnist
-    uv run python experiments/0001_flow_matching/run.py smoke
+    uv run python experiments/0001_flow_matching/run.py                       # gaussians
+    uv run python experiments/0001_flow_matching/run.py experiment=mnist
+    uv run python experiments/0001_flow_matching/run.py experiment=smoke
+    uv run python experiments/0001_flow_matching/run.py experiment=mnist eval_every=500 ckpt_every=1000
 
 Verdict: gaussians → energy distance < gate; mnist → final FM loss < gate.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
+import hydra
 import torch
+from hydra.core.hydra_config import HydraConfig
+from mfm.models.base_model import BaseModel
+from omegaconf import DictConfig
 from pydantic import Field
 
 from physics_informed_flow_map.experiment import Config, start_run
@@ -24,6 +28,8 @@ from physics_informed_flow_map.flow_matching.sample import (
     sample,
 )
 from physics_informed_flow_map.flow_matching.train import train
+
+EXPERIMENT = "0001_flow_matching"
 
 
 class FlowMatchingConfig(Config):
@@ -39,41 +45,23 @@ class FlowMatchingConfig(Config):
     mlp_depth: int = 4
     dit_hidden: int = 128
     dit_depth: int = 4
+    eval_every: int = Field(0, ge=0)
+    ckpt_every: int = Field(0, ge=0)
+    artifact_every: int = Field(0, ge=0)
+    n_eval_viz: int = Field(64, gt=0)
 
 
-VARIANTS: dict[str, dict[str, object]] = {
-    "gaussians": {"dataset": "gaussians", "n_steps": 2000, "gate": 0.5},
-    "mnist": {
-        "dataset": "mnist",
-        "n_steps": 3000,
-        "batch_size": 128,
-        "sampler_steps": 50,
-        "gate": 240.0,
-    },
-    "smoke": {
-        "dataset": "gaussians",
-        "n_steps": 20,
-        "n_eval_samples": 256,
-        "gate": 1e9,
-    },
-}
-
-
-def main() -> None:
-    argv = sys.argv[1:]
-    has_variant = bool(argv) and "=" not in argv[0]
-    variant = argv[0] if has_variant else "gaussians"
-    overrides = argv[1:] if has_variant else argv
-    if variant not in VARIANTS:
-        sys.exit(f"unknown variant {variant!r}; choose from {list(VARIANTS)}")
-    cfg = FlowMatchingConfig.resolve(VARIANTS[variant], overrides)
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(dcfg: DictConfig) -> None:
+    cfg = FlowMatchingConfig.from_dictconfig(dcfg)
     assert isinstance(cfg, FlowMatchingConfig)
 
     spec = DATASETS[cfg.dataset]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(cfg.seed)
 
-    run = start_run(Path(__file__).parent, cfg.dump())
+    run_dir = Path(HydraConfig.get().runtime.output_dir)
+    run = start_run(EXPERIMENT, run_dir, cfg.dump())
 
     dataset = spec.make_dataset()
     loader = torch.utils.data.DataLoader(
@@ -88,6 +76,36 @@ def main() -> None:
         dit_depth=cfg.dit_depth,
     ).to(device)
 
+    def on_eval(m: BaseModel, step: int) -> float | None:
+        samples = sample(
+            m,
+            cfg.n_eval_viz,
+            spec.shape,
+            sampler_steps=cfg.sampler_steps,
+            device=device,
+        )
+        path = run.ckpt_dir.parent / f"samples_{step}.png"
+        spec.visualize(samples, path)
+        run.log_image("samples", path, step=step)
+        if cfg.dataset == "gaussians":
+            ref = real_reference(dataset, cfg.n_eval_viz, device)
+            return energy_distance(samples, ref)
+        return None
+
+    def on_checkpoint(
+        m: BaseModel, step: int, *, is_best: bool = False, is_final: bool = False
+    ) -> None:
+        path = run.save_checkpoint(m, step, dataset=cfg.dataset, config=cfg.dump())
+        aliases: list[str] = []
+        if is_final:
+            aliases.append("final")
+        if is_best:
+            aliases.append("best")
+        if cfg.artifact_every and (step + 1) % cfg.artifact_every == 0:
+            aliases.append("periodic")
+        if aliases:
+            run.log_artifact(path, name=f"{cfg.dataset}-model", aliases=aliases)
+
     history = train(
         model,
         loader,
@@ -96,6 +114,10 @@ def main() -> None:
         device=device,
         num_classes=spec.num_classes,
         log=run.log,
+        eval_every=cfg.eval_every,
+        on_eval=on_eval,
+        ckpt_every=cfg.ckpt_every,
+        on_checkpoint=on_checkpoint,
     )
     final_loss = history[-1]["total"]
 
@@ -106,7 +128,9 @@ def main() -> None:
         sampler_steps=cfg.sampler_steps,
         device=device,
     )
-    spec.visualize(samples, run.dir / "samples.png")
+    final_png = run.ckpt_dir.parent / "samples.png"
+    spec.visualize(samples, final_png)
+    run.log_image("samples_final", final_png)
 
     if cfg.dataset == "gaussians":
         ref = real_reference(dataset, cfg.n_eval_samples, device)

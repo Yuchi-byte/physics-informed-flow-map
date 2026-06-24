@@ -1,0 +1,6 @@
+# @package _global_
+dataset: mnist
+n_steps: 3000
+batch_size: 128
+sampler_steps: 50
+gate: 240.0

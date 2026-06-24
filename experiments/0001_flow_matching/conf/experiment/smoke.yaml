@@ -1,0 +1,5 @@
+# @package _global_
+dataset: gaussians
+n_steps: 20
+n_eval_samples: 256
+gate: 1000000000.0

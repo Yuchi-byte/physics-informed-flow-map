@@ -1,0 +1,4 @@
+# @package _global_
+dataset: gaussians
+n_steps: 2000
+gate: 0.5
