@@ -54,6 +54,7 @@ trained_models/
 
 # Data
 csv/
+data/
 
 # Weights & Biases
 wandb/
