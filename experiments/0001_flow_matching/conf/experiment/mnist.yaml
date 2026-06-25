@@ -5,7 +5,7 @@ defaults:
 
 gate: 240.0
 training:
-  n_epochs: 50
+  n_epochs: 100
   batch_size: 128
 sampling:
-  sampler_steps: 50
+  sampler_steps: 200

@@ -28,7 +28,7 @@ def _load_run_module() -> ModuleType:
     "variant,dataset_name,model_kind,n_epochs",
     [
         ("gaussians", "gaussians", "mlp", 100),
-        ("mnist", "mnist", "dit", 50),
+        ("mnist", "mnist", "dit", 100),
         ("smoke", "gaussians", "mlp", 1),
     ],
 )
