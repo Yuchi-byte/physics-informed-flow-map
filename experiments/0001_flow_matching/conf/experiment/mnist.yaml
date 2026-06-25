@@ -7,5 +7,7 @@ gate: 240.0
 training:
   n_epochs: 100
   batch_size: 128
+  ema:
+    enabled: true
 sampling:
   sampler_steps: 200

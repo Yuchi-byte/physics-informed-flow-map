@@ -74,3 +74,15 @@ def test_ema_decay_out_of_range_rejected() -> None:
     mod = _load_run_module()
     with pytest.raises(ValidationError):
         mod.EmaConfig(decay=1.5)
+
+
+@pytest.mark.parametrize(
+    "variant,ema_enabled",
+    [("gaussians", True), ("mnist", True), ("smoke", False)],
+)
+def test_compose_ema_enabled(variant: str, ema_enabled: bool) -> None:
+    cfg_cls = _load_run_module().FlowMatchingConfig
+    with initialize_config_dir(version_base=None, config_dir=str(CONF)):
+        dcfg = compose(config_name="config", overrides=[f"experiment={variant}"])
+    cfg = cfg_cls.from_dictconfig(dcfg)
+    assert cfg.training.ema.enabled is ema_enabled

@@ -6,5 +6,7 @@ defaults:
 gate: 0.5
 training:
   n_epochs: 100
+  ema:
+    enabled: true
 sampling:
   sampler_steps: 200
