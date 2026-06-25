@@ -5,7 +5,7 @@ Trains an unconditional ``diffusers`` UNet diffusion prior, saves its weights, s
 seismic data ``d`` from a held-out FlatVel-A map with the Deepwave forward operator, and runs
 canonical DPS toward ``d`` to recover the velocity. Plain script (no Hydra). Example:
 
-    uv run python experiments/0002_fwi_tilting/train_diffusion.py --epochs 100 --steps 200 \
+    uv run python experiments/0003_baselines/train_diffusion.py --epochs 100 --steps 200 \
         --guidance 0.5 --n-samples 4
 
 A ``--smoke`` flag runs a tiny end-to-end pass (few epochs, few steps, CPU-friendly) for
