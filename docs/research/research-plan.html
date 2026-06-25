@@ -323,9 +323,11 @@ PDE solver).</p>
   real FlatVel-A map → $d$ of shape (5, 70, 1001). <span class="pill">Done.</span></li>
   <li><span class="ph">M2</span><strong>Meta Flow Map.</strong> Distill the FM prior into a
   steerable few-step flow map; confirm sample quality at low NFE.</li>
-  <li><span class="ph">M3</span><strong>Tilting v1.</strong> DPS-for-flow / MFM-steered posterior
-  sampling on FlatVel-A; recover held-out maps; report MAE/SSIM + uncertainty + #solves vs.
-  a diffusion-DPS baseline.</li>
+  <li><span class="ph">M3 ◐</span><strong>Tilting PoC done.</strong> DPS-for-flow guided sampler
+  (<code>physics.tilt.guided_sample</code>) inverts a held-out FlatVel-A map: data misfit driven
+  to 0.5% of unguided, best-of-4 posterior MAE ~300 m/s, recovered map is a plausible flat-layer
+  model (middle layer is the residual error). <em>Finding: gradient normalization is essential.</em>
+  Remaining for M3 proper: MAE/SSIM + uncertainty + #solves vs. a diffusion-DPS baseline.</li>
   <li><span class="ph">M4</span><strong>Improve the tilt.</strong> Axis-A sweep — OT misfit,
   multi-scale annealing, covariance guidance, schedules; cycle-skipping robustness.</li>
   <li><span class="ph">M5</span><strong>Scale &amp; generalize.</strong> More families, OOD
