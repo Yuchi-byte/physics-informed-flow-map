@@ -42,11 +42,17 @@ def _pdist_mean(a: Tensor, b: Tensor) -> Tensor:
     return torch.cdist(a, b).mean()
 
 
+def _self_pdist_mean(a: Tensor) -> Tensor:
+    """Mean pairwise distance within a set, excluding the (zero) diagonal."""
+    n = a.shape[0]
+    return torch.cdist(a, a).sum() / max(n * (n - 1), 1)
+
+
 def energy_distance(x: Tensor, y: Tensor) -> float:
     """Energy distance between two point sets (lower = closer distributions)."""
     x = x.flatten(1) if x.ndim > 2 else x
     y = y.flatten(1) if y.ndim > 2 else y
-    val = 2 * _pdist_mean(x, y) - _pdist_mean(x, x) - _pdist_mean(y, y)
+    val = 2 * _pdist_mean(x, y) - _self_pdist_mean(x) - _self_pdist_mean(y)
     return float(val.item())
 
 

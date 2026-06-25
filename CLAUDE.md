@@ -57,6 +57,27 @@ This project combines two research approaches into a new method:
 
 **The research goal** is to apply physics-informed constraint losses (PIDM-style) to the flow map framework (MFM-style), so the new package will likely draw the SI/sampler structure from MFM and the physics residual loss terms from PIDM.
 
+## Research framing — three generative camps for FWI
+
+The spine of the field is three camps for generative FWI:
+
+- **Camp A — learn a prior offline, steer it with the wave equation at inference.**
+  DPS, RED-DiffEq. Physics enters only at sampling time.
+- **Camp B — learn a conditional map seismic→velocity in one pass.** DiffusionVel,
+  conditional rectified flow, I2SB. No explicit PDE residual.
+- **Camp C — bake PDE residuals into *training* of the generative model.** PIDM, PBFM.
+
+**Where we are:** this project is **solidly in Camp A** — a learned prior (`experiments/0001`
+flow-matching prior) steered by the wave equation at inference (`experiments/0002` DPS-style
+tilting). We are developing **improvements within Camp A**; physics stays at inference, not
+training. **Camp C is not our target — it is not really applicable to this problem.**
+
+The human-curated research narrative lives in `docs/research/*.html` (`prior-work.html`,
+`research-plan.html`) — **the user curates these directly and requests regeneration; do not
+silently rewrite them.** Keep the camp positioning above consistent with them when it shifts.
+AI-generated journals/reports (`experiments/JOURNAL.md`, `experiments/*/report.md`) are
+**AI-facing** and are NOT kept under `docs/research/`.
+
 ## Environment notes
 
 - Python 3.12, managed with `uv`.

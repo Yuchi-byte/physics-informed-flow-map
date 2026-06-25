@@ -79,3 +79,15 @@ Added an unconditional flow-matching prior over OpenFWI **FlatVel_A** velocity m
 **Next levers (not done):** more families (CurveVel/Fault) for a richer prior;
 conditional `p(v|d)` with PIDM-style physics residuals (needs the seismic data + wave
 forward operator) — the core research goal.
+
+### Reproducibility note (2026-06-25)
+
+The OpenFWI numbers above (energy distance 0.127, 200-vs-500 sampler steps, best val at
+epoch 39 / best-checkpoints at 19 and 39) were produced with CLI eval/ckpt-cadence
+overrides and an external eval path that were **not** committed in the config at the time,
+so a fresh `experiment=openfwi` run could not reproduce them as written. This has been
+wired into the committed setup: `run.py` now computes `energy_distance` for OpenFWI (vs a
+held-out `build_val()` reference), and `conf/experiment/openfwi.yaml` now sets
+`eval_every_epochs: 20` / `ckpt_every_epochs: 20` (the 19/39 cadence). The existing
+numeric claims are left unchanged here — they will be re-run on the committed config; no
+values have been substituted.

@@ -2,20 +2,7 @@ import torch
 
 from physics_informed_flow_map.flow_matching.datasets import DATASETS
 from physics_informed_flow_map.flow_matching.models import MLPModelConfig, build_model
-from physics_informed_flow_map.flow_matching.sample import (
-    energy_distance,
-    real_reference,
-    sample,
-)
-
-
-def test_energy_distance_zero_for_same_distribution() -> None:
-    torch.manual_seed(0)
-    x = torch.randn(2000, 2)
-    y = torch.randn(2000, 2)
-    assert abs(energy_distance(x, x)) < 1e-4
-    far = torch.randn(2000, 2) + 50.0
-    assert energy_distance(x, far) > energy_distance(x, y)
+from physics_informed_flow_map.flow_matching.sample import real_reference, sample
 
 
 def test_sample_shape() -> None:

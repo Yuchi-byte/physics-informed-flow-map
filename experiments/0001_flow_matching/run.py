@@ -166,7 +166,7 @@ def main(dcfg: DictConfig) -> None:
         ):
             aliases.append("periodic")
         path = run.save_checkpoint(
-            m, epoch, dataset=cfg.dataset.name, config=cfg.dump()
+            m, epoch, epoch=epoch, dataset=cfg.dataset.name, config=cfg.dump()
         )
         if aliases:
             run.log_artifact(path, name=f"{cfg.dataset.name}-model", aliases=aliases)
@@ -174,6 +174,7 @@ def main(dcfg: DictConfig) -> None:
             ema_path = run.save_checkpoint(
                 ema_model,
                 epoch,
+                epoch=epoch,
                 suffix="_ema",
                 dataset=cfg.dataset.name,
                 config=cfg.dump(),
@@ -199,7 +200,10 @@ def main(dcfg: DictConfig) -> None:
         ckpt_every_epochs=cfg.training.ckpt_every_epochs,
         on_checkpoint=on_checkpoint,
     )
-    final_loss = history[-1]["total"]
+    # Mean FM loss over the final epoch's steps (one minibatch is too noisy).
+    last_epoch = history[-1]["epoch"]
+    last = [h["total"] for h in history if h["epoch"] == last_epoch]
+    final_loss = sum(last) / len(last)
     eval_model = ema_model if ema_model is not None else model
 
     samples = sample(
@@ -214,14 +218,11 @@ def main(dcfg: DictConfig) -> None:
     run.log_image("samples_final", final_png)
 
     final_val_loss = compute_val_loss(eval_model)
-    if isinstance(cfg.dataset, GaussiansDatasetConfig):
-        ref = real_reference(dataset, cfg.sampling.n_eval_samples, device)
-        metric = energy_distance(samples, ref)
-        run.finish(
-            energy_distance=metric, final_loss=final_loss, val_loss=final_val_loss
-        )
-    else:
-        run.finish(final_loss=final_loss, val_loss=final_val_loss)
+    # Energy distance vs a genuinely held-out reference (build_val), for any dataset
+    # that exposes a held-out split. Generic distributional metric over flattened images.
+    ref = real_reference(cfg.dataset.build_val(), cfg.sampling.n_eval_samples, device)
+    metric = energy_distance(samples, ref)
+    run.finish(energy_distance=metric, final_loss=final_loss, val_loss=final_val_loss)
 
 
 if __name__ == "__main__":

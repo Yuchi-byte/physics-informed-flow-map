@@ -6,6 +6,8 @@ defaults:
 training:
   n_epochs: 100
   batch_size: 64
+  eval_every_epochs: 20
+  ckpt_every_epochs: 20
   ema:
     enabled: true
 sampling:

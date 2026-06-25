@@ -5,6 +5,8 @@ defaults:
 
 training:
   n_epochs: 100
+  eval_every_epochs: 10
+  ckpt_every_epochs: 10
   ema:
     enabled: true
 sampling:
