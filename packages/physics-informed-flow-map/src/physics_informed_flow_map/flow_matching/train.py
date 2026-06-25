@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import torch
+from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
@@ -74,17 +75,35 @@ def train(
     device: torch.device,
     num_classes: int | None = None,
     log: Callable[..., None] | None = None,
+    ema_enabled: bool = False,
+    ema_decay: float = 0.999,
+    ema_warmup_steps: int = 0,
     eval_every_epochs: int = 0,
     on_eval: Callable[[BaseModel, int], float | None] | None = None,
     ckpt_every_epochs: int = 0,
     on_checkpoint: Callable[..., None] | None = None,
-) -> list[dict[str, float]]:
+) -> tuple[list[dict[str, float]], BaseModel | None]:
     label_dim = num_classes or 0
     loss_fn = get_consistency_loss_fn(_fm_loss_cfg(label_dim), Linear(t_max=1.0))
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     model = model.to(device)
     model.train()
+
+    ema: AveragedModel | None = None
+    if ema_enabled:
+        ema = AveragedModel(
+            model,
+            multi_avg_fn=get_ema_multi_avg_fn(ema_decay),  # type: ignore[no-untyped-call]
+            use_buffers=True,
+        )
+
+    def ema_module() -> BaseModel | None:
+        """The averaged model once at least one EMA update has happened, else None."""
+        if ema is not None and int(ema.n_averaged.item()) > 0:
+            return cast(BaseModel, ema.module)
+        return None
+
     history: list[dict[str, float]] = []
     best_metric = math.inf
     step = 0
@@ -101,6 +120,9 @@ def train(
             total.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
+
+            if ema is not None and step >= ema_warmup_steps:
+                ema.update_parameters(model)
 
             rec: dict[str, float] = {
                 "step": float(step),
@@ -120,8 +142,8 @@ def train(
             and eval_every_epochs
             and (epoch + 1) % eval_every_epochs == 0
         ):
-            model.eval()
-            metric = on_eval(model, epoch)
+            eval_model = ema_module() or model
+            metric = on_eval(eval_model, epoch)
             model.train()
             if metric is not None and metric < best_metric:
                 best_metric = metric
@@ -130,8 +152,12 @@ def train(
         if on_checkpoint is not None and (
             is_best or (ckpt_every_epochs and (epoch + 1) % ckpt_every_epochs == 0)
         ):
-            on_checkpoint(model, epoch, is_best=is_best, is_final=False)
+            on_checkpoint(
+                model, epoch, is_best=is_best, is_final=False, ema_model=ema_module()
+            )
 
     if on_checkpoint is not None:
-        on_checkpoint(model, n_epochs - 1, is_best=False, is_final=True)
-    return history
+        on_checkpoint(
+            model, n_epochs - 1, is_best=False, is_final=True, ema_model=ema_module()
+        )
+    return history, ema_module()

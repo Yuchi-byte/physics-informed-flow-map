@@ -18,7 +18,7 @@ def test_train_runs_and_logs() -> None:
     model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=64, depth=3))
 
     logged: list[dict] = []
-    history = train(
+    history, _ = train(
         model,
         loader,
         n_epochs=1,
@@ -67,7 +67,14 @@ def test_train_hooks_fire_on_epoch_cadence() -> None:
         evals.append(epoch)
         return 1.0 / len(evals)  # strictly decreasing -> every eval is a new best
 
-    def on_checkpoint(m: object, epoch: int, *, is_best: bool, is_final: bool) -> None:
+    def on_checkpoint(
+        m: object,
+        epoch: int,
+        *,
+        is_best: bool,
+        is_final: bool,
+        ema_model: object = None,
+    ) -> None:
         ckpts.append((epoch, is_best, is_final))
 
     train(
@@ -95,7 +102,14 @@ def test_train_checkpoint_cadence_without_eval() -> None:
 
     ckpts: list[tuple[int, bool, bool]] = []
 
-    def on_checkpoint(m: object, epoch: int, *, is_best: bool, is_final: bool) -> None:
+    def on_checkpoint(
+        m: object,
+        epoch: int,
+        *,
+        is_best: bool,
+        is_final: bool,
+        ema_model: object = None,
+    ) -> None:
         ckpts.append((epoch, is_best, is_final))
 
     train(
@@ -113,3 +127,58 @@ def test_train_checkpoint_cadence_without_eval() -> None:
     assert [ep for ep, _, is_final in ckpts if not is_final] == [2, 5]
     finals = [c for c in ckpts if c[2]]
     assert len(finals) == 1 and finals[0][0] == 5  # exactly one final, last epoch
+
+
+def test_train_ema_disabled_returns_none() -> None:
+    torch.manual_seed(0)
+    spec = GaussiansDatasetConfig()
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
+    history, ema_model = train(
+        model,
+        _gaussian_loader(96, 32),  # 3 batches -> 3 steps
+        n_epochs=1,
+        lr=1e-3,
+        device=torch.device("cpu"),
+    )
+    assert ema_model is None
+    assert len(history) == 3
+
+
+def test_train_ema_enabled_returns_distinct_module() -> None:
+    torch.manual_seed(0)
+    spec = GaussiansDatasetConfig()
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
+    _, ema_model = train(
+        model,
+        _gaussian_loader(96, 32),  # 3 steps -> EMA lags the raw weights
+        n_epochs=1,
+        lr=1e-3,
+        device=torch.device("cpu"),
+        ema_enabled=True,
+        ema_decay=0.9,
+    )
+    assert ema_model is not None
+    assert ema_model is not model
+    raw = dict(model.named_parameters())
+    differs = any(
+        not torch.equal(p.detach(), raw[name].detach())
+        for name, p in ema_model.named_parameters()
+        if name in raw
+    )
+    assert differs
+
+
+def test_train_ema_warmup_beyond_run_returns_none() -> None:
+    torch.manual_seed(0)
+    spec = GaussiansDatasetConfig()
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
+    _, ema_model = train(
+        model,
+        _gaussian_loader(96, 32),  # 3 steps total
+        n_epochs=1,
+        lr=1e-3,
+        device=torch.device("cpu"),
+        ema_enabled=True,
+        ema_warmup_steps=100,  # never reached -> EMA never updates
+    )
+    assert ema_model is None
