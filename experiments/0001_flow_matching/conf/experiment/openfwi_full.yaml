@@ -1,7 +1,9 @@
 # @package _global_
 # Full-OpenFWI velocity-map prior: all 10 families (~470k maps, ~423k after the
-# 0.1 val split -> ~6.6k steps/epoch at batch 64). 30 epochs ~= 198k steps, ~2x
-# mfm's 100k-step OpenFWI run. lr 1e-4 + 2000-step warmup mirror mfm.
+# 0.1 val split -> ~6.6k steps/epoch at batch 64). 45 epochs ~= 297k steps, mid the
+# corroborated 200k-400k-step band for diffusion/flow priors on OpenFWI (KAUST
+# 2402.06277 & 2412.06959 = 200k; RED-DiffEq 2509.21659 = 400k). lr 1e-4 matches the
+# near-universal value; 2000-step warmup + no-decay schedule are upstream mfm.
 defaults:
   - override /model: dit
   - override /dataset: openfwi
@@ -20,7 +22,7 @@ dataset:
     - Style_B
 
 training:
-  n_epochs: 30
+  n_epochs: 45
   batch_size: 64
   lr: 1.0e-4
   warmup_steps: 2000
