@@ -5,7 +5,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from torch.utils.data import Subset
 
+from physics_informed_flow_map.flow_matching.datasets import OpenFWIDatasetConfig
 from physics_informed_flow_map.flow_matching.openfwi import (
     NATIVE,
     VMAX,
@@ -88,3 +90,16 @@ def test_viz_velocity_writes_png(tmp_path: Path) -> None:
     out = tmp_path / "vel.png"
     viz_velocity(torch.randn(16, 1, 64, 64), out)
     assert out.exists() and out.stat().st_size > 0
+
+
+def test_openfwi_config_split_is_disjoint(tmp_path: Path) -> None:
+    _write_family(tmp_path, "FlatVel_A", "model", n_files=2, rows=4)  # 8 maps total
+    cfg = OpenFWIDatasetConfig(
+        data_dir=str(tmp_path), families=["FlatVel_A"], val_fraction=0.25
+    )
+    train_ds = cfg.build()
+    val_ds = cfg.build_val()
+    assert isinstance(train_ds, Subset) and isinstance(val_ds, Subset)
+    assert len(train_ds) + len(val_ds) == 8
+    assert len(val_ds) == max(1, int(0.25 * 8))  # 2
+    assert set(train_ds.indices).isdisjoint(set(val_ds.indices))

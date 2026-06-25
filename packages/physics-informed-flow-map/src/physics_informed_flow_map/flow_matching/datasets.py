@@ -19,7 +19,7 @@ import torchvision
 import torchvision.transforms as T
 from pydantic import Field
 from torch import Tensor
-from torch.utils.data import Dataset, TensorDataset
+from torch.utils.data import Dataset, Subset, TensorDataset
 
 from physics_informed_flow_map.experiment import Config
 from physics_informed_flow_map.flow_matching.openfwi import (
@@ -46,14 +46,16 @@ def _make_gaussians(
     return TensorDataset(x.float(), labels)
 
 
-def _make_mnist(data_dir: str = "data", image_size: int = 32) -> Dataset:
+def _make_mnist(
+    data_dir: str = "data", image_size: int = 32, train: bool = True
+) -> Dataset:
     transform = T.Compose(
         [T.Resize(image_size), T.ToTensor(), T.Normalize(mean=[0.5], std=[0.5])]
     )
     return cast(
         Dataset,
         torchvision.datasets.MNIST(
-            root=data_dir, train=True, download=True, transform=transform
+            root=data_dir, train=train, download=True, transform=transform
         ),
     )
 
@@ -90,6 +92,7 @@ class GaussiansDatasetConfig(Config):
     radius: float = 4.0
     std: float = 0.5
     n_samples: int = 100_000
+    val_samples: int = 10_000
 
     @property
     def requires_download(self) -> bool:
@@ -105,6 +108,11 @@ class GaussiansDatasetConfig(Config):
 
     def build(self) -> Dataset:
         return _make_gaussians(self.n_samples, self.n_modes, self.radius, self.std)
+
+    def build_val(self) -> Dataset:
+        return _make_gaussians(
+            self.val_samples, self.n_modes, self.radius, self.std, seed=1
+        )
 
     def visualize(self, samples: Tensor, path: Path) -> None:
         _viz_scatter(samples, path)
@@ -132,6 +140,9 @@ class MNISTDatasetConfig(Config):
     def build(self) -> Dataset:
         return _make_mnist(self.data_dir, self.image_size)
 
+    def build_val(self) -> Dataset:
+        return _make_mnist(self.data_dir, self.image_size, train=False)
+
     def visualize(self, samples: Tensor, path: Path) -> None:
         _viz_grid(samples, path)
 
@@ -143,6 +154,7 @@ class OpenFWIDatasetConfig(Config):
     data_dir: str = "data/openfwi"
     families: list[str] = ["FlatVel_A"]
     resolution: int = 64
+    val_fraction: float = 0.1
 
     @property
     def requires_download(self) -> bool:
@@ -156,10 +168,22 @@ class OpenFWIDatasetConfig(Config):
     def num_classes(self) -> int | None:
         return None
 
-    def build(self) -> Dataset:
-        return OpenFWIVelocityDataset(
+    def _split(self) -> tuple[OpenFWIVelocityDataset, list[int], list[int]]:
+        full = OpenFWIVelocityDataset(
             Path(self.data_dir), self.families, self.resolution
         )
+        n = len(full)
+        n_val = max(1, int(self.val_fraction * n))
+        perm = torch.randperm(n, generator=torch.Generator().manual_seed(0)).tolist()
+        return full, perm[n_val:], perm[:n_val]
+
+    def build(self) -> Dataset:
+        full, train_idx, _ = self._split()
+        return Subset(full, train_idx)
+
+    def build_val(self) -> Dataset:
+        full, _, val_idx = self._split()
+        return Subset(full, val_idx)
 
     def visualize(self, samples: Tensor, path: Path) -> None:
         viz_velocity(samples, path)
