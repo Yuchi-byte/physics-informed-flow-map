@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prior Work — Generative Priors & Flow Matching for Full-Waveform Inversion</title>
+<script>
+MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$','$$'],['\\[','\\]']] } };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a22; --ink:#e6e8ec; --muted:#9aa3b2; --line:#262c38;
+    --accent:#6ea8fe; --accent2:#7ee0c0; --warn:#ffcf6e; --a:#9bd0ff;
+    --campA:#6ea8fe; --campB:#7ee0c0; --campC:#ffb3c7;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{display:grid;grid-template-columns:260px 1fr;max-width:1180px;margin:0 auto;gap:0;}
+  nav{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:28px 18px;
+    border-right:1px solid var(--line);font-size:13.5px}
+  nav h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:18px 0 8px}
+  nav a{display:block;color:var(--a);text-decoration:none;padding:3px 0;opacity:.85}
+  nav a:hover{opacity:1}
+  nav .lead{font-weight:700;color:var(--ink);margin-bottom:6px;font-size:15px}
+  main{padding:40px 48px 120px;min-width:0}
+  h1{font-size:30px;line-height:1.2;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 28px;font-size:15px}
+  h2.sec{font-size:23px;margin:46px 0 6px;padding-top:10px;border-top:1px solid var(--line)}
+  h3{font-size:18px;margin:26px 0 6px;color:#dfe6f5}
+  p{margin:10px 0}
+  a{color:var(--a)}
+  code{background:#0b0e13;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:13.5px}
+  .lede{font-size:17px;color:#d4dae6}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:8px;padding:14px 16px;margin:18px 0}
+  .callout.gap{border-left-color:var(--campC)}
+  .callout.key{border-left-color:var(--accent2)}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;border-radius:999px;
+    padding:2px 9px;vertical-align:middle}
+  .tA{background:rgba(110,168,254,.16);color:var(--campA);border:1px solid var(--campA)}
+  .tB{background:rgba(126,224,192,.14);color:var(--campB);border:1px solid var(--campB)}
+  .tC{background:rgba(255,179,199,.14);color:var(--campC);border:1px solid var(--campC)}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#11151c;color:#cdd5e2;font-weight:600}
+  tr:nth-child(even) td{background:#12161e}
+  ul{margin:10px 0 10px 0;padding-left:22px}
+  li{margin:5px 0}
+  .ref{font-size:13.5px;color:#c7cedb}
+  .ref li{margin:7px 0}
+  .pill{font-size:12px;color:var(--muted)}
+  .eq{overflow-x:auto}
+  .foot{margin-top:60px;border-top:1px solid var(--line);padding-top:16px;color:var(--muted);font-size:13px}
+  @media (max-width:880px){.wrap{grid-template-columns:1fr}nav{display:none}main{padding:28px 20px 90px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <div class="lead">Prior Work</div>
+  <div class="pill">Generative priors &amp; flow matching for FWI</div>
+  <h2>Contents</h2>
+  <a href="#overview">0 · Overview</a>
+  <a href="#problem">1 · The FWI problem</a>
+  <a href="#classical">2 · Classical FWI</a>
+  <a href="#supervised">3 · Supervised deep learning</a>
+  <a href="#genmodels">4 · Generative model background</a>
+  <a href="#gen-fwi">5 · Generative models for FWI</a>
+  <a href="#fm-inverse">6 · Flow matching for inverse problems</a>
+  <a href="#physics-gen">7 · Physics-informed generative</a>
+  <a href="#position">8 · Where this project sits</a>
+  <a href="#refs">References</a>
+</nav>
+<main>
+
+<h1>Generative Priors &amp; Flow Matching for Full-Waveform Inversion</h1>
+<p class="sub">Prior-work review · compiled 2026-06-25 · <span class="pill">physics-informed-flow-map</span></p>
+
+<section id="overview">
+<p class="lede">Full-waveform inversion (FWI) recovers a subsurface velocity map from seismic
+recordings by fitting the wave equation to data. It is the canonical large-scale,
+non-convex, ill-posed PDE inverse problem. This page traces prior work from the
+classical optimization formulation, through supervised deep learning, to the modern
+wave of <em>generative priors</em> (diffusion and flow matching), and locates where this
+project — a <strong>flow-map prior with physics-residual training</strong> — fits.</p>
+
+<div class="callout key">
+<strong>The three generative camps (the spine of section&nbsp;5).</strong>
+<span class="tag tA">A</span> learn a prior $p(v)$ offline, steer it with the wave
+equation <em>at inference</em> (DPS, RED-DiffEq). &nbsp;
+<span class="tag tB">B</span> learn a <em>conditional</em> map seismic→velocity in one
+pass (DiffusionVel, rectified flow, I2SB). &nbsp;
+<span class="tag tC">C</span> bake PDE residuals into <em>training</em> of the generative
+model (PIDM, PBFM). Camp&nbsp;C for FWI is the open gap this project targets.
+</div>
+</section>
+
+<!-- ============================================================= -->
+<h2 class="sec" id="problem">1 · The full-waveform inversion problem</h2>
+
+<h3>1.1 Physical setup &amp; forward operator</h3>
+<p>Seismic sources at the surface emit waves that propagate through the subsurface;
+receivers record the resulting wavefields as time series (seismograms). The goal is to
+reconstruct the spatial <strong>velocity model</strong> $m(\mathbf{x})$ (and sometimes
+density / elastic parameters) that governs how waves travel. The forward physics is the
+wave equation — in the acoustic, constant-density approximation:</p>
+<p class="eq">$$\frac{1}{c(\mathbf{x})^2}\,\partial_{tt}\,p(\mathbf{x},t) \;-\; \nabla^2 p(\mathbf{x},t) \;=\; s(\mathbf{x},t),$$</p>
+<p>with $c=\sqrt{1/m}$ the wave speed and $s$ the source. The full elastic case adds shear
+waves via the Navier equation with Lamé parameters. Abstractly, the <em>forward operator</em>
+maps a model to predicted data, $\mathbf{d}=F(\mathbf{m})$ — well-posed but expensive (one
+PDE solve per source). FWI was introduced by
+<a href="#r-tarantola84">Tarantola&nbsp;(1984)</a> and
+<a href="#r-lailly">Lailly&nbsp;(1983)</a>.</p>
+
+<h3>1.2 The inverse problem &amp; why it is hard</h3>
+<p>FWI minimizes a data misfit over the model:</p>
+<p class="eq">$$\min_{\mathbf{m}}\;\tfrac12\,\big\|F(\mathbf{m})-\mathbf{d}_{\text{obs}}\big\|^2 .$$</p>
+<ul>
+  <li><strong>Computational cost.</strong> Each gradient needs forward + adjoint PDE solves
+  for every source, at every iteration — the dominant expense.</li>
+  <li><strong>Non-convexity / cycle skipping.</strong> Oscillatory data makes the misfit
+  riddled with local minima; if the predicted phase is more than half a wavelength off,
+  optimization locks onto a wrong basin (<a href="#r-virieux">Virieux &amp; Operto 2009</a>).</li>
+  <li><strong>Ill-posedness / under-determination.</strong> Limited aperture and bandwidth
+  leave many models consistent with the data — a prior/regularizer is essential.</li>
+</ul>
+<p>These three pressures — cost, non-convexity, ill-posedness — are exactly what learned
+priors aim to relieve.</p>
+
+<!-- ============================================================= -->
+<h2 class="sec" id="classical">2 · Classical (optimization-based) FWI</h2>
+
+<h3>2.1 The adjoint-state gradient &amp; optimization</h3>
+<p>The enabling trick is the <strong>adjoint-state method</strong>
+(<a href="#r-plessix">Plessix 2006</a>; <a href="#r-tarantola84">Tarantola 1984</a>): the
+gradient of the misfit is the zero-lag cross-correlation of the forward wavefield with a
+back-propagated <em>adjoint</em> wavefield, giving the full gradient at the cost of
+~two PDE solves per source (independent of the number of model parameters). The model is
+then updated with steepest descent, nonlinear conjugate gradients, <strong>L-BFGS</strong>,
+or Gauss–Newton / truncated-Newton schemes (<a href="#r-pratt">Pratt et al. 1998</a>;
+<a href="#r-metivier17">Métivier et al. 2017</a>).</p>
+
+<h3>2.2 Cycle skipping &amp; multi-scale strategies</h3>
+<p>The standard defense against local minima is <strong>frequency continuation</strong>:
+invert low frequencies first (smooth, convex-ish), then progressively add higher
+frequencies (<a href="#r-bunks">Bunks et al. 1995</a>;
+<a href="#r-sirgue">Sirgue &amp; Pratt 2004</a>). This demands a good starting model and
+low-frequency data — often unavailable in practice, which is precisely the regime where a
+strong generative prior helps most.</p>
+
+<h3>2.3 Regularization</h3>
+<p>Because the problem is under-determined, classical FWI adds priors as penalties:
+<strong>Tikhonov</strong> ($L^2$ smoothness, ≡ a Gaussian prior) and
+<strong>total-variation (TV)</strong> (edge-preserving, ≡ a Laplacian prior; the ROF model
+of <a href="#r-rof">Rudin–Osher–Fatemi 1992</a>, brought to FWI by
+<a href="#r-linhuang">Lin &amp; Huang 2015</a>). These hand-designed priors are exactly
+what a learned generative prior $p(\mathbf{m})$ replaces with a data-driven one.</p>
+
+<h3>2.4 Misfit-function engineering</h3>
+<p>An orthogonal line attacks cycle skipping by changing the loss, not the model:
+<strong>optimal-transport / Wasserstein</strong> misfits
+(<a href="#r-engquist">Engquist &amp; Froese 2014</a>;
+<a href="#r-metivier16">Métivier et al. 2016</a>), <strong>envelope inversion</strong>
+(<a href="#r-wu">Wu et al. 2014</a>), and <strong>adaptive waveform inversion</strong>
+(<a href="#r-warner">Warner &amp; Guasch 2016</a>) convexify the objective. Note the
+recurring OT theme — it reappears as <em>straight-path transport</em> in flow matching
+(§4).</p>
+
+<h3>2.5 Computational tricks</h3>
+<p><strong>Source encoding / simultaneous sources</strong>
+(<a href="#r-krebs">Krebs et al. 2009</a>) and stochastic / mini-batch FWI amortize the
+per-source PDE cost — the classical analog of stochastic optimization in deep learning.</p>
+
+<div class="callout">
+<strong>Takeaway.</strong> Classical FWI = expensive PDE-constrained optimization with
+hand-built regularizers and starting models. Its three pain points (cost, local minima,
+ill-posedness) motivate everything that follows: learn the prior, or learn the inverse
+map, from data.
+</div>
+
+<!-- ============================================================= -->
+<h2 class="sec" id="supervised">3 · Supervised deep learning &amp; the OpenFWI benchmark</h2>
+<p>The first ML wave learned a <em>direct</em> seismic→velocity map with a CNN, trained on
+paired synthetic data:</p>
+<ul>
+  <li><strong>InversionNet</strong> (<a href="#r-inversionnet">Wu &amp; Lin 2020</a>) —
+  encoder–decoder CNN, the standard supervised baseline.</li>
+  <li><strong>VelocityGAN</strong> (<a href="#r-velocitygan">Zhang &amp; Lin 2022</a>) —
+  adversarially-trained inversion for sharper outputs.</li>
+</ul>
+<p><strong>OpenFWI</strong> (<a href="#r-openfwi">Deng et al., NeurIPS 2022</a>) is the
+community benchmark: 12 families of paired (seismic, velocity) data — FlatVel, CurveVel
+(layered), FlatFault, CurveFault (faulted), Style (realistic), CO2 — scored by MAE, RMSE,
+and SSIM on the velocity map. <em>This project trains its prior on the OpenFWI velocity
+maps.</em> Limitations of pure supervision: needs large paired datasets, gives a single
+point estimate (no uncertainty), and generalizes poorly out-of-distribution — which
+generative methods address.</p>
+
+<table>
+<caption class="pill" style="text-align:left;margin-bottom:6px">Reference OpenFWI accuracy (from the DiffusionVel comparison table; lower MAE / higher SSIM better)</caption>
+<tr><th>Method</th><th>FlatVel-B MAE</th><th>FlatVel-B SSIM</th><th>CurveVel-B MAE</th><th>CurveVel-B SSIM</th></tr>
+<tr><td>Conventional FWI</td><td>0.0846</td><td>0.7580</td><td>0.1760</td><td>0.6019</td></tr>
+<tr><td>InversionNet</td><td>0.0437</td><td>0.9343</td><td>0.1695</td><td>0.6604</td></tr>
+<tr><td>VelocityGAN</td><td>0.0700</td><td>0.8713</td><td>0.1651</td><td>0.6659</td></tr>
+<tr><td><strong>DiffusionVel</strong> <span class="tag tB">B</span></td><td><strong>0.0232</strong></td><td><strong>0.9738</strong></td><td><strong>0.0983</strong></td><td><strong>0.8331</strong></td></tr>
+</table>
+
+<!-- ============================================================= -->
+<h2 class="sec" id="genmodels">4 · Background: diffusion &amp; flow-matching generative models</h2>
+
+<h3>4.1 Score-based diffusion</h3>
+<p>Diffusion models corrupt data with a forward SDE and learn to reverse it via the
+<em>score</em> $\nabla_{\mathbf{x}}\log p_t(\mathbf{x})$
+(<a href="#r-songsde">Song et al. 2021</a>). The same marginals admit a deterministic
+<strong>probability-flow ODE</strong> — the conceptual bridge to flow matching.</p>
+
+<h3>4.2 Flow matching</h3>
+<p><strong>Flow Matching</strong> (<a href="#r-fm">Lipman et al. 2023</a>) trains a velocity
+field $v_\theta(\mathbf{x},t)$ by regressing it against an analytic conditional velocity
+along a fixed probability path — <em>simulation-free</em>. With the Gaussian
+optimal-transport path $\mathbf{x}_t=(1-t)\,\boldsymbol{\epsilon}+t\,\mathbf{x}_1$,
+trajectories are nearly straight, so few ODE steps (NFEs) suffice at sampling:</p>
+<p class="eq">$$\mathcal{L}_{\text{CFM}}(\theta)=\mathbb{E}\big\|v_\theta(\mathbf{x}_t,t)-u_t(\mathbf{x}_t\mid \mathbf{x}_1)\big\|^2,\qquad \frac{d\mathbf{x}}{dt}=v_\theta(\mathbf{x},t).$$</p>
+<p><strong>Rectified Flow</strong> (<a href="#r-rectified">Liu et al. 2023</a>) makes the
+paths literally straight (regress against $\mathbf{x}_1-\mathbf{x}_0$) and "reflows" to
+reach 1–2-step generation; it underpins SD3/FLUX (<a href="#r-sd3">Esser et al. 2024</a>).</p>
+
+<h3>4.3 Stochastic interpolants — the unifying view</h3>
+<p><strong>Stochastic Interpolants</strong>
+(<a href="#r-si">Albergo, Boffi &amp; Vanden-Eijnden 2023</a>) write
+$\mathbf{x}_t=\alpha(t)\mathbf{x}_0+\beta(t)\mathbf{x}_1+\gamma(t)\boldsymbol{\epsilon}$,
+recovering flow matching ($\gamma{=}0$, linear $\alpha,\beta$) and diffusion (VP schedules)
+as special cases. <em>The mfm reference package in this repo implements the linear
+interpolant.</em></p>
+
+<h3>4.4 Consistency models &amp; flow maps</h3>
+<p>To sample in one/few steps, <strong>consistency models</strong>
+(<a href="#r-consistency">Song et al. 2023</a>) learn the flow map to $t{=}0$;
+<strong>flow maps</strong> (<a href="#r-flowmaps">Boffi et al. 2025</a>) generalize to map
+between <em>arbitrary</em> times $\Phi(\mathbf{x}_s,s,t)$.
+<strong>Meta Flow Maps</strong> (<a href="#r-mfm">Potaptchik et al., ICML 2026</a> — the
+<code>mfm</code> package here) make flow maps <em>stochastic</em>: one-step i.i.d. draws of
+the clean sample from any intermediate state, which is exactly the machinery this project
+uses as its generative prior. (Distinct from the similarly-named <em>Meta Flow Matching</em>,
+<a href="#r-mfmwass">Atanackovic et al. 2024</a>, which amortizes over initial
+distributions.)</p>
+
+<table>
+<caption class="pill" style="text-align:left;margin-bottom:6px">Flow matching vs. score-based diffusion</caption>
+<tr><th></th><th>Score-based diffusion</th><th>Flow matching</th></tr>
+<tr><td>Trains</td><td>score $\nabla\log p_t$</td><td>velocity field $v_t$</td></tr>
+<tr><td>Paths</td><td>curved (VP/VE)</td><td>straight / near-straight (OT)</td></tr>
+<tr><td>Sampler</td><td>reverse SDE or PF-ODE</td><td>ODE $d\mathbf{x}/dt=v_\theta$</td></tr>
+<tr><td>NFEs</td><td>20–1000 (≈10–50 distilled)</td><td>10–50; ~1–2 (rectified / flow maps)</td></tr>
+<tr><td>PDE order</td><td>2nd-order (parabolic)</td><td>1st-order (transport)</td></tr>
+</table>
+
+<!-- ============================================================= -->
+<h2 class="sec" id="gen-fwi">5 · Generative models for FWI — the three camps</h2>
+
+<h3><span class="tag tA">A</span>&nbsp; Unconditional prior + inference-time guidance</h3>
+<p>Train a prior $p(\mathbf{m})$ on velocity models offline; at solve time, steer it toward
+data consistency using the wave-equation misfit. The foundation is
+<strong>Diffusion Posterior Sampling</strong> (<a href="#r-dps">Chung et al. 2023</a>),
+which injects a likelihood gradient at each reverse step. In FWI:</p>
+<ul>
+  <li><strong>RED-DiffEq</strong> (<a href="#r-reddiffeq">Shan, Zhu, Lin &amp; Lu, Commun.
+  Phys. 2026</a>) — the paper that prompted this review. An OpenFWI-trained diffusion model
+  used as a <em>regularization-by-denoising</em> term in the FWI objective
+  ($\text{data misfit}+\lambda\cdot\text{denoiser residual}$); not retrained. Trained on
+  OpenFWI, it generalizes <em>zero-shot to Marmousi and Overthrust</em>.</li>
+  <li><strong>Prior-regularized FWI</strong> (<a href="#r-priorfwi">Wang et al. 2023</a>),
+  <strong>Robust Physics-Guided Diffusion</strong> (Wasserstein-2 guidance, 2026), and
+  Bayesian/UQ work from the SLIM group (<strong>WISER</strong>,
+  <a href="#r-wiser">Yin et al. 2024</a>).</li>
+</ul>
+<p class="pill">Strength: principled posterior &amp; uncertainty, no paired data. Cost: a wave-equation solve every guidance step.</p>
+
+<h3><span class="tag tB">B</span>&nbsp; Conditional / amortized (seismic → velocity)</h3>
+<p>Learn a conditional generator; the wave equation only makes the training set, and
+inference is one fast pass. Dominant on OpenFWI leaderboards.</p>
+<ul>
+  <li><strong>DiffusionVel</strong> (<a href="#r-diffusionvel">Wang et al. 2024</a>) —
+  ensemble of conditional + unconditional diffusion; best published conditional OpenFWI
+  numbers (table in §3).</li>
+  <li><strong>Conditional Rectified Flow</strong> (<a href="#r-condrf">Xu et al. 2026</a>)
+  and the <strong>I2SB Schrödinger bridge</strong> (<a href="#r-i2sb">Stankevich &amp;
+  Petrov 2025</a>, code available, all 10 families) — the <em>flow-matching</em> entrants,
+  closest in machinery to this project's prior; straight-path transport gives few-NFE
+  inference.</li>
+  <li>Geological/well-prior conditional diffusion with classifier-free guidance
+  (<a href="#r-geowell">Wang et al. 2024</a>).</li>
+</ul>
+<p class="pill">Strength: fast, benchmark-friendly. Weakness: amortization gap, large paired data, OOD-fragile, point-ish estimates.</p>
+
+<h3><span class="tag tC">C</span>&nbsp; Physics residual in <em>training</em></h3>
+<p>Bake the PDE/constraint residual into the generative model's <em>training</em> objective,
+so samples are physically consistent by construction:</p>
+<ul>
+  <li><strong>PIDM — Physics-Informed Diffusion Models</strong>
+  (<a href="#r-pidm">Bastek, Sun &amp; Kochmann, ICLR 2025</a>) — adds
+  $c_{\text{res}}\,\|R(\hat{\mathbf{x}}_0)\|^2$ on the Tweedie-denoised estimate to the
+  diffusion loss. The <code>PhysicsInformedDiffusionModels</code> reference package here.</li>
+  <li><strong>PBFM — Physics-Based Flow Matching</strong>
+  (<a href="#r-pbfm">Baldan, Liu, Guardone &amp; Thuerey, ICLR 2026</a>) — the
+  <em>flow-matching analog</em> of PIDM: PDE residuals in the FM objective, with
+  conflict-free gradient balancing (ConFIG) and temporal unrolling to close the Jensen gap.
+  Up to 8× lower residual error vs. FM/PIDM on Darcy &amp; Kolmogorov flow. The
+  <code>PBFM</code> reference package here.</li>
+</ul>
+<div class="callout gap">
+<strong>Camp C for FWI is essentially unexplored.</strong> PIDM/PBFM demonstrate
+physics-in-training on fluid/material PDEs, <em>not</em> on seismic FWI / OpenFWI velocity
+maps. Almost every FWI generative paper puts physics at inference (camp A) or nowhere
+(camp B). That intersection — physics-residual <em>training</em> of a flow-matching FWI
+prior — is the opening this project targets.
+</div>
+
+<!-- ============================================================= -->
+<h2 class="sec" id="fm-inverse">6 · Flow matching for inverse problems</h2>
+<p>Because flow models lack an explicit score, the diffusion posterior-sampling machinery had
+to be re-derived for them — directly relevant to a future conditional $p(\mathbf{v}\mid
+\mathbf{d})$ for FWI:</p>
+<ul>
+  <li><strong>FlowDPS</strong> (<a href="#r-flowdps">Kim et al., ICCV 2025</a>) — a
+  flow-version of Tweedie's formula enabling training-free posterior sampling with flow
+  priors.</li>
+  <li><strong>Flow Priors for inverse problems</strong>
+  (<a href="#r-flowpriors">Zhang et al., NeurIPS 2024</a>) — decomposes the MAP objective to
+  avoid costly ODE backprop.</li>
+  <li><strong>FMPS</strong> (<a href="#r-fmps">Song et al. 2024</a>) — a surrogate score in
+  velocity space for posterior sampling.</li>
+  <li><strong>PCFM</strong> (<a href="#r-pcfm">2025</a>) — zero-shot inference-time
+  enforcement of nonlinear physics constraints on pretrained flow models (complementary to
+  PBFM's training-time approach).</li>
+</ul>
+
+<!-- ============================================================= -->
+<h2 class="sec" id="physics-gen">7 · Physics-informed generative models (cross-cutting)</h2>
+<p>The PIDM→PBFM line (§5C) is the core, but the broader family — PINF (physics-informed
+normalizing flows), PCFM, and diffusion/flow guidance with PDE penalties — shares one idea:
+<em>let the governing equations shape the generative density</em>, either through a training
+penalty (PIDM/PBFM/PINF) or an inference-time projection (PCFM, DPS-style guidance). FWI is a
+natural, high-impact, and largely untried target for this family because its forward operator
+(the wave equation) is well-defined and differentiable.</p>
+
+<!-- ============================================================= -->
+<h2 class="sec" id="position">8 · Where this project sits</h2>
+<p>This repository combines:</p>
+<ul>
+  <li>a <strong>Meta-Flow-Map / stochastic-interpolant prior</strong> over OpenFWI velocity
+  maps (the <code>mfm</code> stack; §4.4) — fast, few-step, with built-in posterior
+  sampling; and</li>
+  <li><strong>PIDM/PBFM-style physics-residual training</strong> (§5C) — to be applied to
+  the seismic setting.</li>
+</ul>
+<p>In the camp taxonomy, the unconditional velocity-map prior is already built and tuned
+(clean FlatVel-A samples, energy distance ≈1.4× the real-vs-real floor). The research
+frontier is <strong>camp C for FWI</strong>: physics-in-training on a flow-map prior, with a
+<strong>camp-A comparison</strong> (RED-DiffEq / DPS-style guidance using our prior).</p>
+<div class="callout key">
+<strong>Concrete prerequisite.</strong> Camps A and C both need a differentiable
+<strong>wave-equation forward operator</strong> — the standard PyTorch tool is
+<a href="#r-deepwave">Deepwave</a>. We currently hold velocity maps only (no seismic
+$\mathbf{d}$); $\mathbf{d}$ must be generated via Deepwave or downloaded. That is the next
+scoping step toward the actual inverse problem.
+</div>
+
+<!-- ============================================================= -->
+<h2 class="sec" id="refs">References</h2>
+<ol class="ref">
+<li id="r-tarantola84">Tarantola, A. (1984). <em>Inversion of seismic reflection data in the acoustic approximation.</em> Geophysics 49(8). <a href="https://doi.org/10.1190/1.1441754">doi:10.1190/1.1441754</a></li>
+<li id="r-lailly">Lailly, P. (1983). <em>The seismic inverse problem as a sequence of before-stack migrations.</em> SIAM Conf. on Inverse Scattering.</li>
+<li id="r-virieux">Virieux, J. &amp; Operto, S. (2009). <em>An overview of full-waveform inversion in exploration geophysics.</em> Geophysics 74(6). <a href="https://doi.org/10.1190/1.3238367">doi:10.1190/1.3238367</a></li>
+<li id="r-plessix">Plessix, R.-E. (2006). <em>A review of the adjoint-state method for computing the gradient of a functional.</em> Geophys. J. Int. 167(2). <a href="https://doi.org/10.1111/j.1365-246X.2006.02978.x">doi:10.1111/j.1365-246X.2006.02978.x</a></li>
+<li id="r-pratt">Pratt, R.G., Shin, C. &amp; Hick, G.J. (1998). <em>Gauss–Newton and full Newton methods in frequency-space seismic waveform inversion.</em> GJI 133(2). <a href="https://doi.org/10.1046/j.1365-246X.1998.00498.x">doi:10.1046/j.1365-246X.1998.00498.x</a></li>
+<li id="r-metivier17">Métivier, L. et al. (2017). <em>The truncated Newton method for FWI.</em> SIAM Review 59(1). <a href="https://doi.org/10.1137/16M1093239">doi:10.1137/16M1093239</a></li>
+<li id="r-bunks">Bunks, C. et al. (1995). <em>Multiscale seismic waveform inversion.</em> Geophysics 60(5). <a href="https://doi.org/10.1190/1.1443880">doi:10.1190/1.1443880</a></li>
+<li id="r-sirgue">Sirgue, L. &amp; Pratt, R.G. (2004). <em>Efficient waveform inversion: a strategy for selecting temporal frequencies.</em> Geophysics 69(1). <a href="https://doi.org/10.1190/1.1649391">doi:10.1190/1.1649391</a></li>
+<li id="r-rof">Rudin, L., Osher, S. &amp; Fatemi, E. (1992). <em>Nonlinear total variation based noise removal.</em> Physica D 60.</li>
+<li id="r-linhuang">Lin, Y. &amp; Huang, L. (2015). <em>Acoustic- and elastic-waveform inversion using a modified TV regularization scheme.</em> GJI 200(1).</li>
+<li id="r-engquist">Engquist, B. &amp; Froese, B.D. (2014). <em>Application of the Wasserstein metric to seismic signals.</em> Comm. Math. Sci. 12(5). <a href="https://doi.org/10.4310/CMS.2014.v12.n5.a7">doi:10.4310/CMS.2014.v12.n5.a7</a></li>
+<li id="r-metivier16">Métivier, L. et al. (2016). <em>Measuring the misfit between seismograms using an optimal-transport distance.</em> GJI 205(1). <a href="https://doi.org/10.1093/gji/ggw014">doi:10.1093/gji/ggw014</a></li>
+<li id="r-wu">Wu, R.-S., Luo, J. &amp; Wu, B. (2014). <em>Seismic envelope inversion and modulation signal model.</em> Geophysics 79(3). <a href="https://doi.org/10.1190/geo2013-0294.1">doi:10.1190/geo2013-0294.1</a></li>
+<li id="r-warner">Warner, M. &amp; Guasch, L. (2016). <em>Adaptive waveform inversion: theory.</em> Geophysics 81(6). <a href="https://doi.org/10.1190/geo2015-0387.1">doi:10.1190/geo2015-0387.1</a></li>
+<li id="r-krebs">Krebs, J. et al. (2009). <em>Fast full-wavefield seismic inversion using encoded sources.</em> Geophysics 74(6). <a href="https://doi.org/10.1190/1.3230502">doi:10.1190/1.3230502</a></li>
+<li id="r-inversionnet">Wu, Y. &amp; Lin, Y. (2020). <em>InversionNet: an efficient and accurate data-driven FWI.</em> IEEE Trans. Comput. Imaging. <a href="https://arxiv.org/abs/1811.07875">arXiv:1811.07875</a></li>
+<li id="r-velocitygan">Zhang, Z. &amp; Lin, Y. (2020/22). <em>VelocityGAN: data-driven seismic inversion with adversarial learning.</em> <a href="https://arxiv.org/abs/1809.10262">arXiv:1809.10262</a></li>
+<li id="r-openfwi">Deng, C. et al. (2022). <em>OpenFWI: large-scale benchmark datasets for FWI.</em> NeurIPS Datasets &amp; Benchmarks. <a href="https://arxiv.org/abs/2111.02926">arXiv:2111.02926</a></li>
+<li id="r-songsde">Song, Y. et al. (2021). <em>Score-based generative modeling through SDEs.</em> ICLR. <a href="https://arxiv.org/abs/2011.13456">arXiv:2011.13456</a></li>
+<li id="r-fm">Lipman, Y. et al. (2023). <em>Flow matching for generative modeling.</em> ICLR. <a href="https://arxiv.org/abs/2210.02747">arXiv:2210.02747</a></li>
+<li id="r-rectified">Liu, X., Gong, C. &amp; Liu, Q. (2023). <em>Flow straight and fast: rectified flow.</em> ICLR. <a href="https://arxiv.org/abs/2209.03003">arXiv:2209.03003</a></li>
+<li id="r-sd3">Esser, P. et al. (2024). <em>Scaling rectified flow transformers (SD3).</em> ICML. <a href="https://arxiv.org/abs/2403.03206">arXiv:2403.03206</a></li>
+<li id="r-si">Albergo, M., Boffi, N. &amp; Vanden-Eijnden, E. (2023). <em>Stochastic interpolants: a unifying framework for flows and diffusions.</em> <a href="https://arxiv.org/abs/2303.08797">arXiv:2303.08797</a></li>
+<li id="r-consistency">Song, Y. et al. (2023). <em>Consistency models.</em> ICML. <a href="https://arxiv.org/abs/2303.01469">arXiv:2303.01469</a></li>
+<li id="r-flowmaps">Boffi, N., Albergo, M. &amp; Vanden-Eijnden, E. (2025). <em>How to build a consistency model: learning flow maps via self-distillation.</em> NeurIPS. <a href="https://arxiv.org/abs/2505.18825">arXiv:2505.18825</a></li>
+<li id="r-mfm">Potaptchik, P. et al. (2026). <em>Meta Flow Maps enable scalable reward alignment.</em> ICML. <a href="https://arxiv.org/abs/2601.14430">arXiv:2601.14430</a></li>
+<li id="r-mfmwass">Atanackovic, L. et al. (2024). <em>Meta Flow Matching: integrating vector fields on the Wasserstein manifold.</em> ICML. <a href="https://arxiv.org/abs/2408.14608">arXiv:2408.14608</a></li>
+<li id="r-dps">Chung, H. et al. (2023). <em>Diffusion posterior sampling for general noisy inverse problems.</em> ICLR. <a href="https://arxiv.org/abs/2209.14687">arXiv:2209.14687</a></li>
+<li id="r-reddiffeq">Shan, S., Zhu, M., Lin, Y. &amp; Lu, L. (2026). <em>Regularization by denoising diffusion models for inverse PDE problems, with application to FWI (RED-DiffEq).</em> Communications Physics. <a href="https://arxiv.org/abs/2509.21659">arXiv:2509.21659</a> · <a href="https://doi.org/10.1038/s42005-026-02677-6">doi:10.1038/s42005-026-02677-6</a></li>
+<li id="r-priorfwi">Wang, F. et al. (2023). <em>A prior-regularized FWI using generative diffusion models.</em> <a href="https://arxiv.org/abs/2306.12776">arXiv:2306.12776</a></li>
+<li id="r-wiser">Yin, Z., Orozco, R. &amp; Herrmann, F. (2024). <em>WISER: multimodal variational inference for FWI.</em> Geophysics. <a href="https://arxiv.org/abs/2405.10327">arXiv:2405.10327</a></li>
+<li id="r-diffusionvel">Wang, H. et al. (2024). <em>DiffusionVel: multi-information integrated velocity inversion using diffusion models.</em> <a href="https://arxiv.org/abs/2410.21776">arXiv:2410.21776</a></li>
+<li id="r-condrf">Xu, H. et al. (2026). <em>Conditional rectified-flow-based end-to-end rapid seismic inversion.</em> <a href="https://arxiv.org/abs/2603.15354">arXiv:2603.15354</a></li>
+<li id="r-i2sb">Stankevich, A. &amp; Petrov, I. (2025). <em>Acoustic waveform inversion with image-to-image Schrödinger bridges.</em> Comp. Math. &amp; Math. Phys. <a href="https://arxiv.org/abs/2506.15346">arXiv:2506.15346</a> · <a href="https://github.com/stankevich-mipt/seismic_inversion_via_I2SB">code</a></li>
+<li id="r-geowell">Wang, F., Huang, X. &amp; Alkhalifah, T. (2024). <em>Geological- and well-prior assisted FWI using conditional diffusion models.</em> <a href="https://arxiv.org/abs/2412.06959">arXiv:2412.06959</a></li>
+<li id="r-pidm">Bastek, J.-H., Sun, W. &amp; Kochmann, D. (2025). <em>Physics-informed diffusion models.</em> ICLR. <a href="https://arxiv.org/abs/2403.14404">arXiv:2403.14404</a> · <a href="https://github.com/jhbastek/PhysicsInformedDiffusionModels">code</a></li>
+<li id="r-pbfm">Baldan, G., Liu, Q., Guardone, A. &amp; Thuerey, N. (2026). <em>Physics-based flow matching (Pareto-optimal FM with physics constraints).</em> ICLR. <a href="https://arxiv.org/abs/2506.08604">arXiv:2506.08604</a> · <a href="https://github.com/tum-pbs/PBFM">code</a></li>
+<li id="r-flowdps">Kim, J., Kim, B.S. &amp; Ye, J.C. (2025). <em>FlowDPS: flow-driven posterior sampling for inverse problems.</em> ICCV. <a href="https://arxiv.org/abs/2503.08136">arXiv:2503.08136</a></li>
+<li id="r-flowpriors">Zhang, Y. et al. (2024). <em>Flow priors for linear inverse problems via iterative corrupted trajectory matching.</em> NeurIPS. <a href="https://arxiv.org/abs/2405.18816">arXiv:2405.18816</a></li>
+<li id="r-fmps">Song, K. et al. (2024). <em>Flow matching posterior sampling.</em> <a href="https://arxiv.org/abs/2411.07625">arXiv:2411.07625</a></li>
+<li id="r-pcfm">(2025). <em>Physics-constrained flow matching (PCFM).</em> <a href="https://arxiv.org/abs/2506.04171">arXiv:2506.04171</a></li>
+<li id="r-deepwave">Richardson, A. <em>Deepwave: wave propagation &amp; FWI in PyTorch.</em> <a href="https://github.com/ar4/deepwave">github.com/ar4/deepwave</a></li>
+</ol>
+
+<p class="foot">Companion markdown notes: <code>docs/research/2026-06-25-diffusion-fwi-baselines.md</code>.
+Tags <span class="tag tA">A</span> prior+guidance · <span class="tag tB">B</span> conditional ·
+<span class="tag tC">C</span> physics-in-training. Equations via MathJax.</p>
+
+</main>
+</div>
+</body>
+</html>
