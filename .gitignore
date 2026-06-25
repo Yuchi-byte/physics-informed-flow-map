@@ -71,3 +71,4 @@ wandb/
 
 # Subagent-driven-development scratch (briefs, reports, review packages)
 .superpowers/
+experiments/0002_fwi_tilting/poc_result.png
