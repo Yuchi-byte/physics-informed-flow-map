@@ -60,3 +60,17 @@ def test_incompatible_model_dataset_rejected() -> None:
     cfg_cls = _load_run_module().FlowMatchingConfig
     with pytest.raises(ValidationError):
         cfg_cls(model=DiTModelConfig(), dataset=GaussiansDatasetConfig())
+
+
+def test_ema_config_defaults() -> None:
+    mod = _load_run_module()
+    tcfg = mod.TrainingConfig()
+    assert tcfg.ema.enabled is False
+    assert tcfg.ema.decay == 0.999
+    assert tcfg.ema.warmup_steps == 0
+
+
+def test_ema_decay_out_of_range_rejected() -> None:
+    mod = _load_run_module()
+    with pytest.raises(ValidationError):
+        mod.EmaConfig(decay=1.5)

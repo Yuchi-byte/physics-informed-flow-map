@@ -40,6 +40,12 @@ from physics_informed_flow_map.flow_matching.train import train
 EXPERIMENT = "0001_flow_matching"
 
 
+class EmaConfig(Config):
+    enabled: bool = False
+    decay: float = Field(0.999, gt=0.0, lt=1.0)
+    warmup_steps: int = Field(0, ge=0)
+
+
 class TrainingConfig(Config):
     n_epochs: int = Field(10, gt=0)
     batch_size: int = Field(256, gt=0)
@@ -47,6 +53,10 @@ class TrainingConfig(Config):
     eval_every_epochs: int = Field(0, ge=0)
     ckpt_every_epochs: int = Field(0, ge=0)
     artifact_every_epochs: int = Field(0, ge=0)
+    ema: EmaConfig = EmaConfig()
+
+
+TrainingConfig.model_rebuild()
 
 
 class SamplingConfig(Config):
@@ -123,11 +133,13 @@ def main(dcfg: DictConfig) -> None:
         return None
 
     def on_checkpoint(
-        m: BaseModel, epoch: int, *, is_best: bool = False, is_final: bool = False
+        m: BaseModel,
+        epoch: int,
+        *,
+        is_best: bool = False,
+        is_final: bool = False,
+        ema_model: BaseModel | None = None,
     ) -> None:
-        path = run.save_checkpoint(
-            m, epoch, dataset=cfg.dataset.name, config=cfg.dump()
-        )
         aliases: list[str] = []
         if is_final:
             aliases.append("final")
@@ -138,10 +150,25 @@ def main(dcfg: DictConfig) -> None:
             and (epoch + 1) % cfg.training.artifact_every_epochs == 0
         ):
             aliases.append("periodic")
+        path = run.save_checkpoint(
+            m, epoch, dataset=cfg.dataset.name, config=cfg.dump()
+        )
         if aliases:
             run.log_artifact(path, name=f"{cfg.dataset.name}-model", aliases=aliases)
+        if ema_model is not None:
+            ema_path = run.save_checkpoint(
+                ema_model,
+                epoch,
+                suffix="_ema",
+                dataset=cfg.dataset.name,
+                config=cfg.dump(),
+            )
+            if aliases:
+                run.log_artifact(
+                    ema_path, name=f"{cfg.dataset.name}-model-ema", aliases=aliases
+                )
 
-    history = train(
+    history, ema_model = train(
         model,
         loader,
         n_epochs=cfg.training.n_epochs,
@@ -149,15 +176,19 @@ def main(dcfg: DictConfig) -> None:
         device=device,
         num_classes=cfg.dataset.num_classes,
         log=run.log,
+        ema_enabled=cfg.training.ema.enabled,
+        ema_decay=cfg.training.ema.decay,
+        ema_warmup_steps=cfg.training.ema.warmup_steps,
         eval_every_epochs=cfg.training.eval_every_epochs,
         on_eval=on_eval,
         ckpt_every_epochs=cfg.training.ckpt_every_epochs,
         on_checkpoint=on_checkpoint,
     )
     final_loss = history[-1]["total"]
+    eval_model = ema_model if ema_model is not None else model
 
     samples = sample(
-        model,
+        eval_model,
         cfg.sampling.n_eval_samples,
         cfg.dataset.shape,
         sampler_steps=cfg.sampling.sampler_steps,
