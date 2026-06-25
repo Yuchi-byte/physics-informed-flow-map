@@ -44,4 +44,5 @@ extend-exclude = [
   "packages/mfm-meta-flow-map-main",
   "packages/PBFM",
   "packages/PhysicsInformedDiffusionModels-main",
+  "packages/diffefwi",
 ]
