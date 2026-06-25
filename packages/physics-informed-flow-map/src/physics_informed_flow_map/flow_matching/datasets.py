@@ -22,6 +22,10 @@ from torch import Tensor
 from torch.utils.data import Dataset, TensorDataset
 
 from physics_informed_flow_map.experiment import Config
+from physics_informed_flow_map.flow_matching.openfwi import (
+    OpenFWIVelocityDataset,
+    viz_velocity,
+)
 
 
 def _make_gaussians(
@@ -132,12 +136,43 @@ class MNISTDatasetConfig(Config):
         _viz_grid(samples, path)
 
 
+class OpenFWIDatasetConfig(Config):
+    """OpenFWI subsurface velocity maps, normalised to [-1, 1]."""
+
+    name: Literal["openfwi"] = "openfwi"
+    data_dir: str = "data/openfwi"
+    families: list[str] = ["FlatVel_A"]
+    resolution: int = 64
+
+    @property
+    def requires_download(self) -> bool:
+        return True
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return (1, self.resolution, self.resolution)
+
+    @property
+    def num_classes(self) -> int | None:
+        return None
+
+    def build(self) -> Dataset:
+        return OpenFWIVelocityDataset(
+            Path(self.data_dir), self.families, self.resolution
+        )
+
+    def visualize(self, samples: Tensor, path: Path) -> None:
+        viz_velocity(samples, path)
+
+
 DatasetConfig = Annotated[
-    GaussiansDatasetConfig | MNISTDatasetConfig, Field(discriminator="name")
+    GaussiansDatasetConfig | MNISTDatasetConfig | OpenFWIDatasetConfig,
+    Field(discriminator="name"),
 ]
 
 
 DATASETS: dict[str, DatasetConfig] = {
     "gaussians": GaussiansDatasetConfig(),
     "mnist": MNISTDatasetConfig(),
+    "openfwi": OpenFWIDatasetConfig(),
 }

@@ -29,6 +29,7 @@ def _load_run_module() -> ModuleType:
     [
         ("gaussians", "gaussians", "mlp", 100),
         ("mnist", "mnist", "dit", 100),
+        ("openfwi", "openfwi", "dit", 100),
         ("smoke", "gaussians", "mlp", 1),
     ],
 )
@@ -78,7 +79,7 @@ def test_ema_decay_out_of_range_rejected() -> None:
 
 @pytest.mark.parametrize(
     "variant,ema_enabled",
-    [("gaussians", True), ("mnist", True), ("smoke", False)],
+    [("gaussians", True), ("mnist", True), ("openfwi", True), ("smoke", False)],
 )
 def test_compose_ema_enabled(variant: str, ema_enabled: bool) -> None:
     cfg_cls = _load_run_module().FlowMatchingConfig
@@ -86,3 +87,13 @@ def test_compose_ema_enabled(variant: str, ema_enabled: bool) -> None:
         dcfg = compose(config_name="config", overrides=[f"experiment={variant}"])
     cfg = cfg_cls.from_dictconfig(dcfg)
     assert cfg.training.ema.enabled is ema_enabled
+
+
+def test_compose_openfwi_shape() -> None:
+    cfg_cls = _load_run_module().FlowMatchingConfig
+    with initialize_config_dir(version_base=None, config_dir=str(CONF)):
+        dcfg = compose(config_name="config", overrides=["experiment=openfwi"])
+    cfg = cfg_cls.from_dictconfig(dcfg)
+    assert cfg.dataset.name == "openfwi"
+    assert cfg.dataset.shape == (1, 64, 64)
+    assert cfg.dataset.families == ["FlatVel_A"]

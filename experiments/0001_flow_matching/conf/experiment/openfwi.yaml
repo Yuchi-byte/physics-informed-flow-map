@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - override /model: dit
+  - override /dataset: openfwi
+
+training:
+  n_epochs: 100
+  batch_size: 64
+  ema:
+    enabled: true
+sampling:
+  sampler_steps: 200
+  n_eval_samples: 64
