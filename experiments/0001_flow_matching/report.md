@@ -58,3 +58,24 @@ each variant on an RTX 5090 for *good* samples, not just a passing gate.
 minimal `train()` does not use it) is the standard trick that would most improve
 MNIST sharpness further — worth a proper spec→plan→review pass rather than an
 unattended change.
+
+## Update 2026-06-25 — OpenFWI variant (velocity-map prior)
+
+Added an unconditional flow-matching prior over OpenFWI **FlatVel_A** velocity maps
+(`experiment=openfwi`, DiT 256/6/8 at 64×64, EMA on, 100 epochs). Run
+`runs/0001_flow_matching/2026-06-25T14-18-57Z` (≈22 min on an RTX 5090, ~13.5 s/epoch).
+
+- Samples reproduce the FlatVel_A structure cleanly: flat horizontal layers with
+  velocity increasing with depth (dark→bright), matching real maps.
+- **Energy distance (best EMA checkpoint, epoch 39, 200 sampler steps) = 0.127**
+  vs held-out reals — ≈1.4× the measured real-vs-real floor (0.090).
+- **Sampler steps:** 200 beats 500 (0.127 vs 0.197) — the Euler ODE oversolves past
+  ~200 steps; 200 is the sweet spot. `sampler_steps=200` retained.
+- **Held-out `val_loss` bottomed at epoch 39** (best-checkpoint fired at 19 and 39,
+  not 59/79) — the new validation signal flags convergence/mild overfit after ~40
+  epochs; EMA + best-checkpoint capture the epoch-39 weights regardless.
+- The default `openfwi` variant is already the tuned config; no changes needed.
+
+**Next levers (not done):** more families (CurveVel/Fault) for a richer prior;
+conditional `p(v|d)` with PIDM-style physics residuals (needs the seismic data + wave
+forward operator) — the core research goal.
