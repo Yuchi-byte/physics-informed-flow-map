@@ -36,3 +36,15 @@ def test_run_lifecycle(tmp_path: Path) -> None:
 
     run.log_artifact(path, name="demo-model", aliases=["final"])
     run.finish("pass", final_loss=0.5)
+
+
+def test_save_checkpoint_suffix(tmp_path: Path) -> None:
+    run = start_run("test_exp", tmp_path, {"lr": 0.1})
+    model = torch.nn.Linear(2, 2)
+    path = run.save_checkpoint(model, 5, suffix="_ema", dataset="demo")
+    assert path == run.ckpt_dir / "step_5_ema.pt"
+    assert path.exists()
+    ckpt = torch.load(path, weights_only=False)
+    assert ckpt["step"] == 5
+    assert ckpt["dataset"] == "demo"
+    assert "model" in ckpt

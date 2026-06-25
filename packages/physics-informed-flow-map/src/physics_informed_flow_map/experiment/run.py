@@ -57,9 +57,11 @@ class Run:
         """Log an image file under ``key`` to wandb."""
         self.run.log({key: wandb.Image(str(path))}, step=step)
 
-    def save_checkpoint(self, model: torch.nn.Module, step: int, **meta: Any) -> Path:
-        """Save ``model`` state (+ metadata) to ``checkpoints/step_<step>.pt``."""
-        path = self.ckpt_dir / f"step_{step}.pt"
+    def save_checkpoint(
+        self, model: torch.nn.Module, step: int, *, suffix: str = "", **meta: Any
+    ) -> Path:
+        """Save ``model`` state (+ metadata) to ``checkpoints/step_<step><suffix>.pt``."""
+        path = self.ckpt_dir / f"step_{step}{suffix}.pt"
         torch.save({"model": model.state_dict(), "step": step, **meta}, path)
         return path
 
