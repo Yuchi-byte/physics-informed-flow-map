@@ -318,8 +318,9 @@ PDE solver).</p>
 <ol>
   <li><span class="ph">M0 ✓</span><strong>Unconditional prior.</strong> FM prior on FlatVel-A,
   tuned, with EMA + held-out val. <span class="pill">Done.</span></li>
-  <li><span class="ph">M1</span><strong>Forward operator.</strong> Integrate Deepwave; simulate
-  $d$ from held-out velocity maps; verify $F$ and its gradient (VJP) end-to-end.</li>
+  <li><span class="ph">M1 ✓</span><strong>Forward operator.</strong> Deepwave integrated as
+  <code>physics.forward.simulate</code> (OpenFWI geometry); gradient check passes; verified on a
+  real FlatVel-A map → $d$ of shape (5, 70, 1001). <span class="pill">Done.</span></li>
   <li><span class="ph">M2</span><strong>Meta Flow Map.</strong> Distill the FM prior into a
   steerable few-step flow map; confirm sample quality at low NFE.</li>
   <li><span class="ph">M3</span><strong>Tilting v1.</strong> DPS-for-flow / MFM-steered posterior
