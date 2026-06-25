@@ -555,6 +555,22 @@ wheels = [
 ]
 
 [[package]]
+name = "deepwave"
+version = "0.0.26"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "setuptools" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cb/18/d1b8dac114a0f21aa01f357bf358d9b80441bce88efbf88cd7fb8e83e43b/deepwave-0.0.26.tar.gz", hash = "sha256:19f68eddc7160ff44f766c9c49d3a505a5ed4e4b25b88abd15f84ccf9030739a", size = 173962, upload-time = "2026-01-08T15:46:19.725Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/44/8ef9b4d06fc45eacbacf8f75689e0784dfdf7720458a9e37d4a98754adac/deepwave-0.0.26-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:b4e698eb432c1cad7bbdc312a495eeb405273fd912bdf9d3332f73bbb350552d", size = 14602693, upload-time = "2026-01-08T15:45:55.293Z" },
+    { url = "https://files.pythonhosted.org/packages/78/19/80868e75d92932759ca9cb47fd71a392f99a92d84ef31f765b396cdc9a43/deepwave-0.0.26-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b0bc1bf553f090a5719795f77c59d6387345408d7ba4e4def092831f8e74b758", size = 7001018, upload-time = "2026-01-08T15:45:59.317Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/8a/745d3693eccde2f67911714709f91ef8fc0c38da8d143aee699339992e9a/deepwave-0.0.26-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:dbcda9b71b8bed9dfa13ef6376946d91676cfc339ed4819d6b1136d31d759b28", size = 48034189, upload-time = "2026-01-08T15:46:10.493Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/a0/8f44e287bb5858d7e9786de44af30e0164cb78b3542f22101ebc154b8848/deepwave-0.0.26-py3-none-win_amd64.whl", hash = "sha256:7be9f1a902112b8ee5c13172afcecd238def8d97a7d6b08785b6cf879a59cdf0", size = 22980448, upload-time = "2026-01-08T15:46:17.366Z" },
+]
+
+[[package]]
 name = "defusedxml"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2120,6 +2136,7 @@ version = "0.1.0"
 source = { editable = "packages/physics-informed-flow-map" }
 dependencies = [
     { name = "accelerate" },
+    { name = "deepwave" },
     { name = "diffusers" },
     { name = "dill" },
     { name = "hf-transfer" },
@@ -2145,6 +2162,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "accelerate", specifier = ">=1.13.0" },
+    { name = "deepwave", specifier = ">=0.0.26" },
     { name = "diffusers", specifier = ">=0.31.0.dev0" },
     { name = "dill", specifier = ">=0.4.1" },
     { name = "hf-transfer", specifier = ">=0.1.9" },

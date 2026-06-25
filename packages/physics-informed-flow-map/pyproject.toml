@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
   "accelerate>=1.13.0",
+  "deepwave>=0.0.26",
   "diffusers>=0.31.0.dev0",
   "dill>=0.4.1",
   "hf-transfer>=0.1.9",
