@@ -60,6 +60,44 @@ def test_train_history_is_per_step_with_fm_loss() -> None:
     assert {"total", "fm_loss", "epoch", "step"} == set(history[0].keys())
 
 
+def test_train_warmup_ramps_lr_below_base() -> None:
+    torch.manual_seed(0)
+    spec = GaussiansDatasetConfig()
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
+
+    logged: list[dict] = []
+    train(
+        model,
+        _gaussian_loader(96, 32),  # 3 steps in 1 epoch
+        n_epochs=1,
+        lr=1e-3,
+        device=torch.device("cpu"),
+        warmup_steps=2000,  # far longer than 3 steps -> lr still ramping (0.1x -> 1x)
+        log=lambda **r: logged.append(r),
+    )
+    lr_logged = next(r["train/lr"] for r in logged if "train/lr" in r)
+    # Still in warmup after 3 steps: above the 0.1x floor, below the 1x base lr.
+    assert 1e-4 <= lr_logged < 1e-3
+
+
+def test_train_no_warmup_keeps_base_lr() -> None:
+    torch.manual_seed(0)
+    spec = GaussiansDatasetConfig()
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
+
+    logged: list[dict] = []
+    train(
+        model,
+        _gaussian_loader(96, 32),
+        n_epochs=1,
+        lr=1e-3,
+        device=torch.device("cpu"),
+        log=lambda **r: logged.append(r),
+    )
+    lr_logged = next(r["train/lr"] for r in logged if "train/lr" in r)
+    assert lr_logged == 1e-3
+
+
 def test_train_hooks_fire_on_epoch_cadence() -> None:
     torch.manual_seed(0)
     spec = GaussiansDatasetConfig()

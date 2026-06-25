@@ -6,6 +6,7 @@ import math
 from typing import Any, Callable, cast
 
 import torch
+from torch.optim.lr_scheduler import LinearLR
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -83,6 +84,7 @@ def train(
     device: torch.device,
     num_classes: int | None = None,
     log: Callable[..., None] | None = None,
+    warmup_steps: int = 0,
     ema_enabled: bool = False,
     ema_decay: float = 0.999,
     ema_warmup_steps: int = 0,
@@ -93,6 +95,15 @@ def train(
 ) -> tuple[list[dict[str, float]], BaseModel | None]:
     loss_fn = make_loss_fn(num_classes)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    # Mirror mfm: linear warmup 0.1x -> 1x over warmup_steps, then constant (no decay).
+    # A single LinearLR holds lr at end_factor=1x past total_iters, so it needs no
+    # follow-on ConstantLR. Stepped once per optimizer step.
+    scheduler: LinearLR | None = None
+    if warmup_steps > 0:
+        scheduler = LinearLR(
+            optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_steps
+        )
 
     model = model.to(device)
     model.train()
@@ -131,6 +142,8 @@ def train(
             # clip_grad_norm_ returns the *pre-clip* total grad norm — log it.
             grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0))
             optimizer.step()
+            if scheduler is not None:
+                scheduler.step()
 
             if ema is not None and step >= ema_warmup_steps:
                 ema.update_parameters(model)

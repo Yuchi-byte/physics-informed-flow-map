@@ -50,6 +50,7 @@ class TrainingConfig(Config):
     n_epochs: int = Field(10, gt=0)
     batch_size: int = Field(256, gt=0)
     lr: float = 1e-3
+    warmup_steps: int = Field(0, ge=0)
     eval_every_epochs: int = Field(0, ge=0)
     ckpt_every_epochs: int = Field(0, ge=0)
     artifact_every_epochs: int = Field(0, ge=0)
@@ -192,6 +193,7 @@ def main(dcfg: DictConfig) -> None:
         device=device,
         num_classes=cfg.dataset.num_classes,
         log=run.log,
+        warmup_steps=cfg.training.warmup_steps,
         ema_enabled=cfg.training.ema.enabled,
         ema_decay=cfg.training.ema.decay,
         ema_warmup_steps=cfg.training.ema.warmup_steps,
