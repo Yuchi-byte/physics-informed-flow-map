@@ -222,7 +222,13 @@ def main(dcfg: DictConfig) -> None:
     # that exposes a held-out split. Generic distributional metric over flattened images.
     ref = real_reference(cfg.dataset.build_val(), cfg.sampling.n_eval_samples, device)
     metric = energy_distance(samples, ref)
-    run.finish(energy_distance=metric, final_loss=final_loss, val_loss=final_val_loss)
+    run.finish(
+        **{
+            "val/energy_distance": metric,
+            "val/loss": final_val_loss,
+            "train/final_loss": final_loss,
+        }
+    )
 
 
 if __name__ == "__main__":

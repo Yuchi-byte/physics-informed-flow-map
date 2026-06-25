@@ -23,38 +23,41 @@ def test_train_runs_and_logs() -> None:
     history, _ = train(
         model,
         loader,
-        n_epochs=1,
+        n_epochs=3,
         lr=1e-3,
         device=torch.device("cpu"),
         log=lambda **r: logged.append(r),
     )
 
-    assert len(history) == len(logged) == 50
-    assert all("fm_loss" in r for r in history)
-    assert all("epoch" in r for r in history)
+    # history stays per-step (150 = 3 epochs x 50 batches); logging is per-epoch (3).
+    assert len(history) == 150
+    assert len(logged) == 3
+    assert all("fm_loss" in r and "epoch" in r for r in history)
     assert torch.isfinite(torch.tensor(history[-1]["total"]))
     assert history[-1]["total"] < history[0]["total"]
+    # Each epoch logs the namespaced train metrics.
+    assert all(
+        {"train/loss", "train/grad_norm", "train/lr"} <= r.keys() for r in logged
+    )
 
 
-def test_train_logs_decomposed_losses() -> None:
+def test_train_history_is_per_step_with_fm_loss() -> None:
     torch.manual_seed(0)
     spec = GaussiansDatasetConfig()
     loader = _gaussian_loader(96, 32)  # 3 batches/epoch
     model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
 
-    records: list[dict] = []
-    train(
+    history, _ = train(
         model,
         loader,
         n_epochs=1,
         lr=1e-3,
         device=torch.device("cpu"),
-        log=lambda **r: records.append(r),
     )
-    assert len(records) == 3
-    assert "total" in records[0]
-    assert "fm_loss" in records[0]
-    assert "epoch" in records[0]
+    # The returned history keeps a per-step record (used for the final-epoch mean loss);
+    # the always-zero distill terms are no longer carried.
+    assert len(history) == 3
+    assert {"total", "fm_loss", "epoch", "step"} == set(history[0].keys())
 
 
 def test_train_hooks_fire_on_epoch_cadence() -> None:
@@ -212,4 +215,4 @@ def test_train_logs_val_loss_when_on_eval_returns_metric() -> None:
         eval_every_epochs=1,
         on_eval=lambda m, epoch: 0.5,
     )
-    assert any(r.get("val_loss") == 0.5 for r in records)
+    assert any(r.get("val/loss") == 0.5 for r in records)

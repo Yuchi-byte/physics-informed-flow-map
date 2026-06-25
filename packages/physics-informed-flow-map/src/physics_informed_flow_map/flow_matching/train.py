@@ -115,6 +115,9 @@ def train(
     best_metric = math.inf
     step = 0
     for epoch in range(n_epochs):
+        epoch_loss = 0.0
+        epoch_grad_norm = 0.0
+        epoch_steps = 0
         for x1, labels in tqdm(
             loader, desc=f"epoch {epoch + 1}/{n_epochs}", leave=False
         ):
@@ -125,23 +128,38 @@ def train(
             opt_losses, _ = loss_fn(model, None, x1, labels, step=step)
             total = sum(opt_losses.values())
             total.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            # clip_grad_norm_ returns the *pre-clip* total grad norm — log it.
+            grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0))
             optimizer.step()
 
             if ema is not None and step >= ema_warmup_steps:
                 ema.update_parameters(model)
 
+            total_f = float(total.item())
+            # In pure-FM mode the distill terms are identically 0; `total` is the FM loss.
             rec: dict[str, float] = {
                 "step": float(step),
                 "epoch": float(epoch),
-                "total": float(total.item()),
+                "total": total_f,
+                "fm_loss": float(opt_losses["fm_loss"].item()),
             }
-            for name, value in opt_losses.items():
-                rec[name] = float(value.item())
             history.append(rec)
-            if log is not None:
-                log(**rec)
+            epoch_loss += total_f
+            epoch_grad_norm += grad_norm
+            epoch_steps += 1
             step += 1
+
+        # Log once per epoch (mean loss / grad-norm over the epoch, end-of-epoch lr).
+        if log is not None and epoch_steps:
+            log(
+                step=step,
+                epoch=epoch,
+                **{
+                    "train/loss": epoch_loss / epoch_steps,
+                    "train/grad_norm": epoch_grad_norm / epoch_steps,
+                    "train/lr": optimizer.param_groups[0]["lr"],
+                },
+            )
 
         is_best = False
         if (
@@ -154,7 +172,7 @@ def train(
             model.train()
             if metric is not None:
                 if log is not None:
-                    log(step=step, epoch=epoch, val_loss=metric)
+                    log(step=step, epoch=epoch, **{"val/loss": metric})
                 if metric < best_metric:
                     best_metric = metric
                     is_best = True
