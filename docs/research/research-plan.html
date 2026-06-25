@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Research Plan — Flow-Map Priors with Inference-Time Tilting for FWI</title>
+<script>
+MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] } };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+<style>
+  :root{--bg:#0f1115;--panel:#161a22;--ink:#e6e8ec;--muted:#9aa3b2;--line:#262c38;
+    --accent:#6ea8fe;--accent2:#7ee0c0;--warn:#ffcf6e;--a:#9bd0ff;--gap:#ffb3c7;}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{display:grid;grid-template-columns:262px 1fr;max-width:1180px;margin:0 auto;}
+  nav{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:28px 18px;
+    border-right:1px solid var(--line);font-size:13.5px}
+  nav h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:18px 0 8px}
+  nav a{display:block;color:var(--a);text-decoration:none;padding:3px 0;opacity:.85}
+  nav a:hover{opacity:1}
+  nav .lead{font-weight:700;color:var(--ink);margin-bottom:6px;font-size:15px}
+  main{padding:40px 48px 120px;min-width:0}
+  h1{font-size:29px;line-height:1.2;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 26px;font-size:15px}
+  h2.sec{font-size:22px;margin:46px 0 6px;padding-top:10px;border-top:1px solid var(--line)}
+  h3{font-size:17.5px;margin:24px 0 6px;color:#dfe6f5}
+  h4{font-size:15px;margin:16px 0 4px;color:#cdd5e2}
+  p{margin:10px 0}a{color:var(--a)}
+  code{background:#0b0e13;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:13.5px}
+  .lede{font-size:17px;color:#d4dae6}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:8px;padding:14px 16px;margin:18px 0}
+  .callout.idea{border-left-color:var(--accent2)}
+  .callout.risk{border-left-color:var(--warn)}
+  .callout.gap{border-left-color:var(--gap)}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#11151c;color:#cdd5e2;font-weight:600}
+  tr:nth-child(even) td{background:#12161e}
+  ul,ol{margin:10px 0;padding-left:22px}li{margin:5px 0}
+  .eq{overflow-x:auto}
+  .pill{font-size:12px;color:var(--muted)}
+  .pipe{display:flex;flex-wrap:wrap;align-items:stretch;gap:0;margin:22px 0}
+  .stage{flex:1;min-width:180px;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:14px 14px;position:relative}
+  .stage .n{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .stage h4{margin:4px 0 6px;color:#eaf0fb;font-size:15px}
+  .stage p{font-size:13px;color:#bcc5d4;margin:6px 0 0}
+  .arrow{display:flex;align-items:center;color:var(--accent);font-size:24px;padding:0 8px}
+  .done{position:absolute;top:10px;right:10px;font-size:10px;font-weight:700;color:#0f1115;
+    background:var(--accent2);border-radius:999px;padding:2px 8px}
+  .todo{position:absolute;top:10px;right:10px;font-size:10px;font-weight:700;color:#0f1115;
+    background:var(--warn);border-radius:999px;padding:2px 8px}
+  .axis{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 18px 14px;margin:14px 0}
+  .foot{margin-top:60px;border-top:1px solid var(--line);padding-top:16px;color:var(--muted);font-size:13px}
+  .ph{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;margin-right:8px;
+    background:rgba(110,168,254,.16);color:var(--accent);border:1px solid var(--accent)}
+  @media (max-width:880px){.wrap{grid-template-columns:1fr}nav{display:none}main{padding:28px 20px 90px}
+    .pipe{flex-direction:column}.arrow{transform:rotate(90deg);padding:6px 0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <div class="lead">Research Plan</div>
+  <div class="pill">Flow-map priors + inference-time tilting for FWI</div>
+  <h2>Contents</h2>
+  <a href="#idea">The idea</a>
+  <a href="#pipeline">Pipeline</a>
+  <a href="#math">Formulation</a>
+  <a href="#axisA">Research axis A · tilting signal</a>
+  <a href="#axisB">Research axis B · training</a>
+  <a href="#axisC">Research axis C · architecture</a>
+  <a href="#eval">Evaluation</a>
+  <a href="#milestones">Milestones</a>
+  <a href="#risks">Risks &amp; open questions</a>
+  <a href="#refs">References</a>
+  <h2>See also</h2>
+  <a href="prior-work.html">Prior-work review →</a>
+</nav>
+<main>
+
+<h1>Flow-Map Priors with Inference-Time Tilting for Full-Waveform Inversion</h1>
+<p class="sub">Research plan &amp; idea · 2026-06-25 · <span class="pill">physics-informed-flow-map</span></p>
+
+<!-- ===================================================== -->
+<section id="idea">
+<p class="lede">Learn a generative <strong>prior over subsurface velocity fields</strong> with
+flow matching; distill it into a <strong>Meta Flow Map</strong> for fast, steerable few-step
+sampling; then solve FWI as <strong>inference-time posterior sampling</strong> — tilting the
+prior toward observed seismic data through the wave-equation likelihood. Physics enters at
+inference, not training.</p>
+
+<div class="callout idea">
+<strong>Thesis.</strong> The wave-equation data fit $\|F(v)-d\|^2$ is a
+<em>measurement-dependent likelihood</em>, so it belongs at inference, not in the prior's
+training loss. A <em>flow-map</em> prior makes that inference cheap: posterior sampling needs
+only a handful of forward solves (vs. hundreds for diffusion DPS / RED-DiffEq) and yields
+<em>calibrated uncertainty</em> that supervised inverters (InversionNet) cannot. The bet:
+<strong>match or beat diffusion-based posterior FWI on accuracy, at a fraction of the forward
+solves, with usable uncertainty.</strong>
+</div>
+
+<p>This sits in <a href="prior-work.html#gen-fwi">camp A</a> (prior + inference-time guidance)
+of the prior-work taxonomy — the same family as RED-DiffEq and DPS-FWI — but with a
+<em>flow-map</em> prior and Meta-Flow-Map steering rather than a diffusion model. The
+unconditional velocity prior already exists and is tuned (clean FlatVel-A samples, energy
+distance ≈1.4× the real-vs-real floor).</p>
+</section>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="pipeline">The pipeline</h2>
+<div class="pipe">
+  <div class="stage"><span class="done">built</span><div class="n">Stage 1</div>
+    <h4>Flow-matching prior $p(v)$</h4>
+    <p>Train a flow-matching / stochastic-interpolant velocity field on OpenFWI velocity maps
+    (DiT backbone, EMA, held-out val). <span class="pill">FlatVel-A done; widen to more families.</span></p></div>
+  <div class="arrow">→</div>
+  <div class="stage"><span class="todo">next</span><div class="n">Stage 2</div>
+    <h4>Distill → Meta Flow Map</h4>
+    <p>Distill the FM teacher into a Meta Flow Map: few-step sampling and one-step prediction
+    $\hat v=\Phi(x_t,t,1)$ from any state, plus a differentiable reparametrization for cheap
+    value/reward estimation — the steering substrate.</p></div>
+  <div class="arrow">→</div>
+  <div class="stage"><span class="todo">core</span><div class="n">Stage 3</div>
+    <h4>Tilt toward measurements</h4>
+    <p>Sample the posterior $p(v\mid d)$ by steering the flow map with the wave-equation
+    likelihood (reward $=-\|F(v)-d\|^2$). Output: multiple data-consistent velocity maps with
+    uncertainty.</p></div>
+</div>
+<p class="pill">Prerequisite spanning Stage 3: a differentiable forward operator $F$
+(<a href="#r-deepwave">Deepwave</a>) and seismic data $d$ (download or simulate from held-out
+maps). This is the one missing build.</p>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="math">Formulation</h2>
+<p>Prior interpolant (mfm convention): $x_t=(1-t)\,\epsilon+t\,v$, with $\epsilon\sim\mathcal N(0,I)$,
+$t{=}1$ the clean velocity map; learned velocity field $u_\theta(x_t,t)$, ODE
+$\dot x=u_\theta(x,t)$.</p>
+<p>Target posterior:</p>
+<p class="eq">$$p(v\mid d)\;\propto\;\underbrace{p(v)}_{\text{flow-map prior}}\;\cdot\;\underbrace{\exp\!\Big(-\tfrac{1}{2\sigma^2}\,\|F(v)-d\|^2\Big)}_{\text{wave-equation likelihood (the tilt)}}.$$</p>
+<p>Tilted (guided) velocity used during integration:</p>
+<p class="eq">$$\tilde u(x_t,t)=u_\theta(x_t,t)+g(t)\,\nabla_{x_t}\log p\big(d\mid\hat v(x_t,t)\big),\qquad
+\nabla_{x_t}\log p(d\mid\hat v)=-\tfrac1{\sigma^2}\Big(\tfrac{\partial \hat v}{\partial x_t}\Big)^{\!\top}\!J_F^{\top}\big(F(\hat v)-d\big),$$</p>
+<p>where $\hat v(x_t,t)$ is the flow map's one-shot clean estimate and $J_F=\nabla F$ is the
+forward-operator Jacobian (Deepwave supplies the VJP). This is <a href="#r-dps">DPS</a> ported
+to flow matching (<a href="#r-flowdps">FlowDPS</a>, <a href="#r-fmps">FMPS</a>). Equivalently,
+in Meta-Flow-Map terms the tilt is a <em>reward</em> $r(v)=-\tfrac1{2\sigma^2}\|F(v)-d\|^2$ and
+Stage 3 is reward-steered sampling — exactly the mechanism of the
+<a href="#r-mfm">Meta Flow Maps</a> paper (the <code>mfm</code> package ships
+<code>scripts/sample_steered.py</code>).</p>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="axisA">Research axis A · the tilting signal</h2>
+<p>How to inject the measurement most accurately, stably, and cheaply. This is the heart of the
+project.</p>
+<div class="axis">
+<h4>A1 · Guidance formulation</h4>
+<ul>
+  <li><strong>Gradient guidance (baseline):</strong> flow-Tweedie $\hat v$ + likelihood
+  gradient (<a href="#r-flowdps">FlowDPS</a>, <a href="#r-fmps">FMPS</a>).</li>
+  <li><strong>Covariance-aware guidance:</strong> ΠGDM-style pseudo-inverse / posterior-covariance
+  correction (<a href="#r-pigdm">Song et al. 2023</a>) — usually beats isotropic DPS.</li>
+  <li><strong>Hard data consistency / projection:</strong> enforce constraints exactly at steps
+  (<a href="#r-pcfm">PCFM</a>) rather than soft gradients.</li>
+  <li><strong>Gradient-free / particle methods:</strong> twisted SMC / sequential Monte Carlo over
+  flow trajectories for better-calibrated posteriors when the gradient is unreliable.</li>
+</ul>
+</div>
+<div class="axis">
+<h4>A2 · Misfit design (borrow from classical FWI)</h4>
+<ul>
+  <li><strong>Optimal-transport / Wasserstein misfit</strong> instead of $L^2$ to convexify and
+  fight cycle skipping (<a href="#r-engquist">Engquist &amp; Froese</a>,
+  <a href="#r-metivier">Métivier et al.</a>).</li>
+  <li><strong>Multi-scale / frequency annealing of $d$</strong> during sampling — low
+  frequencies first (<a href="#r-bunks">Bunks et al.</a>), naturally aligned with going
+  early→late in the flow.</li>
+  <li><strong>Envelope / phase misfits</strong> as robust early-stage signals.</li>
+</ul>
+</div>
+<div class="axis">
+<h4>A3 · Schedule &amp; cost</h4>
+<ul>
+  <li><strong>Guidance-strength schedule</strong> $g(t)$: when in the trajectory the tilt is
+  applied, ramping, step-size adaptation.</li>
+  <li><strong>Forward-solve budget:</strong> trade #steps × #sources vs. accuracy; exploit the
+  flow map's few-step sampling to minimize PDE solves (the core efficiency claim — quantify
+  solves-to-accuracy vs. diffusion DPS).</li>
+  <li><strong>MFM value amortization:</strong> use the flow map's differentiable reparametrization
+  to estimate the reward/value without full rollouts (<a href="#r-mfm">Potaptchik et al.</a>).</li>
+</ul>
+</div>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="axisB">Research axis B · training strategy</h2>
+<div class="axis">
+<h4>B1 · Prior training</h4>
+<ul>
+  <li><strong>Data curriculum:</strong> FlatVel → CurveVel → Fault → Style families; per-family
+  vs. one joint multi-family prior (broader prior generalizes better OOD, but harder to fit).</li>
+  <li><strong>Interpolant choice:</strong> linear/OT path (straight, few-step) vs. VP — straightness
+  matters for both sampling cost and guidance stability.</li>
+  <li><strong>Augmentation</strong> (flips, crops, value jitter) for OOD robustness to
+  Marmousi/Overthrust.</li>
+  <li><strong>Already in place:</strong> EMA, held-out validation loss, normalization to $[-1,1]$.</li>
+</ul>
+</div>
+<div class="axis">
+<h4>B2 · Distillation to the Meta Flow Map</h4>
+<ul>
+  <li><strong>GLASS distillation</strong> from the FM teacher (mfm's recommended mode) vs.
+  flow-map self-distillation (<a href="#r-flowmaps">Boffi et al.</a>).</li>
+  <li><strong>Step-count target:</strong> how few steps before posterior quality degrades —
+  the accuracy/cost frontier.</li>
+  <li><strong>Stochastic flow map</strong> (i.i.d. clean draws from any state) to support
+  posterior <em>diversity</em>, not just a point map.</li>
+</ul>
+</div>
+<div class="axis">
+<h4>B3 · What NOT to put in training</h4>
+<ul>
+  <li>The wave-equation data fit (measurement-dependent → inference only).</li>
+  <li>Optional, secondary: a light measurement-<em>independent</em> regularizer (value range,
+  smoothness priors) — mostly already handled by normalization; PBFM/PIDM-style training physics
+  is largely unnecessary for FWI.</li>
+  <li><strong>Complementary baseline:</strong> also train an amortized conditional
+  $p(v\mid d)$ (<a href="prior-work.html#gen-fwi">camp B</a>) to compare tilting against
+  one-pass conditional generation.</li>
+</ul>
+</div>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="axisC">Research axis C · architecture</h2>
+<div class="axis">
+<ul>
+  <li><strong>Backbone:</strong> current DiT (256/6/8, patch 4 @ 64×64); sweep patch size /
+  token count (we found 200 sampler steps optimal, 500 worse — interacts with backbone capacity).
+  Compare DiT vs. SongUNet for fields.</li>
+  <li><strong>Attention backend:</strong> SDPA → FlashAttention-2/3; RoPE positional embedding for
+  spatial generalization.</li>
+  <li><strong>Resolution:</strong> 64 now; native 70; <strong>3D seismic cubes</strong> later
+  (the real target geometry).</li>
+  <li><strong>Latent vs pixel:</strong> a VAE latent space for higher resolution / 3D, vs.
+  pixel-space for fidelity at current scale.</li>
+  <li><strong>Conditioning hooks:</strong> mechanism for the amortized conditional baseline
+  (B3) and for any learned guidance — adaLN-Zero / cross-attention on seismic features or
+  common-image gathers.</li>
+</ul>
+</div>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="eval">Evaluation</h2>
+<table>
+<tr><th>Axis</th><th>What we report</th></tr>
+<tr><td>Accuracy</td><td>MAE, RMSE, SSIM on velocity maps (the OpenFWI-standard metrics), per family.</td></tr>
+<tr><td>Uncertainty (our edge)</td><td>Posterior <strong>diversity</strong> and <strong>calibration</strong> (coverage, CRPS) over multiple draws — what point-estimate inverters can't give.</td></tr>
+<tr><td>Cost (our edge)</td><td><strong>Number of forward (PDE) solves</strong> to reach target accuracy — head-to-head vs. diffusion DPS / RED-DiffEq.</td></tr>
+<tr><td>Generalization</td><td>Train on OpenFWI, test OOD on <strong>Marmousi / Overthrust</strong> (as RED-DiffEq does).</td></tr>
+</table>
+<h4>Baselines</h4>
+<ul>
+  <li><strong>Supervised:</strong> InversionNet, VelocityGAN (OpenFWI official).</li>
+  <li><strong>Conditional generative:</strong> DiffusionVel; I2SB / conditional rectified flow.</li>
+  <li><strong>Posterior / tilting (head-to-head):</strong> RED-DiffEq, DPS-FWI — same camp,
+  diffusion prior. Our claim is parity-or-better accuracy at far fewer forward solves, with
+  calibrated uncertainty.</li>
+</ul>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="milestones">Milestones</h2>
+<ol>
+  <li><span class="ph">M0 ✓</span><strong>Unconditional prior.</strong> FM prior on FlatVel-A,
+  tuned, with EMA + held-out val. <span class="pill">Done.</span></li>
+  <li><span class="ph">M1</span><strong>Forward operator.</strong> Integrate Deepwave; simulate
+  $d$ from held-out velocity maps; verify $F$ and its gradient (VJP) end-to-end.</li>
+  <li><span class="ph">M2</span><strong>Meta Flow Map.</strong> Distill the FM prior into a
+  steerable few-step flow map; confirm sample quality at low NFE.</li>
+  <li><span class="ph">M3</span><strong>Tilting v1.</strong> DPS-for-flow / MFM-steered posterior
+  sampling on FlatVel-A; recover held-out maps; report MAE/SSIM + uncertainty + #solves vs.
+  a diffusion-DPS baseline.</li>
+  <li><span class="ph">M4</span><strong>Improve the tilt.</strong> Axis-A sweep — OT misfit,
+  multi-scale annealing, covariance guidance, schedules; cycle-skipping robustness.</li>
+  <li><span class="ph">M5</span><strong>Scale &amp; generalize.</strong> More families, OOD
+  Marmousi/Overthrust, then 3D.</li>
+</ol>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="risks">Risks &amp; open questions</h2>
+<div class="callout risk">
+<ul style="margin:0">
+  <li><strong>Cycle skipping survives the prior.</strong> $\|F(v)-d\|^2$ is non-convex in $v$
+  even with a strong prior; the tilt may stall in wrong basins → need misfit design (A2) +
+  schedules (A3).</li>
+  <li><strong>DPS approximation × flow-map.</strong> Guidance uses the one-shot $\hat v$ as a
+  likelihood proxy; with a <em>few-step</em> flow-map prior this approximation may be looser than
+  with a full diffusion model — quantify the quality/cost trade.</li>
+  <li><strong>Forward-solve cost.</strong> Differentiable wave solves dominate; the whole pitch
+  rests on the flow map needing few of them — must be measured, not assumed.</li>
+  <li><strong>Data availability.</strong> Real seismic $d$ (~600 GB) was skipped; simulating $d$
+  with Deepwave from velocity maps is the pragmatic start (and gives clean, controllable
+  experiments).</li>
+  <li><strong>Posterior calibration.</strong> Are the tilted draws a faithful posterior, or just
+  diverse point estimates? Needs explicit calibration metrics (Eval).</li>
+</ul>
+</div>
+
+<div class="callout gap">
+<strong>Where the novelty lives.</strong> Camp-A posterior FWI is established for
+<em>diffusion</em> priors (RED-DiffEq, DPS-FWI). Doing it with a <strong>Meta-Flow-Map
+prior</strong> — exploiting few-step sampling and amortized reward steering for
+<em>cheap, calibrated</em> posterior FWI — is the open contribution, complemented by the
+axis-A research on the tilting signal itself.
+</div>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="refs">References</h2>
+<ol class="ref" style="font-size:13.5px;color:#c7cedb">
+<li id="r-mfm">Potaptchik, P. et al. (2026). <em>Meta Flow Maps enable scalable reward alignment.</em> ICML. <a href="https://arxiv.org/abs/2601.14430">arXiv:2601.14430</a></li>
+<li id="r-flowmaps">Boffi, N., Albergo, M. &amp; Vanden-Eijnden, E. (2025). <em>Learning flow maps via self-distillation.</em> NeurIPS. <a href="https://arxiv.org/abs/2505.18825">arXiv:2505.18825</a></li>
+<li id="r-fm">Lipman, Y. et al. (2023). <em>Flow matching for generative modeling.</em> ICLR. <a href="https://arxiv.org/abs/2210.02747">arXiv:2210.02747</a></li>
+<li id="r-dps">Chung, H. et al. (2023). <em>Diffusion posterior sampling for general noisy inverse problems.</em> ICLR. <a href="https://arxiv.org/abs/2209.14687">arXiv:2209.14687</a></li>
+<li id="r-pigdm">Song, J. et al. (2023). <em>Pseudoinverse-guided diffusion models for inverse problems (ΠGDM).</em> ICLR. <a href="https://openreview.net/forum?id=9_gsMA8MRKQ">openreview</a></li>
+<li id="r-flowdps">Kim, J., Kim, B.S. &amp; Ye, J.C. (2025). <em>FlowDPS: flow-driven posterior sampling.</em> ICCV. <a href="https://arxiv.org/abs/2503.08136">arXiv:2503.08136</a></li>
+<li id="r-fmps">Song, K. et al. (2024). <em>Flow matching posterior sampling.</em> <a href="https://arxiv.org/abs/2411.07625">arXiv:2411.07625</a></li>
+<li id="r-pcfm">(2025). <em>Physics-constrained flow matching (PCFM).</em> <a href="https://arxiv.org/abs/2506.04171">arXiv:2506.04171</a></li>
+<li id="r-reddiffeq">Shan, S. et al. (2026). <em>RED-DiffEq: regularization by denoising diffusion for FWI.</em> Commun. Phys. <a href="https://arxiv.org/abs/2509.21659">arXiv:2509.21659</a></li>
+<li id="r-engquist">Engquist, B. &amp; Froese, B.D. (2014). <em>Wasserstein metric for seismic signals.</em> CMS 12(5).</li>
+<li id="r-metivier">Métivier, L. et al. (2016). <em>Optimal-transport misfit for FWI.</em> GJI 205(1). <a href="https://doi.org/10.1093/gji/ggw014">doi</a></li>
+<li id="r-bunks">Bunks, C. et al. (1995). <em>Multiscale seismic waveform inversion.</em> Geophysics 60(5).</li>
+<li id="r-openfwi">Deng, C. et al. (2022). <em>OpenFWI benchmark datasets.</em> NeurIPS D&amp;B. <a href="https://arxiv.org/abs/2111.02926">arXiv:2111.02926</a></li>
+<li id="r-deepwave">Richardson, A. <em>Deepwave: wave propagation &amp; FWI in PyTorch.</em> <a href="https://github.com/ar4/deepwave">github.com/ar4/deepwave</a></li>
+</ol>
+
+<p class="foot">Companion: <a href="prior-work.html">prior-work review</a> ·
+<code>docs/research/2026-06-25-diffusion-fwi-baselines.md</code>. M0 done; M1 (Deepwave) is the
+next concrete build. Each milestone gets its own spec→plan→implementation cycle.</p>
+
+</main>
+</div>
+</body>
+</html>
