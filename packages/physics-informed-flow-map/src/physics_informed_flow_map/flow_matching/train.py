@@ -66,6 +66,14 @@ def _fm_loss_cfg(label_dim: int) -> _Cfg:
     )
 
 
+def make_loss_fn(num_classes: int | None) -> Callable[..., Any]:
+    """The pure-FM consistency loss used for both training and validation."""
+    return cast(
+        Callable[..., Any],
+        get_consistency_loss_fn(_fm_loss_cfg(num_classes or 0), Linear(t_max=1.0)),
+    )
+
+
 def train(
     model: BaseModel,
     loader: DataLoader,
@@ -83,8 +91,7 @@ def train(
     ckpt_every_epochs: int = 0,
     on_checkpoint: Callable[..., None] | None = None,
 ) -> tuple[list[dict[str, float]], BaseModel | None]:
-    label_dim = num_classes or 0
-    loss_fn = get_consistency_loss_fn(_fm_loss_cfg(label_dim), Linear(t_max=1.0))
+    loss_fn = make_loss_fn(num_classes)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     model = model.to(device)
@@ -145,9 +152,12 @@ def train(
             eval_model = ema_module() or model
             metric = on_eval(eval_model, epoch)
             model.train()
-            if metric is not None and metric < best_metric:
-                best_metric = metric
-                is_best = True
+            if metric is not None:
+                if log is not None:
+                    log(step=step, epoch=epoch, val_loss=metric)
+                if metric < best_metric:
+                    best_metric = metric
+                    is_best = True
 
         if on_checkpoint is not None and (
             is_best or (ckpt_every_epochs and (epoch + 1) % ckpt_every_epochs == 0)

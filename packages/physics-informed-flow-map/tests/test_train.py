@@ -1,9 +1,11 @@
+import math
+
 import torch
 from torch.utils.data import DataLoader
 
 from physics_informed_flow_map.flow_matching.datasets import GaussiansDatasetConfig
 from physics_informed_flow_map.flow_matching.models import MLPModelConfig, build_model
-from physics_informed_flow_map.flow_matching.train import train
+from physics_informed_flow_map.flow_matching.train import make_loss_fn, train
 
 
 def _gaussian_loader(n_samples: int, batch_size: int) -> DataLoader:
@@ -182,3 +184,32 @@ def test_train_ema_warmup_beyond_run_returns_none() -> None:
         ema_warmup_steps=100,  # never reached -> EMA never updates
     )
     assert ema_model is None
+
+
+def test_make_loss_fn_produces_finite_loss() -> None:
+    torch.manual_seed(0)
+    spec = GaussiansDatasetConfig()
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
+    loss_fn = make_loss_fn(None)
+    x1, labels = next(iter(_gaussian_loader(32, 16)))
+    opt_losses, _ = loss_fn(model, None, x1, labels, step=0)
+    total = sum(opt_losses.values())
+    assert math.isfinite(float(total.item()))
+
+
+def test_train_logs_val_loss_when_on_eval_returns_metric() -> None:
+    torch.manual_seed(0)
+    spec = GaussiansDatasetConfig()
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
+    records: list[dict] = []
+    train(
+        model,
+        _gaussian_loader(96, 32),  # 3 batches / epoch
+        n_epochs=1,
+        lr=1e-3,
+        device=torch.device("cpu"),
+        log=lambda **r: records.append(r),
+        eval_every_epochs=1,
+        on_eval=lambda m, epoch: 0.5,
+    )
+    assert any(r.get("val_loss") == 0.5 for r in records)
