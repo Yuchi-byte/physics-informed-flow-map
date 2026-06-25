@@ -3,7 +3,7 @@
 ``start_run`` opens a wandb run (config = resolved experiment config + git/env
 metadata) and prepares a local ``checkpoints/`` dir inside the Hydra-provided run
 directory. :class:`Run` streams scalars (:meth:`log`), images (:meth:`log_image`),
-and model checkpoints/artifacts to it; :meth:`finish` records the verdict in the
+and model checkpoints/artifacts to it; :meth:`finish` records summary scalars in the
 run summary. No local JSON is written — wandb is the single source of truth.
 """
 
@@ -71,13 +71,12 @@ class Run:
         artifact.add_file(str(path))
         self.run.log_artifact(artifact, aliases=aliases)
 
-    def finish(self, verdict: str, **summary: Any) -> None:
-        """Record the verdict + summary scalars and close the wandb run."""
-        self.run.summary["verdict"] = verdict
+    def finish(self, **summary: Any) -> None:
+        """Record summary scalars to the wandb run summary and close the run."""
         for key, value in summary.items():
             self.run.summary[key] = value
         extra = " ".join(f"{key}={value}" for key, value in summary.items())
-        print(f"[{self.experiment}] verdict={verdict} {extra}".rstrip())
+        print(f"[{self.experiment}] {extra}".rstrip())
         self.run.finish()
 
 

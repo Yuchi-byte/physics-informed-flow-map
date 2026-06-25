@@ -7,7 +7,6 @@ defaults:
   - experiment: gaussians
 
 seed: 0
-gate: 0.5
 
 hydra:
   run:

@@ -5,7 +5,7 @@
     uv run python experiments/0001_flow_matching/run.py experiment=smoke
     uv run python experiments/0001_flow_matching/run.py experiment=mnist training.n_epochs=80 training.eval_every_epochs=5
 
-Verdict: gaussians -> energy distance < gate; mnist -> final FM loss < gate.
+Logs energy distance (gaussians) / final FM loss (image datasets) as run summary scalars.
 """
 
 from __future__ import annotations
@@ -67,7 +67,6 @@ class SamplingConfig(Config):
 
 class FlowMatchingConfig(Config):
     seed: int = 0
-    gate: float = 0.5
     model: ModelConfig = MLPModelConfig()
     dataset: DatasetConfig = GaussiansDatasetConfig()
     training: TrainingConfig = TrainingConfig()
@@ -201,13 +200,9 @@ def main(dcfg: DictConfig) -> None:
     if isinstance(cfg.dataset, GaussiansDatasetConfig):
         ref = real_reference(dataset, cfg.sampling.n_eval_samples, device)
         metric = energy_distance(samples, ref)
-        verdict = "pass" if metric < cfg.gate else "fail"
-        run.finish(
-            verdict, energy_distance=metric, final_loss=final_loss, gate=cfg.gate
-        )
+        run.finish(energy_distance=metric, final_loss=final_loss)
     else:
-        verdict = "pass" if final_loss < cfg.gate else "fail"
-        run.finish(verdict, final_loss=final_loss, gate=cfg.gate)
+        run.finish(final_loss=final_loss)
 
 
 if __name__ == "__main__":

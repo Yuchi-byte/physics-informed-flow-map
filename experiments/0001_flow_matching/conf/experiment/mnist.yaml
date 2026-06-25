@@ -3,7 +3,6 @@ defaults:
   - override /model: dit
   - override /dataset: mnist
 
-gate: 240.0
 training:
   n_epochs: 100
   batch_size: 128

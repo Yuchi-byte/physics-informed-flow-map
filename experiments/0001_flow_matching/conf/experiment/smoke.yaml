@@ -3,7 +3,6 @@ defaults:
   - override /model: mlp
   - override /dataset: gaussians
 
-gate: 1000000000.0
 training:
   n_epochs: 1
 sampling:

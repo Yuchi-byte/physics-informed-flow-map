@@ -35,7 +35,7 @@ def test_run_lifecycle(tmp_path: Path) -> None:
     run.log_image("samples", img, step=1)
 
     run.log_artifact(path, name="demo-model", aliases=["final"])
-    run.finish("pass", final_loss=0.5)
+    run.finish(final_loss=0.5)
 
 
 def test_save_checkpoint_suffix(tmp_path: Path) -> None:
