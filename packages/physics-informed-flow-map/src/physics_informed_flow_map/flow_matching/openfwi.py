@@ -51,7 +51,7 @@ class OpenFWIVelocityDataset(Dataset):
     def __getitem__(self, idx: int) -> tuple[Tensor, int]:
         path, row = self.index[idx]
         arr = np.load(path, mmap_mode="r")[row]  # (1, 70, 70) float32
-        x = torch.from_numpy(np.ascontiguousarray(arr)).float()
+        x = torch.from_numpy(arr.copy()).float()
         x = ((x - VMIN) / (VMAX - VMIN) * 2.0 - 1.0).clamp(-1.0, 1.0)
         if self.resolution != NATIVE:
             x = F.interpolate(
