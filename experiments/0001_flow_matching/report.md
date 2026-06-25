@@ -36,3 +36,25 @@ recalibration was required.
 Status: closed
 
 Adopted — 8 modes recovered, energy distance 0.0096 < 0.5 gate, verdict pass.
+
+## Update 2026-06-25 — epoch loop + hyperparameter tuning
+
+Re-ran on the epoch-based loop (`training.n_epochs`) + hierarchical configs, tuning
+each variant on an RTX 5090 for *good* samples, not just a passing gate.
+
+**Gaussians** (`runs/0001_flow_matching/2026-06-25T00-45-58Z`):
+- Real-vs-real energy-distance noise floor (n=2048) measured at **~0.0050**.
+- Sweep: 5 epochs → E=0.066; 30 epochs → 0.033; **100 epochs / 200 sampler steps → E=0.0104** (~2× floor).
+- Samples: 8 tight, evenly-spaced, well-separated modes; none merged/missing/spurious.
+- Locked into the `gaussians` variant: `training.n_epochs=100`, `sampling.sampler_steps=200`.
+
+**MNIST** (`runs/0001_flow_matching/2026-06-25T00-53-06Z`, wandb run `dtcrah9l`):
+- Baseline (DiT 128/4, 50 epochs, 50 sampler steps): final loss 115; digits readable but ~half malformed.
+- **Tuned (DiT hidden=256/depth=6/heads=8, 100 epochs, 200 sampler steps): final loss ~107; clean recognizable digits across all 10 classes.**
+- The quality jump came mainly from model capacity + sampler steps, not extra epochs.
+- Locked into the `mnist` variant (`conf/model/dit.yaml` enlarged; `n_epochs=100`, `sampler_steps=200`).
+
+**Next lever (not done):** EMA of the velocity weights (mfm has the machinery; our
+minimal `train()` does not use it) is the standard trick that would most improve
+MNIST sharpness further — worth a proper spec→plan→review pass rather than an
+unattended change.
