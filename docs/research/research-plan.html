@@ -73,6 +73,7 @@ MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$
   <a href="#axisA">Research axis A · tilting signal</a>
   <a href="#axisB">Research axis B · training</a>
   <a href="#axisC">Research axis C · architecture</a>
+  <a href="#multimeas">Direction · multi-measurement tilting</a>
   <a href="#eval">Evaluation</a>
   <a href="#milestones">Milestones</a>
   <a href="#risks">Risks &amp; open questions</a>
@@ -252,6 +253,49 @@ project.</p>
 </div>
 
 <!-- ===================================================== -->
+<h2 class="sec" id="multimeas">Research direction · multi-measurement tilting (heterogeneous knowledge)</h2>
+<p>Real surveys carry more than seismic data: sparse-but-accurate <strong>well logs</strong>, a
+smooth <strong>background/migration velocity</strong>, potential-field data
+(<strong>gravity</strong>), and qualitative <strong>geological priors</strong>. Tilting extends
+to all of them <em>for free</em>: the joint posterior is a product of likelihoods, one per
+source, so each observation is just <strong>one more tilt term</strong>:</p>
+<p class="eq">$$p\big(v\mid d_{\text{seis}},d_{\text{well}},d_{\text{grav}},\dots\big)\;\propto\;
+p(v)\,\prod_k \exp\!\Big(-\tfrac{1}{2\sigma_k^2}\,\|F_k(v)-d_k\|^2\Big),\qquad
+r(v)=-\sum_k \tfrac{1}{2\sigma_k^2}\|F_k(v)-d_k\|^2 .$$</p>
+<p>Each source contributes a forward operator $F_k$ and a precision $1/\sigma_k^2$: $F_{\text{seis}}$
+is the wave equation; well logs are a sampling/observation operator giving near-<em>hard</em>
+point constraints at borehole locations; gravity is its own linear forward map; background
+velocity acts as a low-frequency pull. The geological prior is already $p(v)$ itself.</p>
+
+<div class="callout idea">
+<strong>Why this is a strong fit — and a contribution.</strong> The recent multi-information
+work, <a href="#r-diffusionvel">DiffusionVel</a> (Zhang, Li &amp; Huang 2024), fuses seismic +
+well logs + geology by training <em>three separate</em> diffusion models and
+<strong>hand-weight-averaging their clean-sample predictions</strong> at sampling. A tilting
+framework over a <em>single</em> flow-map prior subsumes this more cleanly: add one likelihood
+tilt per source, with no extra models and no retraining — sources are toggled or reweighted at
+inference by changing $\sigma_k$. This is a more principled (product-of-experts) fusion than
+weighted averaging, and it inherits the flow map's few-step efficiency.
+</div>
+
+<h4>Open questions this direction raises</h4>
+<ul>
+  <li><strong>Source weighting / calibration:</strong> how to set or learn the per-source
+  precisions $\sigma_k$; do mis-specified weights bias the posterior?</li>
+  <li><strong>Hard vs soft constraints:</strong> well logs are nearly exact — enforce by
+  projection (hard data consistency, <a href="#r-pcfm">PCFM</a>) or as a tight Gaussian tilt?</li>
+  <li><strong>Conflicting sources:</strong> when seismic and well data disagree, does the
+  product-of-experts posterior degrade gracefully (and report the disagreement as uncertainty)?</li>
+  <li><strong>Schedule interaction:</strong> different sources may be best injected at different
+  points in the flow (background early/low-freq, well logs late/high-freq) — couples to axis A3.</li>
+  <li><strong>Ablation:</strong> quantify the value each added measurement contributes
+  (accuracy + uncertainty reduction), mirroring DiffusionVel's mix-and-match study.</li>
+</ul>
+<p class="pill">Sequencing: this layers on after M3 (single-source seismic tilting works), as part
+of or just after M4. Well logs are the cheapest first add (a trivial sampling operator, no extra
+PDE solver).</p>
+
+<!-- ===================================================== -->
 <h2 class="sec" id="eval">Evaluation</h2>
 <table>
 <tr><th>Axis</th><th>What we report</th></tr>
@@ -327,6 +371,7 @@ axis-A research on the tilting signal itself.
 <li id="r-fmps">Song, K. et al. (2024). <em>Flow matching posterior sampling.</em> <a href="https://arxiv.org/abs/2411.07625">arXiv:2411.07625</a></li>
 <li id="r-pcfm">(2025). <em>Physics-constrained flow matching (PCFM).</em> <a href="https://arxiv.org/abs/2506.04171">arXiv:2506.04171</a></li>
 <li id="r-reddiffeq">Shan, S. et al. (2026). <em>RED-DiffEq: regularization by denoising diffusion for FWI.</em> Commun. Phys. <a href="https://arxiv.org/abs/2509.21659">arXiv:2509.21659</a></li>
+<li id="r-diffusionvel">Zhang, H., Li, Y. &amp; Huang, J. (2024). <em>DiffusionVel: multi-information integrated velocity inversion using generative diffusion models.</em> <a href="https://arxiv.org/abs/2410.21776">arXiv:2410.21776</a></li>
 <li id="r-engquist">Engquist, B. &amp; Froese, B.D. (2014). <em>Wasserstein metric for seismic signals.</em> CMS 12(5).</li>
 <li id="r-metivier">Métivier, L. et al. (2016). <em>Optimal-transport misfit for FWI.</em> GJI 205(1). <a href="https://doi.org/10.1093/gji/ggw014">doi</a></li>
 <li id="r-bunks">Bunks, C. et al. (1995). <em>Multiscale seismic waveform inversion.</em> Geophysics 60(5).</li>

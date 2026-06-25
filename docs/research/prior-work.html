@@ -283,9 +283,9 @@ which injects a likelihood gradient at each reverse step. In FWI:</p>
 <p>Learn a conditional generator; the wave equation only makes the training set, and
 inference is one fast pass. Dominant on OpenFWI leaderboards.</p>
 <ul>
-  <li><strong>DiffusionVel</strong> (<a href="#r-diffusionvel">Wang et al. 2024</a>) —
+  <li><strong>DiffusionVel</strong> (<a href="#r-diffusionvel">Zhang, Li &amp; Huang 2024</a>) —
   ensemble of conditional + unconditional diffusion; best published conditional OpenFWI
-  numbers (table in §3).</li>
+  numbers (table in §3). Notable for <em>multi-information integration</em> — see §5.D.</li>
   <li><strong>Conditional Rectified Flow</strong> (<a href="#r-condrf">Xu et al. 2026</a>)
   and the <strong>I2SB Schrödinger bridge</strong> (<a href="#r-i2sb">Stankevich &amp;
   Petrov 2025</a>, code available, all 10 families) — the <em>flow-matching</em> entrants,
@@ -317,6 +317,31 @@ physics-in-training on fluid/material PDEs, <em>not</em> on seismic FWI / OpenFW
 maps. Almost every FWI generative paper puts physics at inference (camp A) or nowhere
 (camp B). That intersection — physics-residual <em>training</em> of a flow-matching FWI
 prior — is the opening this project targets.
+</div>
+
+<h3 id="multimeas">5.D&nbsp; Incorporating heterogeneous knowledge (multiple measurement types)</h3>
+<p>Real surveys carry more than one observation: seismic shot gathers, sparse but accurate
+<em>well logs</em>, a smooth <em>background/migration velocity</em>, gravity, and qualitative
+<em>geological priors</em>. A recent line fuses these into one generative inversion:</p>
+<ul>
+  <li><strong>DiffusionVel</strong> (<a href="#r-diffusionvel">Zhang, Li &amp; Huang 2024</a>)
+  trains <em>three separate</em> diffusion models — a seismic-conditional GDM, a well-log-conditional
+  GDM, and an unconditional geology prior — plus a low-pass background-velocity term, and
+  <strong>combines their clean-sample predictions by weighted averaging at sampling time</strong>
+  (their Eqs. 16–18, manual weights $\lambda_k$). The fusion is post-hoc: at inference you
+  mix-and-match sources or retune $\lambda_k$ <em>without retraining</em>.</li>
+  <li><strong>Geological- and well-prior conditional diffusion</strong>
+  (<a href="#r-geowell">Wang, Huang &amp; Alkhalifah 2024</a>) instead fuses geology-class labels
+  and well data through <em>classifier-free guidance</em> weights.</li>
+</ul>
+<div class="callout key">
+<strong>The takeaway for a posterior view.</strong> Multiple measurements are simply multiple
+likelihood factors:
+$\;p(v\mid d_{\text{seis}},d_{\text{well}},\dots)\;\propto\;p(v)\prod_k \exp\!\big(-\tfrac1{2\sigma_k^2}\|F_k(v)-d_k\|^2\big)$.
+DiffusionVel approximates this by hand-weighted averaging of per-source models; a tilting
+framework can instead add <em>one tilt per source</em> — a more principled (and retraining-free)
+fusion. This is a direct extension of this project's plan (see the research-plan's
+multi-measurement direction).
 </div>
 
 <!-- ============================================================= -->
@@ -403,7 +428,7 @@ scoping step toward the actual inverse problem.
 <li id="r-reddiffeq">Shan, S., Zhu, M., Lin, Y. &amp; Lu, L. (2026). <em>Regularization by denoising diffusion models for inverse PDE problems, with application to FWI (RED-DiffEq).</em> Communications Physics. <a href="https://arxiv.org/abs/2509.21659">arXiv:2509.21659</a> · <a href="https://doi.org/10.1038/s42005-026-02677-6">doi:10.1038/s42005-026-02677-6</a></li>
 <li id="r-priorfwi">Wang, F. et al. (2023). <em>A prior-regularized FWI using generative diffusion models.</em> <a href="https://arxiv.org/abs/2306.12776">arXiv:2306.12776</a></li>
 <li id="r-wiser">Yin, Z., Orozco, R. &amp; Herrmann, F. (2024). <em>WISER: multimodal variational inference for FWI.</em> Geophysics. <a href="https://arxiv.org/abs/2405.10327">arXiv:2405.10327</a></li>
-<li id="r-diffusionvel">Wang, H. et al. (2024). <em>DiffusionVel: multi-information integrated velocity inversion using diffusion models.</em> <a href="https://arxiv.org/abs/2410.21776">arXiv:2410.21776</a></li>
+<li id="r-diffusionvel">Zhang, H., Li, Y. &amp; Huang, J. (2024). <em>DiffusionVel: multi-information integrated velocity inversion using generative diffusion models.</em> China Univ. of Petroleum (East China). <a href="https://arxiv.org/abs/2410.21776">arXiv:2410.21776</a></li>
 <li id="r-condrf">Xu, H. et al. (2026). <em>Conditional rectified-flow-based end-to-end rapid seismic inversion.</em> <a href="https://arxiv.org/abs/2603.15354">arXiv:2603.15354</a></li>
 <li id="r-i2sb">Stankevich, A. &amp; Petrov, I. (2025). <em>Acoustic waveform inversion with image-to-image Schrödinger bridges.</em> Comp. Math. &amp; Math. Phys. <a href="https://arxiv.org/abs/2506.15346">arXiv:2506.15346</a> · <a href="https://github.com/stankevich-mipt/seismic_inversion_via_I2SB">code</a></li>
 <li id="r-geowell">Wang, F., Huang, X. &amp; Alkhalifah, T. (2024). <em>Geological- and well-prior assisted FWI using conditional diffusion models.</em> <a href="https://arxiv.org/abs/2412.06959">arXiv:2412.06959</a></li>
