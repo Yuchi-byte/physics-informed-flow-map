@@ -35,7 +35,7 @@ from physics_informed_flow_map.flow_matching.sample import (
     real_reference,
     sample,
 )
-from physics_informed_flow_map.flow_matching.train import train
+from physics_informed_flow_map.flow_matching.train import make_loss_fn, train
 
 EXPERIMENT = "0001_flow_matching"
 
@@ -113,6 +113,27 @@ def main(dcfg: DictConfig) -> None:
         device
     )
 
+    val_loader = torch.utils.data.DataLoader(
+        cfg.dataset.build_val(),
+        batch_size=cfg.training.batch_size,
+        shuffle=False,
+        drop_last=False,
+        num_workers=0,
+    )
+    val_loss_fn = make_loss_fn(cfg.dataset.num_classes)
+
+    @torch.no_grad()
+    def compute_val_loss(m: BaseModel) -> float:
+        m.eval()
+        total, n = 0.0, 0
+        for xb, lb in val_loader:
+            xb = xb.to(device)
+            lb = lb.to(device)
+            opt_losses, _ = val_loss_fn(m, None, xb, lb, step=0)
+            total += float(sum(opt_losses.values()).item())
+            n += 1
+        return total / max(n, 1)
+
     def on_eval(m: BaseModel, epoch: int) -> float | None:
         s = sample(
             m,
@@ -124,12 +145,7 @@ def main(dcfg: DictConfig) -> None:
         p = run.ckpt_dir.parent / f"samples_epoch{epoch}.png"
         cfg.dataset.visualize(s, p)
         run.log_image("samples", p)
-        if isinstance(cfg.dataset, GaussiansDatasetConfig):
-            # 'best'-tracking metric: deliberately the cheaper n_eval_viz budget,
-            # not the final verdict's n_eval_samples.
-            ref = real_reference(dataset, cfg.sampling.n_eval_viz, device)
-            return energy_distance(s, ref)
-        return None
+        return compute_val_loss(m)
 
     def on_checkpoint(
         m: BaseModel,
@@ -197,12 +213,15 @@ def main(dcfg: DictConfig) -> None:
     cfg.dataset.visualize(samples, final_png)
     run.log_image("samples_final", final_png)
 
+    final_val_loss = compute_val_loss(eval_model)
     if isinstance(cfg.dataset, GaussiansDatasetConfig):
         ref = real_reference(dataset, cfg.sampling.n_eval_samples, device)
         metric = energy_distance(samples, ref)
-        run.finish(energy_distance=metric, final_loss=final_loss)
+        run.finish(
+            energy_distance=metric, final_loss=final_loss, val_loss=final_val_loss
+        )
     else:
-        run.finish(final_loss=final_loss)
+        run.finish(final_loss=final_loss, val_loss=final_val_loss)
 
 
 if __name__ == "__main__":
