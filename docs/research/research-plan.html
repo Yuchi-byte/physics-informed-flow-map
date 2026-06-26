@@ -120,12 +120,14 @@ diverse draws (which supervised inverters like InversionNet cannot give). The be
 
 <div class="callout risk">
 <strong>What the flow map does <em>not</em> buy: a cheaper inversion.</strong> The forward-solve
-count is set by how many likelihood-gradient steps the inversion needs to <em>converge</em> (one
-wave solve per guidance step, ~hundreds — the same as diffusion DPS / RED-DiffEq), not by how few
-steps the prior needs to sample <em>unconditionally</em>. A few-step flow map accelerates
-unconditional generation; it does not reduce the PDE solves that dominate posterior FWI. The
-edge is posterior <em>quality</em> (less-biased likelihood, calibrated uncertainty), not solve
-count.
+count is set by how many likelihood-gradient steps the inversion needs to <em>converge</em>, not
+by how few steps the prior needs to sample <em>unconditionally</em>. Each guidance step costs a
+<strong>forward + adjoint</strong> wave solve per source (the gradient $\nabla\|F(v)-d\|^2$ needs
+the adjoint VJP), and a <em>Monte-Carlo posterior</em> estimate runs one such pair <em>per
+posterior draw</em> — so MFM's stochastic posterior <em>raises</em> per-step solve cost, it does
+not lower it. A few-step flow map accelerates unconditional generation; it does not reduce the
+PDE solves that dominate posterior FWI. The edge is posterior <em>quality</em> (less-biased
+likelihood, calibrated uncertainty), not solve count.
 </div>
 
 <p>This sits in <a href="prior-work.html#gen-fwi">camp A</a> (prior + inference-time guidance)
@@ -378,9 +380,10 @@ PDE solver).</p>
   added cost/variance, and the $t_{\text{cond}}>0$ posterior must be trained well enough to help —
   not assumed.</li>
   <li><strong>Forward-solve cost is the budget, and the flow map does not cut it.</strong>
-  Differentiable wave solves dominate and the count is convergence-limited (~one per guidance
-  step). The flow map's claim is per-step posterior <em>quality</em> → better accuracy/uncertainty
-  at comparable solves; that must be measured, and a no-better-than-DPS result is a real
+  Differentiable wave solves dominate; the count is convergence-limited (#steps × #sources ×
+  #posterior-draws, forward + adjoint each), and MFM's posterior MC can <em>raise</em> it. The
+  flow map's claim is per-step posterior <em>quality</em> → better accuracy/uncertainty at a
+  comparable budget; that must be measured, and a no-better-than-DPS result is a real
   possibility.</li>
   <li><strong>Data availability.</strong> Real seismic $d$ (~600 GB) was skipped; simulating $d$
   with Deepwave from velocity maps is the pragmatic start (and gives clean, controllable
