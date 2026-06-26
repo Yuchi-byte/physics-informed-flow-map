@@ -1,0 +1,12 @@
+defaults:
+  - default
+
+# esd_teacher distillation from a frozen 0001 prior; pass training.teacher_ckpt=<path-or-wandb-ref>.
+# The teacher already knows the diagonal, so skip the diagonal warmup. t_cond_power=2 follows
+# mfm's teacher recipe (the teacher supplies a conditioning target at every t_cond).
+lr: 1.0e-4
+flow_map_warmup_steps: 0
+flow_map_anneal_end: 1
+t_cond_power: 2.0
+ema:
+  enabled: true

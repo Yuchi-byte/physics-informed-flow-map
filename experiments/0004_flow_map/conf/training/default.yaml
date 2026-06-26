@@ -1,16 +1,18 @@
 n_epochs: 10
 batch_size: 256
 lr: 0.001
-warmup_steps: 2000  # linear LR warmup (0.1x -> 1x); mfm's flow-map recipe. ema.warmup_steps is separate.
-# Flow-map (off-diagonal s<u mutual-flow) loss: turns on after this many global steps so the
-# diagonal flow matching establishes first. distillation_type=mf is self-contained (no teacher).
-flow_map_warmup_steps: 1000
+warmup_steps: 2000  # linear LR warmup 0.1x -> 1x
+flow_map_warmup_steps: 1000  # off-diagonal mf term on after this step
 flow_map_anneal_end: 20000
 distillation_type: mf
-loss_weighting: adaptive  # mfm's per-sample reweighting; balances FM vs off-diagonal consistency
+loss_weighting: adaptive
+t_cond_0_rate: 0.1
+t_cond_power: 1.0  # 1 = uniform (from-data §4.3.1); >1 concentrates near 0
+t_cond_warmup_steps: 0
+teacher_ckpt: null  # set => esd_teacher distillation from a frozen 0001 prior (unconditional only)
 eval_every_epochs: 0
-ckpt_every_epochs: 0  # local checkpoint save + wandb artifact upload cadence (0 = only best + final)
+ckpt_every_epochs: 0  # 0 = only best + final
 ema:
   enabled: false
-  decay: 0.9999  # mfm's flow-map EMA (slower than 0001's 0.999)
+  decay: 0.9999
   warmup_steps: 0

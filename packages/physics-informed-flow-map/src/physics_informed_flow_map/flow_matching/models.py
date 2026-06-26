@@ -133,6 +133,33 @@ def build_model(
     raise ValueError(f"unsupported model config {cfg!r}")
 
 
+def activate_x_cond_conditioning(model: BaseModel) -> bool:
+    """Enable the ``x_cond`` (posterior-conditioning) pathway for time-conditional training.
+
+    mfm zero-initializes ``x_cond_embedder`` and closes its gate (``scale=-1``); with
+    ``preserve_t_cond_0=False`` that is a zero-gradient fixed point — ``x_cond_emb==0`` zeroes
+    the gradient to both the embedder and the gate's scale, so a from-scratch model never learns
+    to use ``x_cond`` (its velocity stays bit-identical across conditioning states). mfm escapes
+    this only inside ``init_from_dmf`` by copying ``x_embedder`` into ``x_cond_embedder``; we
+    replicate that copy here. Returns ``False`` (no-op) for models without an x_cond pathway,
+    e.g. the MLP. Call after any warm-start so it copies the warm-started ``x_embedder``.
+    """
+    inner = getattr(model, "model", model)
+    dit = getattr(inner, "dit", inner)
+    if not hasattr(dit, "x_cond_embedder") or not hasattr(dit, "x_embedder"):
+        return False
+    dit.x_cond_embedder.load_state_dict(dit.x_embedder.state_dict())
+    return True
+
+
+def count_parameters(model: nn.Module) -> tuple[int, int]:
+    """Return ``(total, trainable)`` parameter counts. They differ for the DiT,
+    whose sin-cos positional embedding is a frozen (non-trainable) parameter."""
+    total = sum(p.numel() for p in model.parameters())
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return total, trainable
+
+
 @dataclass(frozen=True)
 class ModelCase:
     """A model config paired with a representative input contract (for tests/tooling)."""

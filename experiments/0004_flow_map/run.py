@@ -6,9 +6,18 @@
     uv run python experiments/0004_flow_map/run.py experiment=smoke
 
 Same harness as 0001 (same datasets/model/EMA/eval/checkpoint), but the loss adds mfm's
-off-diagonal ``s<u`` mutual-flow consistency term (enabled after ``flow_map_warmup_steps``),
-training a flow map that maps between arbitrary interpolant times — not just the
-noise→data diagonal. Trained from scratch (the ``mf`` target is self-contained, no teacher).
+off-diagonal ``s<u`` consistency term (enabled after ``flow_map_warmup_steps``), training a
+flow map that maps between arbitrary interpolant times — not just the noise→data diagonal.
+
+Two regimes, selected by ``training.teacher_ckpt``:
+  * unset → train from scratch (the self-contained ``mf`` target, no teacher).
+  * set to a 0001 checkpoint (local path or ``wandb`` artifact ref) → distil the off-diagonal
+    from that frozen prior (``esd_teacher``) and warm-start the student from it. Unconditional
+    datasets only (gaussians, openfwi); the conditional teacher path is ImageNet-specific in mfm.
+
+    uv run python experiments/0004_flow_map/run.py experiment=openfwi \\
+        training=teacher training.teacher_ckpt=runs/0001_flow_matching/<run>/checkpoints/step_9_ema.pt
+
 Validate on gaussians → mnist → openfwi. Logs held-out FM loss as the run summary scalar.
 """
 
@@ -32,7 +41,9 @@ from physics_informed_flow_map.flow_matching.models import (
     DiTModelConfig,
     MLPModelConfig,
     ModelConfig,
+    activate_x_cond_conditioning,
     build_model,
+    count_parameters,
 )
 from physics_informed_flow_map.flow_matching.sample import (
     sample,
@@ -55,18 +66,20 @@ class TrainingConfig(Config):
     batch_size: int = Field(256, gt=0)
     lr: float = 1e-3
     warmup_steps: int = Field(0, ge=0)  # LR warmup
-    # Off-diagonal mutual-flow term turns on at this global step (lets diagonal FM settle).
-    flow_map_warmup_steps: int = Field(1000, ge=0)
+    flow_map_warmup_steps: int = Field(
+        1000, ge=0
+    )  # off-diagonal term on after this step
     flow_map_anneal_end: int = Field(20000, gt=0)
     distillation_type: str = "mf"
-    loss_weighting: str = (
-        "adaptive"  # mfm's per-sample reweighting (balances FM vs off-diag)
-    )
-    # t_cond schedule: <1 trains the intermediate-state posterior (time-conditional flow map);
-    # 1.0 = fully unconditional. mfm uses rate 0.1 / power 2.
+    loss_weighting: str = "adaptive"
+    # t_cond schedule: 0_rate = fraction unconditional; power shapes the rest (1 = uniform,
+    # the from-data §4.3.1 setting; >1 concentrates near 0). See train._loss_cfg.
     t_cond_0_rate: float = Field(0.1, ge=0.0, le=1.0)
-    t_cond_power: float = Field(2.0, gt=0.0)
+    t_cond_power: float = Field(1.0, gt=0.0)
     t_cond_warmup_steps: int = Field(0, ge=0)
+    # Optional frozen 0001 prior to distil from (local ckpt path or wandb artifact ref).
+    # Set => esd_teacher distillation + warm-start; unset => from-scratch mf.
+    teacher_ckpt: str | None = None
     eval_every_epochs: int = Field(0, ge=0)
     ckpt_every_epochs: int = Field(0, ge=0)
     ema: EmaConfig = EmaConfig()
@@ -100,10 +113,55 @@ class FlowMapConfig(Config):
             raise ValueError("mlp model needs a vector dataset (e.g. gaussians)")
         if isinstance(self.model, DiTModelConfig) and ndim != 3:
             raise ValueError("dit model needs an image dataset (e.g. mnist)")
+        if self.training.teacher_ckpt and self.dataset.num_classes:
+            raise ValueError(
+                "teacher (esd_teacher) distillation supports only unconditional datasets "
+                "(num_classes=0); mfm's posterior-velocity extraction takes an "
+                "ImageNet-specific path when class labels are present."
+            )
+        if self.training.distillation_type == "esd_teacher" and not (
+            self.training.teacher_ckpt
+        ):
+            raise ValueError(
+                "distillation_type=esd_teacher requires training.teacher_ckpt "
+                "(the frozen teacher to distil from)."
+            )
         return self
 
 
 FlowMapConfig.model_rebuild()
+
+
+def _resolve_ckpt(ref: str) -> Path:
+    """Resolve a teacher reference to a local checkpoint file: a path as-is, else a wandb
+    artifact ref (``[entity/project/]name:alias``) downloaded via the wandb API."""
+    p = Path(ref)
+    if p.is_file():
+        return p
+    import wandb
+
+    art = wandb.Api().artifact(ref, type="model")
+    files = list(Path(art.download()).glob("*.pt"))
+    if not files:
+        raise SystemExit(f"no .pt checkpoint inside wandb artifact {ref!r}")
+    return files[0]
+
+
+def load_teacher(
+    ref: str,
+    shape: tuple[int, ...],
+    num_classes: int | None,
+    model_cfg: ModelConfig,
+    device: torch.device,
+) -> BaseModel:
+    """Build a 0004-shaped model, load a 0001 checkpoint's weights into it, and freeze it."""
+    state = torch.load(_resolve_ckpt(ref), map_location=device, weights_only=False)
+    teacher = build_model(shape, num_classes, model_cfg).to(device)
+    teacher.load_state_dict(state["model"])
+    teacher.eval()
+    for param in teacher.parameters():
+        param.requires_grad_(False)
+    return teacher
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
@@ -132,6 +190,34 @@ def main(dcfg: DictConfig) -> None:
         )
     model = build_model(cfg.dataset.shape, cfg.dataset.num_classes, cfg.model).to(
         device
+    )
+    # Teacher distillation: load a frozen 0001 prior, warm-start the student from it, and switch
+    # the off-diagonal target to esd_teacher. Unset teacher_ckpt => from-scratch mf.
+    teacher: BaseModel | None = None
+    distillation_type = cfg.training.distillation_type
+    if cfg.training.teacher_ckpt:
+        teacher = load_teacher(
+            cfg.training.teacher_ckpt,
+            cfg.dataset.shape,
+            cfg.dataset.num_classes,
+            cfg.model,
+            device,
+        )
+        model.load_state_dict(teacher.state_dict())  # warm-start the student
+        distillation_type = "esd_teacher"
+        print(f"[{EXPERIMENT}] distilling from teacher {cfg.training.teacher_ckpt}")
+
+    # Enable the x_cond posterior-conditioning pathway (mfm's dead-init trap; see the helper).
+    # After any warm-start so it copies the warm-started x_embedder.
+    if activate_x_cond_conditioning(model):
+        print(f"[{EXPERIMENT}] activated x_cond conditioning (copied x_embedder)")
+
+    n_params, n_trainable = count_parameters(model)
+    print(
+        f"[{EXPERIMENT}] model params: {n_params:,} total ({n_trainable:,} trainable)"
+    )
+    run.update_config(
+        **{"model/num_params": n_params, "model/num_trainable_params": n_trainable}
     )
 
     val_loader = torch.utils.data.DataLoader(
@@ -223,11 +309,12 @@ def main(dcfg: DictConfig) -> None:
         warmup_steps=cfg.training.warmup_steps,
         flow_map_warmup_steps=cfg.training.flow_map_warmup_steps,
         flow_map_anneal_end=cfg.training.flow_map_anneal_end,
-        distillation_type=cfg.training.distillation_type,
+        distillation_type=distillation_type,
         loss_weighting=cfg.training.loss_weighting,
         t_cond_0_rate=cfg.training.t_cond_0_rate,
         t_cond_power=cfg.training.t_cond_power,
         t_cond_warmup_steps=cfg.training.t_cond_warmup_steps,
+        teacher_model=teacher,
         ema_enabled=cfg.training.ema.enabled,
         ema_decay=cfg.training.ema.decay,
         ema_warmup_steps=cfg.training.ema.warmup_steps,

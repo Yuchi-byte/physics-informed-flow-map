@@ -59,10 +59,10 @@ def _loss_cfg(
     return _Cfg(
         SI=_Cfg(t_max=1.0),
         trainer=_Cfg(
-            # t_cond is the conditioning time: t_cond=0 conditions on pure noise (unconditional
-            # generation); t_cond>0 conditions on a partially-noised reference state, which is
-            # what the Meta-Flow-Map posterior p(x1|x_t) needs. t_cond_0_rate=1.0 keeps it fully
-            # unconditional; mfm's rate≈0.1 (power 2) trains the intermediate-state posterior.
+            # t_cond is the conditioning time: t_cond=0 conditions on pure noise (unconditional);
+            # t_cond>0 conditions on a partially-noised reference, the posterior p(x1|x_t) substrate.
+            # t_cond_0_rate=1.0 stays fully unconditional. Teacher-free (mf) gets its conditioning
+            # signal only from high t_cond, so power=1 (uniform), not mfm's teacher-recipe power=2.
             t_cond_warmup_steps=t_cond_warmup_steps,
             t_cond_0_rate=t_cond_0_rate,
             t_cond_power=t_cond_power,
@@ -148,6 +148,7 @@ def train(
     t_cond_0_rate: float = 1.0,
     t_cond_power: float = 1.0,
     t_cond_warmup_steps: int = 0,
+    teacher_model: BaseModel | None = None,
     ema_enabled: bool = False,
     ema_decay: float = 0.999,
     ema_warmup_steps: int = 0,
@@ -161,8 +162,10 @@ def train(
     The per-step loss is mfm's SI consistency loss. By default it is pure flow matching (the
     off-diagonal terms are identically zero, so ``total`` is the FM loss). Passing a finite
     ``flow_map_warmup_steps`` enables the ``s<u`` mutual-flow term after that many steps,
-    training a meta flow map. History records ``{step, epoch, total}`` per step; the rest of
-    the lifecycle (warmup, EMA, per-epoch logging, eval/ckpt cadence) is the shared loop's.
+    training a meta flow map. Passing ``distillation_type="esd_teacher"`` with a frozen
+    ``teacher_model`` distills the off-diagonal target from that teacher (the diagonal stays on
+    data); the teacher path is unconditional only. History records ``{step, epoch, total}`` per
+    step; the rest of the lifecycle is the shared loop's.
     """
     loss_fn = make_loss_fn(
         num_classes,
@@ -178,8 +181,12 @@ def train(
     def compute_loss(m: BaseModel, batch: Any, step: int) -> Tensor:
         x1, labels = batch
         x1 = x1.to(device)
-        labels = labels.to(device)
-        opt_losses, _ = loss_fn(m, None, x1, labels, step=step)
+        # Unconditional datasets pass labels=None so the teacher's posterior-velocity extraction
+        # takes the label-free path (mfm's conditional path is ImageNet-specific).
+        lbl = labels.to(device) if num_classes else None
+        opt_losses, _ = loss_fn(
+            m, None, x1, lbl, step=step, teacher_model=teacher_model
+        )
         return cast(Tensor, sum(opt_losses.values()))
 
     history, ema = train_loop(

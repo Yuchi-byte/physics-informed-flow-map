@@ -29,6 +29,7 @@ from physics_informed_flow_map.flow_matching.models import (
     MLPModelConfig,
     ModelConfig,
     build_model,
+    count_parameters,
 )
 from physics_informed_flow_map.flow_matching.sample import sample
 from physics_informed_flow_map.flow_matching.train import make_loss_fn, train
@@ -108,6 +109,13 @@ def main(dcfg: DictConfig) -> None:
         )
     model = build_model(cfg.dataset.shape, cfg.dataset.num_classes, cfg.model).to(
         device
+    )
+    n_params, n_trainable = count_parameters(model)
+    print(
+        f"[{EXPERIMENT}] model params: {n_params:,} total ({n_trainable:,} trainable)"
+    )
+    run.update_config(
+        **{"model/num_params": n_params, "model/num_trainable_params": n_trainable}
     )
 
     val_loader = torch.utils.data.DataLoader(
