@@ -8,6 +8,7 @@ training:
   batch_size: 128
   eval_every_epochs: 10
   ckpt_every_epochs: 10
+  artifact_every_epochs: 10  # upload every checkpoint as a wandb artifact (also best + final)
   ema:
     enabled: true
 sampling:
