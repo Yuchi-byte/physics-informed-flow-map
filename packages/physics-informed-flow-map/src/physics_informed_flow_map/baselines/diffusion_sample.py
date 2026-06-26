@@ -1,7 +1,7 @@
 """Unconditional reverse-DDPM sampling from a trained diffusion prior.
 
 The counterpart to ``dps_sample`` with no measurement guidance — used to draw prior samples
-for evaluation (visual grids, energy distance vs held-out reals).
+for evaluation (visual grids).
 """
 
 from __future__ import annotations

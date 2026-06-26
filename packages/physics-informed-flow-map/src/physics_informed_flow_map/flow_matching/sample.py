@@ -1,4 +1,4 @@
-"""Sampling (mfm ODE sampler from noise) + an energy-distance eval metric."""
+"""Sampling via the mfm ODE sampler from noise."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from typing import cast
 
 import torch
 from torch import Tensor
-from torch.utils.data import Dataset
 
 from mfm.SI.samplers import ode_sampler_fn
 from mfm.models.base_model import BaseModel
@@ -36,27 +35,3 @@ def sample(
             v_type="standard",
         ),
     )
-
-
-def _pdist_mean(a: Tensor, b: Tensor) -> Tensor:
-    return torch.cdist(a, b).mean()
-
-
-def _self_pdist_mean(a: Tensor) -> Tensor:
-    """Mean pairwise distance within a set, excluding the (zero) diagonal."""
-    n = a.shape[0]
-    return torch.cdist(a, a).sum() / max(n * (n - 1), 1)
-
-
-def energy_distance(x: Tensor, y: Tensor) -> float:
-    """Energy distance between two point sets (lower = closer distributions)."""
-    x = x.flatten(1) if x.ndim > 2 else x
-    y = y.flatten(1) if y.ndim > 2 else y
-    val = 2 * _pdist_mean(x, y) - _self_pdist_mean(x) - _self_pdist_mean(y)
-    return float(val.item())
-
-
-def real_reference(dataset: Dataset, n: int, device: torch.device) -> Tensor:
-    idx = torch.randperm(len(dataset))[:n]  # type: ignore[arg-type]
-    xs = torch.stack([dataset[int(i)][0] for i in idx])
-    return xs.to(device)

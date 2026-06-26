@@ -5,9 +5,9 @@
     uv run python experiments/0003_baselines/run.py experiment=openfwi_full
 
 Mirrors the 0001 flow-matching framework (same Hydra config layout, same harness, same
-held-out datasets + energy-distance eval), swapping the flow prior for a diffusers DDPM
-prior. Trains the denoiser, samples it for monitoring, logs energy distance vs held-out
-reals as the run summary, and uploads checkpoints/artifacts.
+held-out datasets + val-loss eval), swapping the flow prior for a diffusers DDPM prior.
+Trains the denoiser, samples it for monitoring, logs held-out val loss as the run summary,
+and uploads checkpoints/artifacts.
 """
 
 from __future__ import annotations
@@ -32,10 +32,6 @@ from physics_informed_flow_map.experiment import Config, start_run
 from physics_informed_flow_map.flow_matching.datasets import (
     DatasetConfig,
     MNISTDatasetConfig,
-)
-from physics_informed_flow_map.flow_matching.sample import (
-    energy_distance,
-    real_reference,
 )
 
 EXPERIMENT = "0003_baselines"
@@ -204,14 +200,7 @@ def main(dcfg: DictConfig) -> None:
     run.log_image("samples_final", final_png)
 
     final_val_loss = compute_val_loss(eval_model)
-    ref = real_reference(cfg.dataset.build_val(), cfg.sampling.n_eval_samples, device)
-    metric = energy_distance(samples, ref)
-    run.finish(
-        **{
-            "val/energy_distance": metric,
-            "val/loss": final_val_loss,
-        }
-    )
+    run.finish(**{"val/loss": final_val_loss})
 
 
 if __name__ == "__main__":

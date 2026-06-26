@@ -5,7 +5,7 @@
     uv run python experiments/0001_flow_matching/run.py experiment=smoke
     uv run python experiments/0001_flow_matching/run.py experiment=mnist training.n_epochs=80 training.eval_every_epochs=5
 
-Logs energy distance (gaussians) / final FM loss (image datasets) as run summary scalars.
+Logs held-out FM loss as the run summary scalar.
 """
 
 from __future__ import annotations
@@ -30,11 +30,7 @@ from physics_informed_flow_map.flow_matching.models import (
     ModelConfig,
     build_model,
 )
-from physics_informed_flow_map.flow_matching.sample import (
-    energy_distance,
-    real_reference,
-    sample,
-)
+from physics_informed_flow_map.flow_matching.sample import sample
 from physics_informed_flow_map.flow_matching.train import make_loss_fn, train
 
 EXPERIMENT = "0001_flow_matching"
@@ -191,13 +187,8 @@ def main(dcfg: DictConfig) -> None:
     run.log_image("samples_final", final_png)
 
     final_val_loss = compute_val_loss(eval_model)
-    # Energy distance vs a genuinely held-out reference (build_val), for any dataset
-    # that exposes a held-out split. Generic distributional metric over flattened images.
-    ref = real_reference(cfg.dataset.build_val(), cfg.sampling.n_eval_samples, device)
-    metric = energy_distance(samples, ref)
     run.finish(
         **{
-            "val/energy_distance": metric,
             "val/loss": final_val_loss,
             "train/final_loss": final_loss,
         }
