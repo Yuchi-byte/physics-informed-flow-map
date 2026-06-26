@@ -47,34 +47,43 @@ class Run:
     run: Any  # wandb Run handle
     experiment: str
     ckpt_dir: Path
-    _last_step: int | None = None
+    _last_epoch: int | None = None
 
     def log(self, **metrics: Any) -> None:
-        """Log scalars at ``metrics['step']`` (if present) to wandb."""
-        step = metrics.pop("step", None)
-        if step is not None:
-            self._last_step = int(step)
-        self.run.log(metrics, step=int(step) if step is not None else None)
+        """Log scalars to wandb on the ``epoch`` axis (set as the step metric in ``start_run``).
+
+        Any ``step`` key is dropped — we plot against ``epoch``, not the raw optimizer step.
+        """
+        metrics.pop("step", None)
+        epoch = metrics.get("epoch")
+        if epoch is not None:
+            self._last_epoch = int(epoch)
+        self.run.log(metrics)
+
+    def update_config(self, **values: Any) -> None:
+        """Merge extra static values into the wandb run config (e.g. param counts).
+
+        For one-off run-level facts known after ``start_run`` (where the resolved
+        config is pinned) — not time series; use :meth:`log` for those.
+        """
+        self.run.config.update(values, allow_val_change=True)
 
     def log_image(
         self,
         key: str,
         path: Path,
         *,
-        step: int | None = None,
         caption: str | None = None,
     ) -> None:
-        """Log an image file under ``key`` to wandb, optionally with a ``caption``.
+        """Log an image file under ``key`` to wandb, on the ``epoch`` axis.
 
-        Defaults to the most recently logged ``step`` (rather than letting wandb
-        auto-advance to ``last + 1``), so an image logged alongside that step's
-        scalars doesn't bump the counter and cause a later same-step scalar
-        (e.g. ``val/loss``) to be dropped as non-monotonic. Pass ``caption`` (e.g.
-        ``"epoch 12"``) to label the media by epoch rather than by raw step.
+        Tags the image with the most recently logged ``epoch`` so it lines up with that
+        epoch's scalars. Pass ``caption`` (e.g. ``"epoch 12"``) to label the media.
         """
-        if step is None:
-            step = self._last_step
-        self.run.log({key: wandb.Image(str(path), caption=caption)}, step=step)
+        payload: dict[str, Any] = {key: wandb.Image(str(path), caption=caption)}
+        if self._last_epoch is not None:
+            payload["epoch"] = self._last_epoch
+        self.run.log(payload)
 
     def save_checkpoint(
         self, model: torch.nn.Module, step: int, *, suffix: str = "", **meta: Any
@@ -177,5 +186,8 @@ def start_run(
         dir=str(run_dir),
         config={**config, **_env()},
     )
+    # Plot every metric against epoch instead of the raw optimizer step.
+    run.define_metric("epoch")
+    run.define_metric("*", step_metric="epoch")
     print(f"[{experiment}] run → {run_dir}")
     return Run(run=run, experiment=experiment, ckpt_dir=ckpt_dir)
