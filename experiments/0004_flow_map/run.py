@@ -34,7 +34,11 @@ from physics_informed_flow_map.flow_matching.models import (
     ModelConfig,
     build_model,
 )
-from physics_informed_flow_map.flow_matching.sample import sample, sample_few_step
+from physics_informed_flow_map.flow_matching.sample import (
+    sample,
+    sample_few_step,
+    sample_posterior,
+)
 from physics_informed_flow_map.flow_matching.train import make_loss_fn, train
 
 EXPERIMENT = "0004_flow_map"
@@ -58,6 +62,11 @@ class TrainingConfig(Config):
     loss_weighting: str = (
         "adaptive"  # mfm's per-sample reweighting (balances FM vs off-diag)
     )
+    # t_cond schedule: <1 trains the intermediate-state posterior (time-conditional flow map);
+    # 1.0 = fully unconditional. mfm uses rate 0.1 / power 2.
+    t_cond_0_rate: float = Field(0.1, ge=0.0, le=1.0)
+    t_cond_power: float = Field(2.0, gt=0.0)
+    t_cond_warmup_steps: int = Field(0, ge=0)
     eval_every_epochs: int = Field(0, ge=0)
     ckpt_every_epochs: int = Field(0, ge=0)
     ema: EmaConfig = EmaConfig()
@@ -71,6 +80,9 @@ class SamplingConfig(Config):
     few_steps: int = Field(
         4, gt=0
     )  # flow-map (consistency) sampler — the payoff metric
+    posterior_t: float = Field(
+        0.5, gt=0.0, lt=1.0
+    )  # noise level for the posterior-recon check
     n_eval_viz: int = Field(64, gt=0)  # samples drawn for each viz (per-epoch + final)
 
 
@@ -131,6 +143,11 @@ def main(dcfg: DictConfig) -> None:
     )
     val_loss_fn = make_loss_fn(cfg.dataset.num_classes)  # step=0 → pure-FM diagonal
 
+    # Fixed held-out references for the posterior-reconstruction check (does t_cond>0 work).
+    ref_batch = next(iter(val_loader))[0][: cfg.sampling.n_eval_viz].to(device)
+    refs_png = run.ckpt_dir.parent / "posterior_refs.png"
+    cfg.dataset.visualize(ref_batch, refs_png)
+
     @torch.no_grad()
     def compute_val_loss(m: BaseModel) -> float:
         m.eval()
@@ -169,6 +186,23 @@ def main(dcfg: DictConfig) -> None:
             pf,
             caption=f"epoch {epoch + 1} {cfg.sampling.few_steps}-step",
         )
+        # Posterior reconstruction — the test that the t_cond>0 conditioning actually trained:
+        # partially-noised references should reconstruct (an unconditional map would ignore them).
+        rec = sample_posterior(
+            m,
+            ref_batch,
+            cfg.sampling.posterior_t,
+            n_steps=cfg.sampling.few_steps,
+            device=device,
+        )
+        pr = run.ckpt_dir.parent / f"posterior_recon_epoch{epoch}.png"
+        cfg.dataset.visualize(rec, pr)
+        run.log_image("posterior_refs", refs_png, caption="held-out references")
+        run.log_image(
+            "posterior_recon",
+            pr,
+            caption=f"epoch {epoch + 1} recon @ t_cond={cfg.sampling.posterior_t}",
+        )
         return compute_val_loss(m)
 
     on_checkpoint = run.checkpoint_callback(
@@ -191,6 +225,9 @@ def main(dcfg: DictConfig) -> None:
         flow_map_anneal_end=cfg.training.flow_map_anneal_end,
         distillation_type=cfg.training.distillation_type,
         loss_weighting=cfg.training.loss_weighting,
+        t_cond_0_rate=cfg.training.t_cond_0_rate,
+        t_cond_power=cfg.training.t_cond_power,
+        t_cond_warmup_steps=cfg.training.t_cond_warmup_steps,
         ema_enabled=cfg.training.ema.enabled,
         ema_decay=cfg.training.ema.decay,
         ema_warmup_steps=cfg.training.ema.warmup_steps,

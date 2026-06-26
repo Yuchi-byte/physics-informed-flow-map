@@ -45,6 +45,9 @@ def _loss_cfg(
     anneal_end_step: int = _DISABLED,
     distillation_type: str = "mf",
     loss_weighting: str = "l2",
+    t_cond_0_rate: float = 1.0,
+    t_cond_power: float = 1.0,
+    t_cond_warmup_steps: int = 0,
 ) -> _Cfg:
     class_dropout_prob = 0.1 if label_dim > 0 else 0.0
     # mfm's adaptive weighting w = 1/(||err||^2 + c)^p (detached) normalizes each term's
@@ -56,9 +59,13 @@ def _loss_cfg(
     return _Cfg(
         SI=_Cfg(t_max=1.0),
         trainer=_Cfg(
-            t_cond_warmup_steps=0,
-            t_cond_0_rate=1.0,  # always condition on pure noise → unconditional prior
-            t_cond_power=1.0,
+            # t_cond is the conditioning time: t_cond=0 conditions on pure noise (unconditional
+            # generation); t_cond>0 conditions on a partially-noised reference state, which is
+            # what the Meta-Flow-Map posterior p(x1|x_t) needs. t_cond_0_rate=1.0 keeps it fully
+            # unconditional; mfm's rate≈0.1 (power 2) trains the intermediate-state posterior.
+            t_cond_warmup_steps=t_cond_warmup_steps,
+            t_cond_0_rate=t_cond_0_rate,
+            t_cond_power=t_cond_power,
             # The off-diagonal consistency term turns on at `step > num_warmup_steps`;
             # _DISABLED keeps pure FM, a finite value trains a flow map.
             num_warmup_steps=num_warmup_steps,
@@ -97,10 +104,14 @@ def make_loss_fn(
     anneal_end_step: int = _DISABLED,
     distillation_type: str = "mf",
     loss_weighting: str = "l2",
+    t_cond_0_rate: float = 1.0,
+    t_cond_power: float = 1.0,
+    t_cond_warmup_steps: int = 0,
 ) -> Callable[..., Any]:
     """mfm's SI consistency loss. Defaults to pure FM (off-diagonal disabled); a finite
     ``num_warmup_steps`` enables the ``s<u`` flow-map term. ``loss_weighting="adaptive"`` uses
-    mfm's per-sample adaptive reweighting. Used for train and (at ``step=0``, so always
+    mfm's per-sample adaptive reweighting. ``t_cond_0_rate<1`` trains the intermediate-state
+    posterior (the time-conditional flow map). Used for train and (at ``step=0``, so always
     pure-FM) validation."""
     return cast(
         Callable[..., Any],
@@ -111,6 +122,9 @@ def make_loss_fn(
                 anneal_end_step=anneal_end_step,
                 distillation_type=distillation_type,
                 loss_weighting=loss_weighting,
+                t_cond_0_rate=t_cond_0_rate,
+                t_cond_power=t_cond_power,
+                t_cond_warmup_steps=t_cond_warmup_steps,
             ),
             Linear(t_max=1.0),
         ),
@@ -131,6 +145,9 @@ def train(
     flow_map_anneal_end: int = _DISABLED,
     distillation_type: str = "mf",
     loss_weighting: str = "l2",
+    t_cond_0_rate: float = 1.0,
+    t_cond_power: float = 1.0,
+    t_cond_warmup_steps: int = 0,
     ema_enabled: bool = False,
     ema_decay: float = 0.999,
     ema_warmup_steps: int = 0,
@@ -153,6 +170,9 @@ def train(
         anneal_end_step=flow_map_anneal_end,
         distillation_type=distillation_type,
         loss_weighting=loss_weighting,
+        t_cond_0_rate=t_cond_0_rate,
+        t_cond_power=t_cond_power,
+        t_cond_warmup_steps=t_cond_warmup_steps,
     )
 
     def compute_loss(m: BaseModel, batch: Any, step: int) -> Tensor:
