@@ -1,0 +1,4 @@
+name: openfwi
+data_dir: data/openfwi
+families: [FlatVel_A]
+resolution: 64

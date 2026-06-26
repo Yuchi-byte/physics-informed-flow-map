@@ -1,0 +1,15 @@
+# @package _global_
+# Fast plumbing check on FlatVel_A: 1 epoch, tiny diffusion, one eval+ckpt+final pass.
+defaults:
+  - override /dataset: openfwi
+training:
+  n_epochs: 1
+  batch_size: 64
+  eval_every_epochs: 1
+  ckpt_every_epochs: 1
+diffusion:
+  num_train_timesteps: 50
+  num_sample_steps: 10
+sampling:
+  n_eval_samples: 32
+  n_eval_viz: 16

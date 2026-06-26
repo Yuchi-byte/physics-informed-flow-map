@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - override /dataset: mnist
+training:
+  n_epochs: 30
+  batch_size: 128
+  lr: 1.0e-4
+  warmup_steps: 1000
+  eval_every_epochs: 5
+  ckpt_every_epochs: 10
+  ema:
+    enabled: true

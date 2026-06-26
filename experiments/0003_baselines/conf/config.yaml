@@ -1,0 +1,16 @@
+defaults:
+  - _self_
+  - model: unet
+  - dataset: mnist
+  - diffusion: default
+  - training: default
+  - sampling: default
+  - experiment: smoke
+
+seed: 0
+
+hydra:
+  run:
+    dir: runs/0003_baselines/${now:%Y-%m-%dT%H-%M-%SZ}
+  job:
+    chdir: false

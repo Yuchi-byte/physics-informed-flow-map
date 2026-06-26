@@ -1,0 +1,34 @@
+# @package _global_
+# Full-OpenFWI diffusion prior over all 10 families (~470k maps, ~6.6k steps/epoch at
+# batch 64), the diffusion counterpart to 0001's openfwi_full flow run. lr 1e-4 + 2000-step
+# warmup + T=1000 + eps-pred + EMA per the OpenFWI diffusion literature. n_epochs tuned to
+# the 200k-400k-step band after measuring UNet throughput.
+defaults:
+  - override /dataset: openfwi
+dataset:
+  families:
+    - CurveFault_A
+    - CurveFault_B
+    - CurveVel_A
+    - CurveVel_B
+    - FlatFault_A
+    - FlatFault_B
+    - FlatVel_A
+    - FlatVel_B
+    - Style_A
+    - Style_B
+training:
+  n_epochs: 30
+  batch_size: 64
+  lr: 1.0e-4
+  warmup_steps: 2000
+  eval_every_epochs: 3
+  ckpt_every_epochs: 10
+  ema:
+    enabled: true
+diffusion:
+  num_train_timesteps: 1000
+  num_sample_steps: 200
+sampling:
+  n_eval_samples: 64
+  n_eval_viz: 64

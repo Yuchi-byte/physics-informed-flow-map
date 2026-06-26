@@ -1,0 +1,10 @@
+n_epochs: 10
+batch_size: 64
+lr: 1.0e-4
+warmup_steps: 0
+eval_every_epochs: 0
+ckpt_every_epochs: 0  # local checkpoint save + wandb artifact upload cadence (0 = only best + final)
+ema:
+  enabled: false
+  decay: 0.999
+  warmup_steps: 0
