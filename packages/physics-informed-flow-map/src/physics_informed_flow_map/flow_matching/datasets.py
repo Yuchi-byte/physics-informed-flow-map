@@ -70,10 +70,9 @@ def _viz_scatter(samples: Tensor, path: Path) -> None:
     plt.close(fig)
 
 
-def _viz_grid(samples: Tensor, path: Path) -> None:
+def _viz_grid(samples: Tensor, path: Path, *, ncols: int = 8) -> None:
     s = (samples.detach().cpu().clamp(-1, 1) + 1) / 2
-    n = min(64, len(s))
-    ncols = 8
+    n = min(ncols * 8, len(s))
     nrows = (n + ncols - 1) // ncols
     fig, axes = plt.subplots(nrows, ncols, figsize=(ncols, nrows))
     for i, ax in enumerate(axes.flatten()):
@@ -114,8 +113,8 @@ class GaussiansDatasetConfig(Config):
             self.val_samples, self.n_modes, self.radius, self.std, seed=1
         )
 
-    def visualize(self, samples: Tensor, path: Path) -> None:
-        _viz_scatter(samples, path)
+    def visualize(self, samples: Tensor, path: Path, *, ncols: int = 8) -> None:
+        _viz_scatter(samples, path)  # scatter ignores ncols
 
 
 class MNISTDatasetConfig(Config):
@@ -143,8 +142,8 @@ class MNISTDatasetConfig(Config):
     def build_val(self) -> Dataset:
         return _make_mnist(self.data_dir, self.image_size, train=False)
 
-    def visualize(self, samples: Tensor, path: Path) -> None:
-        _viz_grid(samples, path)
+    def visualize(self, samples: Tensor, path: Path, *, ncols: int = 8) -> None:
+        _viz_grid(samples, path, ncols=ncols)
 
 
 class OpenFWIDatasetConfig(Config):
@@ -185,8 +184,8 @@ class OpenFWIDatasetConfig(Config):
         full, _, val_idx = self._split()
         return Subset(full, val_idx)
 
-    def visualize(self, samples: Tensor, path: Path) -> None:
-        viz_velocity(samples, path)
+    def visualize(self, samples: Tensor, path: Path, *, ncols: int = 8) -> None:
+        viz_velocity(samples, path, ncols=ncols)
 
 
 DatasetConfig = Annotated[

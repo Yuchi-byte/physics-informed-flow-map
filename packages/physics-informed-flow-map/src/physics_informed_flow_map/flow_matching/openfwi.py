@@ -64,11 +64,10 @@ class OpenFWIVelocityDataset(Dataset):
         return x, 0
 
 
-def viz_velocity(samples: Tensor, path: Path) -> None:
+def viz_velocity(samples: Tensor, path: Path, *, ncols: int = 8) -> None:
     """Grid of velocity maps with a perceptual colormap (samples are in [-1, 1])."""
     s = samples.detach().cpu().clamp(-1, 1)
-    n = min(64, len(s))
-    ncols = 8
+    n = min(ncols * 8, len(s))
     nrows = (n + ncols - 1) // ncols
     fig, axes = plt.subplots(nrows, ncols, figsize=(ncols, nrows))
     for i, ax in enumerate(axes.flatten()):
