@@ -55,6 +55,9 @@ class TrainingConfig(Config):
     flow_map_warmup_steps: int = Field(1000, ge=0)
     flow_map_anneal_end: int = Field(20000, gt=0)
     distillation_type: str = "mf"
+    loss_weighting: str = (
+        "adaptive"  # mfm's per-sample reweighting (balances FM vs off-diag)
+    )
     eval_every_epochs: int = Field(0, ge=0)
     ckpt_every_epochs: int = Field(0, ge=0)
     ema: EmaConfig = EmaConfig()
@@ -187,6 +190,7 @@ def main(dcfg: DictConfig) -> None:
         flow_map_warmup_steps=cfg.training.flow_map_warmup_steps,
         flow_map_anneal_end=cfg.training.flow_map_anneal_end,
         distillation_type=cfg.training.distillation_type,
+        loss_weighting=cfg.training.loss_weighting,
         ema_enabled=cfg.training.ema.enabled,
         ema_decay=cfg.training.ema.decay,
         ema_warmup_steps=cfg.training.ema.warmup_steps,

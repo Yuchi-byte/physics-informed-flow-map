@@ -44,9 +44,15 @@ def _loss_cfg(
     num_warmup_steps: int = _DISABLED,
     anneal_end_step: int = _DISABLED,
     distillation_type: str = "mf",
-    distillation_loss_type: str = "l2",
+    loss_weighting: str = "l2",
 ) -> _Cfg:
     class_dropout_prob = 0.1 if label_dim > 0 else 0.0
+    # mfm's adaptive weighting w = 1/(||err||^2 + c)^p (detached) normalizes each term's
+    # magnitude — essential for balancing the hard off-diagonal consistency loss against the
+    # easy diagonal FM (p=1.0 tames the distillation term harder than the FM's p=0.5). "l2"
+    # keeps the pure-FM behaviour (0001).
+    adaptive = loss_weighting == "adaptive"
+    loss_type = "adaptive" if adaptive else "l2"
     return _Cfg(
         SI=_Cfg(t_max=1.0),
         trainer=_Cfg(
@@ -72,14 +78,14 @@ def _loss_cfg(
             distillation_type=distillation_type,
             model_guidance=False,
             model_guidance_base_prob=0.5,
-            fm_loss_type="l2",
-            distillation_loss_type=distillation_loss_type,
-            distill_fm_loss_type="l2",
+            fm_loss_type=loss_type,
+            distillation_loss_type=loss_type,
+            distill_fm_loss_type=loss_type,
             distill_teacher_stop_grad=True,
-            fm_adaptive_loss_p=None,
-            fm_adaptive_loss_c=None,
-            distill_adaptive_loss_p=None,
-            distill_adaptive_loss_c=None,
+            fm_adaptive_loss_p=0.5 if adaptive else None,
+            fm_adaptive_loss_c=0.01 if adaptive else None,
+            distill_adaptive_loss_p=1.0 if adaptive else None,
+            distill_adaptive_loss_c=0.01 if adaptive else None,
         ),
     )
 
@@ -90,10 +96,12 @@ def make_loss_fn(
     num_warmup_steps: int = _DISABLED,
     anneal_end_step: int = _DISABLED,
     distillation_type: str = "mf",
+    loss_weighting: str = "l2",
 ) -> Callable[..., Any]:
     """mfm's SI consistency loss. Defaults to pure FM (off-diagonal disabled); a finite
-    ``num_warmup_steps`` enables the ``s<u`` flow-map term. Used for train and (at ``step=0``,
-    so always pure-FM) validation."""
+    ``num_warmup_steps`` enables the ``s<u`` flow-map term. ``loss_weighting="adaptive"`` uses
+    mfm's per-sample adaptive reweighting. Used for train and (at ``step=0``, so always
+    pure-FM) validation."""
     return cast(
         Callable[..., Any],
         get_consistency_loss_fn(
@@ -102,6 +110,7 @@ def make_loss_fn(
                 num_warmup_steps=num_warmup_steps,
                 anneal_end_step=anneal_end_step,
                 distillation_type=distillation_type,
+                loss_weighting=loss_weighting,
             ),
             Linear(t_max=1.0),
         ),
@@ -121,6 +130,7 @@ def train(
     flow_map_warmup_steps: int = _DISABLED,
     flow_map_anneal_end: int = _DISABLED,
     distillation_type: str = "mf",
+    loss_weighting: str = "l2",
     ema_enabled: bool = False,
     ema_decay: float = 0.999,
     ema_warmup_steps: int = 0,
@@ -142,6 +152,7 @@ def train(
         num_warmup_steps=flow_map_warmup_steps,
         anneal_end_step=flow_map_anneal_end,
         distillation_type=distillation_type,
+        loss_weighting=loss_weighting,
     )
 
     def compute_loss(m: BaseModel, batch: Any, step: int) -> Tensor:
