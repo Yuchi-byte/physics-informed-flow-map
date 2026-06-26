@@ -32,7 +32,7 @@ def test_train_runs_and_logs() -> None:
     # history stays per-step (150 = 3 epochs x 50 batches); logging is per-epoch (3).
     assert len(history) == 150
     assert len(logged) == 3
-    assert all("fm_loss" in r and "epoch" in r for r in history)
+    assert all("total" in r and "epoch" in r for r in history)
     assert torch.isfinite(torch.tensor(history[-1]["total"]))
     assert history[-1]["total"] < history[0]["total"]
     # Each epoch logs the namespaced train metrics.
@@ -41,7 +41,7 @@ def test_train_runs_and_logs() -> None:
     )
 
 
-def test_train_history_is_per_step_with_fm_loss() -> None:
+def test_train_history_is_per_step() -> None:
     torch.manual_seed(0)
     spec = GaussiansDatasetConfig()
     loader = _gaussian_loader(96, 32)  # 3 batches/epoch
@@ -54,10 +54,9 @@ def test_train_history_is_per_step_with_fm_loss() -> None:
         lr=1e-3,
         device=torch.device("cpu"),
     )
-    # The returned history keeps a per-step record (used for the final-epoch mean loss);
-    # the always-zero distill terms are no longer carried.
+    # The returned history keeps a per-step record (used for the final-epoch mean loss).
     assert len(history) == 3
-    assert {"total", "fm_loss", "epoch", "step"} == set(history[0].keys())
+    assert {"total", "epoch", "step"} == set(history[0].keys())
 
 
 def test_train_warmup_ramps_lr_below_base() -> None:

@@ -1,19 +1,18 @@
-"""Generic flow-matching training loop, wrapping mfm's FM loss (pure-FM config)."""
+"""Flow-matching trainer: builds mfm's pure-FM per-step loss and runs the shared train loop."""
 
 from __future__ import annotations
 
-import math
 from typing import Any, Callable, cast
 
 import torch
-from torch.optim.lr_scheduler import LinearLR
-from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+from torch import Tensor
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
 
 from mfm.SI import Linear
 from mfm.losses.losses import get_consistency_loss_fn
 from mfm.models.base_model import BaseModel
+
+from physics_informed_flow_map.training.loop import train_loop
 
 
 class _Cfg:
@@ -93,112 +92,37 @@ def train(
     ckpt_every_epochs: int = 0,
     on_checkpoint: Callable[..., None] | None = None,
 ) -> tuple[list[dict[str, float]], BaseModel | None]:
+    """Train a flow-matching model; thin wrapper over the shared ``train_loop``.
+
+    The FM-specific per-step loss is mfm's pure-FM consistency loss (the off-diagonal
+    distill terms are identically zero in this config, so the returned ``total`` is the FM
+    loss). History records ``{step, epoch, total}`` per step; the rest of the lifecycle
+    (warmup, EMA, per-epoch logging, eval/ckpt cadence) is the shared loop's.
+    """
     loss_fn = make_loss_fn(num_classes)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    # Mirror mfm: linear warmup 0.1x -> 1x over warmup_steps, then constant (no decay).
-    # A single LinearLR holds lr at end_factor=1x past total_iters, so it needs no
-    # follow-on ConstantLR. Stepped once per optimizer step.
-    scheduler: LinearLR | None = None
-    if warmup_steps > 0:
-        scheduler = LinearLR(
-            optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_steps
-        )
+    def compute_loss(m: BaseModel, batch: Any, step: int) -> Tensor:
+        x1, labels = batch
+        x1 = x1.to(device)
+        labels = labels.to(device)
+        opt_losses, _ = loss_fn(m, None, x1, labels, step=step)
+        return cast(Tensor, sum(opt_losses.values()))
 
-    model = model.to(device)
-    model.train()
-
-    ema: AveragedModel | None = None
-    if ema_enabled:
-        ema = AveragedModel(
-            model,
-            multi_avg_fn=get_ema_multi_avg_fn(ema_decay),  # type: ignore[no-untyped-call]
-            use_buffers=True,
-        )
-
-    def ema_module() -> BaseModel | None:
-        """The averaged model once at least one EMA update has happened, else None."""
-        if ema is not None and int(ema.n_averaged.item()) > 0:
-            return cast(BaseModel, ema.module)
-        return None
-
-    history: list[dict[str, float]] = []
-    best_metric = math.inf
-    step = 0
-    for epoch in range(n_epochs):
-        epoch_loss = 0.0
-        epoch_grad_norm = 0.0
-        epoch_steps = 0
-        for x1, labels in tqdm(
-            loader, desc=f"epoch {epoch + 1}/{n_epochs}", leave=False
-        ):
-            x1 = x1.to(device)
-            labels = labels.to(device)
-
-            optimizer.zero_grad()
-            opt_losses, _ = loss_fn(model, None, x1, labels, step=step)
-            total = sum(opt_losses.values())
-            total.backward()
-            # clip_grad_norm_ returns the *pre-clip* total grad norm — log it.
-            grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0))
-            optimizer.step()
-            if scheduler is not None:
-                scheduler.step()
-
-            if ema is not None and step >= ema_warmup_steps:
-                ema.update_parameters(model)
-
-            total_f = float(total.item())
-            # In pure-FM mode the distill terms are identically 0; `total` is the FM loss.
-            rec: dict[str, float] = {
-                "step": float(step),
-                "epoch": float(epoch),
-                "total": total_f,
-                "fm_loss": float(opt_losses["fm_loss"].item()),
-            }
-            history.append(rec)
-            epoch_loss += total_f
-            epoch_grad_norm += grad_norm
-            epoch_steps += 1
-            step += 1
-
-        # Log once per epoch (mean loss / grad-norm over the epoch, end-of-epoch lr).
-        if log is not None and epoch_steps:
-            log(
-                step=step,
-                epoch=epoch,
-                **{
-                    "train/loss": epoch_loss / epoch_steps,
-                    "train/grad_norm": epoch_grad_norm / epoch_steps,
-                    "train/lr": optimizer.param_groups[0]["lr"],
-                },
-            )
-
-        is_best = False
-        if (
-            on_eval is not None
-            and eval_every_epochs
-            and (epoch + 1) % eval_every_epochs == 0
-        ):
-            eval_model = ema_module() or model
-            metric = on_eval(eval_model, epoch)
-            model.train()
-            if metric is not None:
-                if log is not None:
-                    log(step=step, epoch=epoch, **{"val/loss": metric})
-                if metric < best_metric:
-                    best_metric = metric
-                    is_best = True
-
-        if on_checkpoint is not None and (
-            is_best or (ckpt_every_epochs and (epoch + 1) % ckpt_every_epochs == 0)
-        ):
-            on_checkpoint(
-                model, epoch, is_best=is_best, is_final=False, ema_model=ema_module()
-            )
-
-    if on_checkpoint is not None:
-        on_checkpoint(
-            model, n_epochs - 1, is_best=False, is_final=True, ema_model=ema_module()
-        )
-    return history, ema_module()
+    history, ema = train_loop(
+        model,
+        loader,
+        compute_loss,
+        n_epochs=n_epochs,
+        lr=lr,
+        device=device,
+        log=log,
+        warmup_steps=warmup_steps,
+        ema_enabled=ema_enabled,
+        ema_decay=ema_decay,
+        ema_warmup_steps=ema_warmup_steps,
+        eval_every_epochs=eval_every_epochs,
+        on_eval=on_eval,
+        ckpt_every_epochs=ckpt_every_epochs,
+        on_checkpoint=on_checkpoint,
+    )
+    return history, cast("BaseModel | None", ema)
