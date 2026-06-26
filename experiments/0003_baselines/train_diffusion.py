@@ -78,7 +78,7 @@ def main() -> None:
     )
 
     print(f"training diffusion prior: {len(dataset)} maps, {args.epochs} epochs")
-    history = train_diffusion_prior(
+    history, _ = train_diffusion_prior(
         denoiser,
         scheduler,
         loader,
@@ -88,7 +88,7 @@ def main() -> None:
         log=lambda **r: None,
     )
     if history:
-        print(f"  final train loss {history[-1]['loss']:.4f}")
+        print(f"  final train loss {history[-1]['total']:.4f}")
     torch.save({"model": denoiser.state_dict()}, args.ckpt)
     print(f"  saved prior -> {args.ckpt}")
 

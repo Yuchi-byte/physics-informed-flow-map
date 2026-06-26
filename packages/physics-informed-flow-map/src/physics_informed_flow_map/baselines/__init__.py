@@ -5,5 +5,11 @@ from physics_informed_flow_map.baselines.diffusion_prior import (
     build_denoiser,
     train_diffusion_prior,
 )
+from physics_informed_flow_map.baselines.diffusion_sample import ddpm_sample
 
-__all__ = ["build_denoiser", "dps_sample", "train_diffusion_prior"]
+__all__ = [
+    "build_denoiser",
+    "ddpm_sample",
+    "dps_sample",
+    "train_diffusion_prior",
+]
