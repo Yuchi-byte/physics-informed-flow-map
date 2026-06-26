@@ -47,14 +47,25 @@ class Run:
     run: Any  # wandb Run handle
     experiment: str
     ckpt_dir: Path
+    _last_step: int | None = None
 
     def log(self, **metrics: Any) -> None:
         """Log scalars at ``metrics['step']`` (if present) to wandb."""
         step = metrics.pop("step", None)
+        if step is not None:
+            self._last_step = int(step)
         self.run.log(metrics, step=int(step) if step is not None else None)
 
     def log_image(self, key: str, path: Path, *, step: int | None = None) -> None:
-        """Log an image file under ``key`` to wandb."""
+        """Log an image file under ``key`` to wandb.
+
+        Defaults to the most recently logged ``step`` (rather than letting wandb
+        auto-advance to ``last + 1``), so an image logged alongside that step's
+        scalars doesn't bump the counter and cause a later same-step scalar
+        (e.g. ``val/loss``) to be dropped as non-monotonic.
+        """
+        if step is None:
+            step = self._last_step
         self.run.log({key: wandb.Image(str(path))}, step=step)
 
     def save_checkpoint(
