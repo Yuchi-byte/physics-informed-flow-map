@@ -167,7 +167,7 @@ def main(dcfg: DictConfig) -> None:
         config=cfg.dump(),
     )
 
-    _, ema_model = train_diffusion_prior(
+    history, ema_model = train_diffusion_prior(
         denoiser,
         scheduler,
         loader,
@@ -184,6 +184,10 @@ def main(dcfg: DictConfig) -> None:
         ckpt_every_epochs=cfg.training.ckpt_every_epochs,
         on_checkpoint=on_checkpoint,
     )
+    # Mean DDPM loss over the final epoch's steps (one minibatch is too noisy).
+    last_epoch = history[-1]["epoch"]
+    last = [h["total"] for h in history if h["epoch"] == last_epoch]
+    final_loss = sum(last) / len(last)
     eval_model = ema_model if ema_model is not None else denoiser
 
     samples = ddpm_sample(
@@ -199,7 +203,12 @@ def main(dcfg: DictConfig) -> None:
     run.log_image("samples_final", final_png)
 
     final_val_loss = compute_val_loss(eval_model)
-    run.finish(**{"val/loss": final_val_loss})
+    run.finish(
+        **{
+            "val/loss": final_val_loss,
+            "train/final_loss": final_loss,
+        }
+    )
 
 
 if __name__ == "__main__":
