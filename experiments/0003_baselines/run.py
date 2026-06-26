@@ -162,49 +162,15 @@ def main(dcfg: DictConfig) -> None:
         )
         p = run.ckpt_dir.parent / f"samples_epoch{epoch}.png"
         cfg.dataset.visualize(s, p)
-        run.log_image("samples", p)
+        run.log_image("samples", p, caption=f"epoch {epoch + 1}")
         return compute_val_loss(model)
 
-    def on_checkpoint(
-        model: nn.Module,
-        epoch: int,
-        *,
-        is_best: bool = False,
-        is_final: bool = False,
-        ema_model: nn.Module | None = None,
-    ) -> None:
-        aliases: list[str] = []
-        if is_final:
-            aliases.append("final")
-        if is_best:
-            aliases.append("best")
-        if (
-            cfg.training.ckpt_every_epochs
-            and (epoch + 1) % cfg.training.ckpt_every_epochs == 0
-        ):
-            aliases.append("periodic")
-        path = run.save_checkpoint(
-            model, epoch, epoch=epoch, dataset=cfg.dataset.name, config=cfg.dump()
-        )
-        if aliases:
-            run.log_artifact(
-                path, name=f"{cfg.dataset.name}-diffusion", aliases=aliases
-            )
-        if ema_model is not None:
-            ema_path = run.save_checkpoint(
-                ema_model,
-                epoch,
-                epoch=epoch,
-                suffix="_ema",
-                dataset=cfg.dataset.name,
-                config=cfg.dump(),
-            )
-            if aliases:
-                run.log_artifact(
-                    ema_path,
-                    name=f"{cfg.dataset.name}-diffusion-ema",
-                    aliases=aliases,
-                )
+    on_checkpoint = run.checkpoint_callback(
+        artifact_name=f"{cfg.dataset.name}-diffusion",
+        ckpt_every_epochs=cfg.training.ckpt_every_epochs,
+        dataset=cfg.dataset.name,
+        config=cfg.dump(),
+    )
 
     _, ema_model = train_diffusion_prior(
         denoiser,

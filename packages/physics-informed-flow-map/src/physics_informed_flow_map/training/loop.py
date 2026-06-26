@@ -10,6 +10,7 @@ batch, step) -> Tensor`` callback (it owns moving the batch to ``device``). Ever
 from __future__ import annotations
 
 import math
+import time
 from typing import Callable
 
 import torch
@@ -43,8 +44,10 @@ def train_loop(
 
     Args:
         compute_loss: ``(model, batch, step) -> scalar loss``; moves ``batch`` to ``device``.
-        log: receives per-epoch ``train/loss``, ``train/grad_norm``, ``train/lr`` and, at eval
-            epochs, ``val/loss`` (each with ``step`` + ``epoch``).
+        log: receives per-epoch ``train/loss``, ``train/grad_norm``, ``train/lr``,
+            ``time/epoch_s``, ``perf/it_per_s`` and, at eval epochs, ``val/loss`` +
+            ``time/eval_s`` (each with ``step`` + ``epoch``). A final ``time/total_min``
+            is logged once at the end. (GPU memory comes from wandb's system metrics.)
         warmup_steps: linear LR warmup ``0.1x -> 1x`` over this many optimizer steps, then
             constant (mirrors mfm). ``0`` disables it.
         on_eval: ``(eval_model, epoch) -> metric | None`` at the eval cadence; a new best
@@ -82,10 +85,12 @@ def train_loop(
     history: list[dict[str, float]] = []
     best_metric = math.inf
     step = 0
+    train_start = time.perf_counter()
     for epoch in range(n_epochs):
         epoch_loss = 0.0
         epoch_grad_norm = 0.0
         epoch_steps = 0
+        epoch_start = time.perf_counter()
         for batch in tqdm(loader, desc=f"epoch {epoch + 1}/{n_epochs}", leave=False):
             optimizer.zero_grad()
             loss = compute_loss(model, batch, step)
@@ -110,7 +115,9 @@ def train_loop(
             epoch_steps += 1
             step += 1
 
-        # Log once per epoch (mean loss / grad-norm over the epoch, end-of-epoch lr).
+        # Log once per epoch: mean loss / grad-norm, end-of-epoch lr, and wall-clock
+        # timing (epoch seconds, optimizer steps/sec).
+        epoch_time = time.perf_counter() - epoch_start
         if log is not None and epoch_steps:
             log(
                 step=step,
@@ -119,6 +126,8 @@ def train_loop(
                     "train/loss": epoch_loss / epoch_steps,
                     "train/grad_norm": epoch_grad_norm / epoch_steps,
                     "train/lr": optimizer.param_groups[0]["lr"],
+                    "time/epoch_s": epoch_time,
+                    "perf/it_per_s": epoch_steps / epoch_time if epoch_time else 0.0,
                 },
             )
 
@@ -129,11 +138,19 @@ def train_loop(
             and (epoch + 1) % eval_every_epochs == 0
         ):
             eval_model = ema_module() or model
+            eval_start = time.perf_counter()
             metric = on_eval(eval_model, epoch)
             model.train()
             if metric is not None:
                 if log is not None:
-                    log(step=step, epoch=epoch, **{"val/loss": metric})
+                    log(
+                        step=step,
+                        epoch=epoch,
+                        **{
+                            "val/loss": metric,
+                            "time/eval_s": time.perf_counter() - eval_start,
+                        },
+                    )
                 if metric < best_metric:
                     best_metric = metric
                     is_best = True
@@ -144,6 +161,13 @@ def train_loop(
             on_checkpoint(
                 model, epoch, is_best=is_best, is_final=False, ema_model=ema_module()
             )
+
+    if log is not None:
+        log(
+            step=step,
+            epoch=n_epochs - 1,
+            **{"time/total_min": (time.perf_counter() - train_start) / 60},
+        )
 
     if on_checkpoint is not None:
         on_checkpoint(

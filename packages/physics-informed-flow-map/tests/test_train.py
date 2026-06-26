@@ -29,16 +29,21 @@ def test_train_runs_and_logs() -> None:
         log=lambda **r: logged.append(r),
     )
 
-    # history stays per-step (150 = 3 epochs x 50 batches); logging is per-epoch (3).
+    # history stays per-step (150 = 3 epochs x 50 batches); logging is per-epoch.
     assert len(history) == 150
-    assert len(logged) == 3
     assert all("total" in r and "epoch" in r for r in history)
     assert torch.isfinite(torch.tensor(history[-1]["total"]))
     assert history[-1]["total"] < history[0]["total"]
-    # Each epoch logs the namespaced train metrics.
+    # Each epoch logs the namespaced train metrics + timing (3 epochs -> 3 such logs).
+    epoch_logs = [r for r in logged if "train/loss" in r]
+    assert len(epoch_logs) == 3
     assert all(
-        {"train/loss", "train/grad_norm", "train/lr"} <= r.keys() for r in logged
+        {"train/loss", "train/grad_norm", "train/lr", "time/epoch_s", "perf/it_per_s"}
+        <= r.keys()
+        for r in epoch_logs
     )
+    # A single end-of-run wall-clock summary is logged last.
+    assert sum("time/total_min" in r for r in logged) == 1
 
 
 def test_train_history_is_per_step() -> None:

@@ -146,46 +146,15 @@ def main(dcfg: DictConfig) -> None:
         )
         p = run.ckpt_dir.parent / f"samples_epoch{epoch}.png"
         cfg.dataset.visualize(s, p)
-        run.log_image("samples", p)
+        run.log_image("samples", p, caption=f"epoch {epoch + 1}")
         return compute_val_loss(m)
 
-    def on_checkpoint(
-        m: BaseModel,
-        epoch: int,
-        *,
-        is_best: bool = False,
-        is_final: bool = False,
-        ema_model: BaseModel | None = None,
-    ) -> None:
-        aliases: list[str] = []
-        if is_final:
-            aliases.append("final")
-        if is_best:
-            aliases.append("best")
-        # A cadence checkpoint (ckpt_every_epochs) is both saved locally and uploaded.
-        if (
-            cfg.training.ckpt_every_epochs
-            and (epoch + 1) % cfg.training.ckpt_every_epochs == 0
-        ):
-            aliases.append("periodic")
-        path = run.save_checkpoint(
-            m, epoch, epoch=epoch, dataset=cfg.dataset.name, config=cfg.dump()
-        )
-        if aliases:
-            run.log_artifact(path, name=f"{cfg.dataset.name}-model", aliases=aliases)
-        if ema_model is not None:
-            ema_path = run.save_checkpoint(
-                ema_model,
-                epoch,
-                epoch=epoch,
-                suffix="_ema",
-                dataset=cfg.dataset.name,
-                config=cfg.dump(),
-            )
-            if aliases:
-                run.log_artifact(
-                    ema_path, name=f"{cfg.dataset.name}-model-ema", aliases=aliases
-                )
+    on_checkpoint = run.checkpoint_callback(
+        artifact_name=f"{cfg.dataset.name}-model",
+        ckpt_every_epochs=cfg.training.ckpt_every_epochs,
+        dataset=cfg.dataset.name,
+        config=cfg.dump(),
+    )
 
     history, ema_model = train(
         model,

@@ -23,7 +23,7 @@ training:
   lr: 1.0e-4
   warmup_steps: 2000
   eval_every_epochs: 3
-  ckpt_every_epochs: 10
+  ckpt_every_epochs: 15  # local save + wandb artifact upload every 15 epochs (also best + final)
   ema:
     enabled: true
 diffusion:

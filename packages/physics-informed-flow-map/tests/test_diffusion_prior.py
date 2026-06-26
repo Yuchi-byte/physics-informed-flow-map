@@ -51,10 +51,12 @@ def test_train_diffusion_prior_runs_with_ema_and_logging() -> None:
     # Per-step history (2 epochs x 2 steps) with the shared loop's "total" key.
     assert len(history) == 4
     assert {"total", "epoch", "step"} == set(history[0].keys())
-    # Per-epoch namespaced logging.
-    assert len(logged) == 2
+    # Per-epoch namespaced logging (2 epochs) + one end-of-run timing summary.
+    epoch_logs = [r for r in logged if "train/loss" in r]
+    assert len(epoch_logs) == 2
     assert all(
-        {"train/loss", "train/grad_norm", "train/lr"} <= r.keys() for r in logged
+        {"train/loss", "train/grad_norm", "train/lr"} <= r.keys() for r in epoch_logs
     )
+    assert sum("time/total_min" in r for r in logged) == 1
     # EMA enabled -> a distinct averaged module is returned.
     assert ema is not None and ema is not denoiser

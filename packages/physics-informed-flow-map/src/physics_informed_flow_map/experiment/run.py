@@ -13,7 +13,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import torch
 import wandb
@@ -56,17 +56,25 @@ class Run:
             self._last_step = int(step)
         self.run.log(metrics, step=int(step) if step is not None else None)
 
-    def log_image(self, key: str, path: Path, *, step: int | None = None) -> None:
-        """Log an image file under ``key`` to wandb.
+    def log_image(
+        self,
+        key: str,
+        path: Path,
+        *,
+        step: int | None = None,
+        caption: str | None = None,
+    ) -> None:
+        """Log an image file under ``key`` to wandb, optionally with a ``caption``.
 
         Defaults to the most recently logged ``step`` (rather than letting wandb
         auto-advance to ``last + 1``), so an image logged alongside that step's
         scalars doesn't bump the counter and cause a later same-step scalar
-        (e.g. ``val/loss``) to be dropped as non-monotonic.
+        (e.g. ``val/loss``) to be dropped as non-monotonic. Pass ``caption`` (e.g.
+        ``"epoch 12"``) to label the media by epoch rather than by raw step.
         """
         if step is None:
             step = self._last_step
-        self.run.log({key: wandb.Image(str(path))}, step=step)
+        self.run.log({key: wandb.Image(str(path), caption=caption)}, step=step)
 
     def save_checkpoint(
         self, model: torch.nn.Module, step: int, *, suffix: str = "", **meta: Any
@@ -81,6 +89,59 @@ class Run:
         artifact = wandb.Artifact(name, type="model")
         artifact.add_file(str(path))
         self.run.log_artifact(artifact, aliases=aliases)
+
+    def checkpoint_callback(
+        self,
+        *,
+        artifact_name: str,
+        ckpt_every_epochs: int,
+        dataset: str,
+        config: dict[str, Any],
+    ) -> Callable[..., None]:
+        """Build the ``on_checkpoint`` hook ``train_loop`` calls (raw + optional EMA).
+
+        Saves the model locally every time, and uploads it as a wandb artifact when it
+        carries an alias: ``final`` (end of run), ``best`` (new best eval metric), or
+        ``periodic`` (every ``ckpt_every_epochs`` epochs). An EMA model, when present, is
+        saved/uploaded alongside under ``<artifact_name>-ema``. Shared by every framework
+        so the cadence/alias logic stays in one place.
+        """
+
+        def on_checkpoint(
+            model: torch.nn.Module,
+            epoch: int,
+            *,
+            is_best: bool = False,
+            is_final: bool = False,
+            ema_model: torch.nn.Module | None = None,
+        ) -> None:
+            aliases: list[str] = []
+            if is_final:
+                aliases.append("final")
+            if is_best:
+                aliases.append("best")
+            if ckpt_every_epochs and (epoch + 1) % ckpt_every_epochs == 0:
+                aliases.append("periodic")
+            path = self.save_checkpoint(
+                model, epoch, epoch=epoch, dataset=dataset, config=config
+            )
+            if aliases:
+                self.log_artifact(path, name=artifact_name, aliases=aliases)
+            if ema_model is not None:
+                ema_path = self.save_checkpoint(
+                    ema_model,
+                    epoch,
+                    epoch=epoch,
+                    suffix="_ema",
+                    dataset=dataset,
+                    config=config,
+                )
+                if aliases:
+                    self.log_artifact(
+                        ema_path, name=f"{artifact_name}-ema", aliases=aliases
+                    )
+
+        return on_checkpoint
 
     def finish(self, **summary: Any) -> None:
         """Record summary scalars to the wandb run summary and close the run."""
