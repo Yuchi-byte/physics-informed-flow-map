@@ -27,7 +27,7 @@ training:
   lr: 1.0e-4
   warmup_steps: 2000
   eval_every_epochs: 3  # ~20k steps between evals (epochs are ~6.6k steps)
-  ckpt_every_epochs: 3  # local save + wandb artifact upload every 3 epochs (also best + final)
+  ckpt_every_epochs: 10  # local save + wandb artifact upload every 10 epochs (also best + final)
   ema:
     enabled: true
 sampling:
