@@ -43,6 +43,7 @@ outputs/
 ckpts/
 # Experiment run artifacts (manifest, metrics, samples, checkpoints)
 runs/
+multirun/  # Hydra --multirun default sweep dir (when not routed into runs/)
 reward_experiments/
 # Generated training artifacts inside vendored reference packages
 trained_models/
