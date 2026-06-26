@@ -108,11 +108,24 @@ inference, not training.</p>
 <div class="callout idea">
 <strong>Thesis.</strong> The wave-equation data fit $\|F(v)-d\|^2$ is a
 <em>measurement-dependent likelihood</em>, so it belongs at inference, not in the prior's
-training loss. A <em>flow-map</em> prior makes that inference cheap: posterior sampling needs
-only a handful of forward solves (vs. hundreds for diffusion DPS / RED-DiffEq) and yields
-<em>calibrated uncertainty</em> that supervised inverters (InversionNet) cannot. The bet:
-<strong>match or beat diffusion-based posterior FWI on accuracy, at a fraction of the forward
-solves, with usable uncertainty.</strong>
+training loss. What a <em>Meta-Flow-Map</em> prior adds is a stochastic <strong>one-step
+posterior</strong> $x_1\sim p(x_1\mid x_t)$ from any intermediate state: at each guidance step
+it can replace DPS's single biased Tweedie posterior-<em>mean</em> $\hat v=\mathbb E[v\mid x_t]$
+with proper draws, giving a <strong>less-biased likelihood/value estimate</strong> — $F$ is
+nonlinear, so the posterior-mean plug-in has a Jensen gap — plus reward/value steering without
+the inner rollouts value-based methods need, and <em>calibrated uncertainty</em> from the
+diverse draws (which supervised inverters like InversionNet cannot give). The bet:
+<strong>match or beat diffusion-based posterior FWI on accuracy and calibrated uncertainty.</strong>
+</div>
+
+<div class="callout risk">
+<strong>What the flow map does <em>not</em> buy: a cheaper inversion.</strong> The forward-solve
+count is set by how many likelihood-gradient steps the inversion needs to <em>converge</em> (one
+wave solve per guidance step, ~hundreds — the same as diffusion DPS / RED-DiffEq), not by how few
+steps the prior needs to sample <em>unconditionally</em>. A few-step flow map accelerates
+unconditional generation; it does not reduce the PDE solves that dominate posterior FWI. The
+edge is posterior <em>quality</em> (less-biased likelihood, calibrated uncertainty), not solve
+count.
 </div>
 
 <p>This sits in <a href="prior-work.html#gen-fwi">camp A</a> (prior + inference-time guidance)
@@ -131,10 +144,12 @@ distance ≈1.4× the real-vs-real floor).</p>
     (DiT backbone, EMA, held-out val). <span class="pill">FlatVel-A done; widen to more families.</span></p></div>
   <div class="arrow">→</div>
   <div class="stage"><span class="todo">next</span><div class="n">Stage 2</div>
-    <h4>Distill → Meta Flow Map</h4>
-    <p>Distill the FM teacher into a Meta Flow Map: few-step sampling and one-step prediction
-    $\hat v=\Phi(x_t,t,1)$ from any state, plus a differentiable reparametrization for cheap
-    value/reward estimation — the steering substrate.</p></div>
+    <h4>Train → Meta Flow Map</h4>
+    <p>Train a Meta Flow Map giving a stochastic <strong>one-step posterior</strong>
+    $x_1\sim p(x_1\mid x_t)$ from any intermediate state — the steering substrate. Crucially this
+    needs the map <em>conditioned on intermediate states</em> (mfm's $t_{\text{cond}}>0$ training),
+    not just the unconditional noise→data map; few-step unconditional sampling comes for free but
+    is not the inversion lever.</p></div>
   <div class="arrow">→</div>
   <div class="stage"><span class="todo">core</span><div class="n">Stage 3</div>
     <h4>Tilt toward measurements</h4>
@@ -198,11 +213,13 @@ project.</p>
 <ul>
   <li><strong>Guidance-strength schedule</strong> $g(t)$: when in the trajectory the tilt is
   applied, ramping, step-size adaptation.</li>
-  <li><strong>Forward-solve budget:</strong> trade #steps × #sources vs. accuracy; exploit the
-  flow map's few-step sampling to minimize PDE solves (the core efficiency claim — quantify
-  solves-to-accuracy vs. diffusion DPS).</li>
-  <li><strong>MFM value amortization:</strong> use the flow map's differentiable reparametrization
-  to estimate the reward/value without full rollouts (<a href="#r-mfm">Potaptchik et al.</a>).</li>
+  <li><strong>Forward-solve budget:</strong> the dominant cost is #guidance-steps × #sources of
+  PDE solves, set by how fast the inversion <em>converges</em> — <em>not</em> by the prior's
+  unconditional step count. Lever: better-conditioned guidance (above) that converges in fewer
+  steps; quantify solves-to-accuracy vs. diffusion DPS.</li>
+  <li><strong>MFM value amortization:</strong> the flow map's stochastic one-step posterior gives
+  a less-biased, lower-variance reward/value estimate per step (no inner rollouts) — the actual
+  efficiency the flow map buys, as opposed to fewer solves (<a href="#r-mfm">Potaptchik et al.</a>).</li>
 </ul>
 </div>
 
@@ -312,7 +329,7 @@ PDE solver).</p>
 <tr><th>Axis</th><th>What we report</th></tr>
 <tr><td>Accuracy</td><td>MAE, RMSE, SSIM on velocity maps (the OpenFWI-standard metrics), per family.</td></tr>
 <tr><td>Uncertainty (our edge)</td><td>Posterior <strong>diversity</strong> and <strong>calibration</strong> (coverage, CRPS) over multiple draws — what point-estimate inverters can't give.</td></tr>
-<tr><td>Cost (our edge)</td><td><strong>Number of forward (PDE) solves</strong> to reach target accuracy — head-to-head vs. diffusion DPS / RED-DiffEq.</td></tr>
+<tr><td>Cost</td><td><strong>Number of forward (PDE) solves</strong> to reach target accuracy, vs. diffusion DPS / RED-DiffEq. Convergence-limited and broadly comparable across priors — reported honestly, not where the flow map is expected to win.</td></tr>
 <tr><td>Generalization</td><td>Train on OpenFWI, test OOD on <strong>Marmousi / Overthrust</strong> (as RED-DiffEq does).</td></tr>
 </table>
 <h4>Baselines</h4>
@@ -332,8 +349,11 @@ PDE solver).</p>
   <li><span class="ph">M1 ✓</span><strong>Forward operator.</strong> Deepwave integrated as
   <code>physics.forward.simulate</code> (OpenFWI geometry); gradient check passes; verified on a
   real FlatVel-A map → $d$ of shape (5, 70, 1001). <span class="pill">Done.</span></li>
-  <li><span class="ph">M2</span><strong>Meta Flow Map.</strong> Distill the FM prior into a
-  steerable few-step flow map; confirm sample quality at low NFE.</li>
+  <li><span class="ph">M2 ◐</span><strong>Meta Flow Map.</strong> Train a flow map from scratch
+  (mfm <em>mf</em> mutual-flow consistency + adaptive loss weighting); unconditional few-step
+  sampling validated on gaussians &amp; mnist, FlatVel-A in progress. <em>Next: the
+  $t_{\text{cond}}>0$ posterior (conditioned on intermediate states) that steering actually
+  needs — the current run is unconditional ($t_{\text{cond}}=0$).</em></li>
   <li><span class="ph">M3 ◐</span><strong>Tilting PoC done.</strong> DPS-for-flow guided sampler
   (<code>physics.tilt.guided_sample</code>) inverts a held-out FlatVel-A map: data misfit driven
   to 0.5% of unguided, best-of-4 posterior MAE ~300 m/s, recovered map is a plausible flat-layer
@@ -352,11 +372,16 @@ PDE solver).</p>
   <li><strong>Cycle skipping survives the prior.</strong> $\|F(v)-d\|^2$ is non-convex in $v$
   even with a strong prior; the tilt may stall in wrong basins → need misfit design (A2) +
   schedules (A3).</li>
-  <li><strong>DPS approximation × flow-map.</strong> Guidance uses the one-shot $\hat v$ as a
-  likelihood proxy; with a <em>few-step</em> flow-map prior this approximation may be looser than
-  with a full diffusion model — quantify the quality/cost trade.</li>
-  <li><strong>Forward-solve cost.</strong> Differentiable wave solves dominate; the whole pitch
-  rests on the flow map needing few of them — must be measured, not assumed.</li>
+  <li><strong>Does the stochastic posterior actually beat Tweedie?</strong> MFM replaces DPS's
+  biased posterior-<em>mean</em> $\hat v$ with stochastic draws — less bias, but more variance and
+  more solves per step (each draw needs its own $F$ evaluation). The bias reduction must beat the
+  added cost/variance, and the $t_{\text{cond}}>0$ posterior must be trained well enough to help —
+  not assumed.</li>
+  <li><strong>Forward-solve cost is the budget, and the flow map does not cut it.</strong>
+  Differentiable wave solves dominate and the count is convergence-limited (~one per guidance
+  step). The flow map's claim is per-step posterior <em>quality</em> → better accuracy/uncertainty
+  at comparable solves; that must be measured, and a no-better-than-DPS result is a real
+  possibility.</li>
   <li><strong>Data availability.</strong> Real seismic $d$ (~600 GB) was skipped; simulating $d$
   with Deepwave from velocity maps is the pragmatic start (and gives clean, controllable
   experiments).</li>
@@ -368,9 +393,9 @@ PDE solver).</p>
 <div class="callout gap">
 <strong>Where the novelty lives.</strong> Camp-A posterior FWI is established for
 <em>diffusion</em> priors (RED-DiffEq, DPS-FWI). Doing it with a <strong>Meta-Flow-Map
-prior</strong> — exploiting few-step sampling and amortized reward steering for
-<em>cheap, calibrated</em> posterior FWI — is the open contribution, complemented by the
-axis-A research on the tilting signal itself.
+prior</strong> — using its stochastic one-step posterior for a <em>less-biased likelihood</em>
+and <em>calibrated, diverse</em> posterior FWI (rather than DPS's biased Tweedie-mean) — is the
+open contribution, complemented by the axis-A research on the tilting signal itself.
 </div>
 
 <!-- ===================================================== -->
