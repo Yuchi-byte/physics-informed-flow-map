@@ -69,8 +69,7 @@ TrainingConfig.model_rebuild()
 
 
 class SamplingConfig(Config):
-    n_eval_samples: int = Field(2048, gt=0)
-    n_eval_viz: int = Field(64, gt=0)
+    n_eval_viz: int = Field(64, gt=0)  # samples drawn for each viz (per-epoch + final)
 
 
 class DiffusionBaselineConfig(Config):
@@ -191,7 +190,7 @@ def main(dcfg: DictConfig) -> None:
         eval_model,
         scheduler,
         shape,
-        n_samples=cfg.sampling.n_eval_samples,
+        n_samples=cfg.sampling.n_eval_viz,
         num_steps=cfg.diffusion.num_sample_steps,
         device=device,
     )

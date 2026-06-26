@@ -14,4 +14,3 @@ training:
     enabled: true
 sampling:
   sampler_steps: 200
-  n_eval_samples: 64

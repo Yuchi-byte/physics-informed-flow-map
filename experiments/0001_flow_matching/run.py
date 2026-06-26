@@ -59,8 +59,7 @@ TrainingConfig.model_rebuild()
 
 class SamplingConfig(Config):
     sampler_steps: int = Field(100, gt=0)
-    n_eval_samples: int = Field(2048, gt=0)
-    n_eval_viz: int = Field(64, gt=0)
+    n_eval_viz: int = Field(64, gt=0)  # samples drawn for each viz (per-epoch + final)
 
 
 class FlowMatchingConfig(Config):
@@ -177,7 +176,7 @@ def main(dcfg: DictConfig) -> None:
 
     samples = sample(
         eval_model,
-        cfg.sampling.n_eval_samples,
+        cfg.sampling.n_eval_viz,
         cfg.dataset.shape,
         sampler_steps=cfg.sampling.sampler_steps,
         device=device,

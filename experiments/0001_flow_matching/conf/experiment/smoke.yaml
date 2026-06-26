@@ -6,4 +6,4 @@ defaults:
 training:
   n_epochs: 1
 sampling:
-  n_eval_samples: 256
+  n_eval_viz: 256  # denser gaussians scatter for the final viz

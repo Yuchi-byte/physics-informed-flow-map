@@ -11,5 +11,4 @@ diffusion:
   num_train_timesteps: 50
   num_sample_steps: 10
 sampling:
-  n_eval_samples: 32
   n_eval_viz: 16
