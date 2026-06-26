@@ -75,11 +75,12 @@ MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$'
   <a href="#problem">1 · The FWI problem</a>
   <a href="#classical">2 · Classical FWI</a>
   <a href="#supervised">3 · Supervised deep learning</a>
-  <a href="#genmodels">4 · Generative model background</a>
-  <a href="#gen-fwi">5 · Generative models for FWI</a>
-  <a href="#fm-inverse">6 · Flow matching for inverse problems</a>
-  <a href="#physics-gen">7 · Physics-informed generative</a>
-  <a href="#position">8 · Where this project sits</a>
+  <a href="#benchmarks">4 · Benchmarks &amp; datasets</a>
+  <a href="#genmodels">5 · Generative model background</a>
+  <a href="#gen-fwi">6 · Generative models for FWI</a>
+  <a href="#fm-inverse">7 · Flow matching for inverse problems</a>
+  <a href="#physics-gen">8 · Physics-informed generative</a>
+  <a href="#position">9 · Where this project sits</a>
   <a href="#refs">References</a>
 </nav>
 <main>
@@ -99,7 +100,7 @@ wave of <em>generative priors</em> (diffusion and flow matching), and locates wh
 project — a <strong>flow-map prior with physics-residual training</strong> — fits.</p>
 
 <div class="callout key">
-<strong>The three generative camps (the spine of section&nbsp;5).</strong>
+<strong>The three generative camps (the spine of section&nbsp;6).</strong>
 <span class="tag tA">A</span> learn a prior $p(v)$ offline, steer it with the wave
 equation <em>at inference</em> (DPS, RED-DiffEq). &nbsp;
 <span class="tag tB">B</span> learn a <em>conditional</em> map seismic→velocity in one
@@ -178,7 +179,7 @@ what a learned generative prior $p(\mathbf{m})$ replaces with a data-driven one.
 (<a href="#r-wu">Wu et al. 2014</a>), and <strong>adaptive waveform inversion</strong>
 (<a href="#r-warner">Warner &amp; Guasch 2016</a>) convexify the objective. Note the
 recurring OT theme — it reappears as <em>straight-path transport</em> in flow matching
-(§4).</p>
+(§5).</p>
 
 <h3>2.5 Computational tricks</h3>
 <p><strong>Source encoding / simultaneous sources</strong>
@@ -193,7 +194,7 @@ map, from data.
 </div>
 
 <!-- ============================================================= -->
-<h2 class="sec" id="supervised">3 · Supervised deep learning &amp; the OpenFWI benchmark</h2>
+<h2 class="sec" id="supervised">3 · Supervised deep learning</h2>
 <p>The first ML wave learned a <em>direct</em> seismic→velocity map with a CNN, trained on
 paired synthetic data:</p>
 <ul>
@@ -220,15 +221,126 @@ generative methods address.</p>
 </table>
 
 <!-- ============================================================= -->
-<h2 class="sec" id="genmodels">4 · Background: diffusion &amp; flow-matching generative models</h2>
+<h2 class="sec" id="benchmarks">4 · Benchmarks &amp; datasets</h2>
+<p>Ground-truth velocity is unknowable in the field, so FWI-ML methods are trained and
+scored almost entirely on <em>synthetic</em> (velocity, seismic) pairs — the choice of
+benchmark therefore defines what "works" means. One dataset dominates the recent generative
+literature, <strong>OpenFWI</strong>, and this project trains its prior on its velocity maps.
+It is worth setting out exactly what that data covers, how it is made, how far it sits from
+reality, and what each camp actually trains and evaluates on.</p>
 
-<h3>4.1 Score-based diffusion</h3>
+<h3>4.1 OpenFWI — coverage</h3>
+<p><strong>OpenFWI</strong> (<a href="#r-openfwi">Deng et al. 2022</a>) is a collection of
+<strong>12 datasets</strong> (≈2.1&nbsp;TB with seismic) in four families: <em>Vel</em> and
+<em>Fault</em> (analytic layered models), <em>Style</em> (style-transfer textures), and a 3D
+<em>Kimberlina</em> CO₂-reservoir family. The ten 2D Vel/Fault/Style datasets — the ones the
+generative-prior literature uses, and the ones staged in this repo — total
+<strong>≈470k velocity maps</strong> on a uniform <strong>70×70 grid at 10&nbsp;m spacing</strong>,
+velocities <strong>1500–4500&nbsp;m/s</strong>. Each family splits into an <em>A</em> (easier) and
+<em>B</em> (harder) tier by structural complexity. We pulled velocity maps only (~8.8&nbsp;GB); the
+seismic counterpart — 5 surface Ricker shots (≈15&nbsp;Hz) × 70 receivers × 1000 samples at
+1&nbsp;ms, the acquisition our <a href="#r-deepwave">Deepwave</a> operator replicates — runs to
+hundreds of GB and is regenerated on demand.</p>
+
+<table>
+<caption class="pill" style="text-align:left;margin-bottom:6px">The ten 2D OpenFWI datasets staged in this repo (map counts from disk; all 70×70, 1500–4500 m/s)</caption>
+<tr><th>Dataset</th><th>Family</th><th>Tier</th><th>Velocity maps</th><th>Subsurface structure</th></tr>
+<tr><td>FlatVel-A</td><td>Vel</td><td>easy</td><td>30,000</td><td>flat layers, sharp interfaces</td></tr>
+<tr><td>FlatVel-B</td><td>Vel</td><td>hard</td><td>30,000</td><td>flat layers, wider velocity contrast</td></tr>
+<tr><td>CurveVel-A</td><td>Vel</td><td>easy</td><td>30,000</td><td>gently curved (folded) layers</td></tr>
+<tr><td>CurveVel-B</td><td>Vel</td><td>hard</td><td>30,000</td><td>strongly folded layers</td></tr>
+<tr><td>FlatFault-A</td><td>Fault</td><td>easy</td><td>54,000</td><td>flat layers cut by faults</td></tr>
+<tr><td>FlatFault-B</td><td>Fault</td><td>hard</td><td>54,000</td><td>flat layers, larger fault throws</td></tr>
+<tr><td>CurveFault-A</td><td>Fault</td><td>easy</td><td>54,000</td><td>curved layers cut by faults</td></tr>
+<tr><td>CurveFault-B</td><td>Fault</td><td>hard</td><td>54,000</td><td>curved layers, complex faulting</td></tr>
+<tr><td>Style-A</td><td>Style</td><td>—</td><td>67,000</td><td>realistic textures (style transfer)</td></tr>
+<tr><td>Style-B</td><td>Style</td><td>—</td><td>67,000</td><td>realistic textures, higher complexity</td></tr>
+<tr><td><strong>Total</strong></td><td></td><td></td><td><strong>470,000</strong></td><td>≈8.8&nbsp;GB (velocity maps only)</td></tr>
+</table>
+
+<h3>4.2 How the velocity maps are generated</h3>
+<p>OpenFWI builds velocity maps from <strong>three kinds of prior</strong>, then forward-models the
+seismic data from each map with a 2D acoustic solver:</p>
+<ul>
+  <li><strong>Mathematical / procedural</strong> (<em>Vel</em>, <em>Fault</em>) — start from a
+  layered baseline (velocity generally increasing with depth) and recursively apply equations to
+  bend layers into folds (<em>Curve</em>) and insert fault throws (<em>Fault</em>). Piecewise-smooth
+  models with clean, sharp interfaces.</li>
+  <li><strong>Style transfer</strong> (<em>Style</em>) — a style-transfer network paints velocity
+  structure using <em>natural images</em> as the style source, giving richer textures. The realism is
+  visual, not geological: the style images are not subsurface data.</li>
+  <li><strong>Reservoir simulation</strong> (<em>Kimberlina</em>) — physically simulated CO₂-storage
+  models from DOE's NRAP program; the only family grounded in a real geological scenario (and the only
+  3D one).</li>
+</ul>
+<p>This project learns an unconditional prior $p(v)$ over exactly these maps — so the generative
+process above <em>is</em> the distribution the prior tries to approximate.</p>
+
+<h3>4.3 How representative is this of the real subsurface?</h3>
+<div class="callout gap">
+<strong>OpenFWI is a controlled ML benchmark, not a field surrogate.</strong> The 2D families lack
+salt bodies, clinoforms, and velocity interbedding; <em>Style</em>'s realism is style-transfer from
+non-geological images; the domain is a tiny ~0.7&nbsp;km 2D patch; and the physics is the
+<em>simplified</em> case — 2D <strong>acoustic</strong>, constant density, a single known source
+wavelet, noiseless data (our own forward operator inherits all of these). Field FWI additionally
+contends with elasticity, anisotropy, attenuation, 3D propagation, unknown wavelets, and noise. The
+community treats this <strong>synthetic-to-field gap</strong> as an open problem: topping OpenFWI does
+not imply field transfer — which is why more realistic benchmarks exist
+(<a href="#r-geofwi">GeoFWI</a>, field-scale <a href="#r-subsurfacegen">SubsurfaceGen</a>, and the
+classical Marmousi / SEAM / Overthrust / BP-salt models, each with its own diversity limits).
+</div>
+<p>For this project that is a statement of <em>scope</em>, not validity: an OpenFWI result is a clean
+methodology proof-of-concept (controlled, ground-truthed), not a field-validated claim. Usefully, the
+<em>inference-time</em> half of a camp-A method is the transferable part — the wave-equation gradient
+is exact for any geology, so the machinery would carry to a more realistic setting by swapping the
+prior. The <em>prior</em> is the component tied to OpenFWI's stylized distribution.</p>
+
+<h3>4.4 What prior works train and evaluate on</h3>
+<p>The benchmark protocol is per-dataset: train on a dataset's training split, test on its held-out
+split, and report <strong>MAE</strong>, <strong>RMSE</strong>, and <strong>SSIM</strong> on the
+velocity map (the metrics in the §3 table). The training <em>scope</em>, though, splits sharply by
+camp:</p>
+<ul>
+  <li><span class="tag tA">A</span><span class="tag tB">B</span> <strong>Per-family is the norm.</strong>
+  Generative-prior and conditional methods train one model <em>per dataset</em>: DiffusionVel trains a
+  separate diffusion model for each B-family; RED-DiffEq trains an OpenFWI prior and then tests
+  <em>zero-shot</em> on Marmousi/Overthrust. This keeps numbers comparable to the leaderboard.</li>
+  <li><span class="tag tB">B</span> <strong>Pooling is the "large-model" exception — and it is
+  supervised.</strong> Direct seismic→velocity regressors do pool families:
+  <a href="#r-largemodel">FWI in the large-model era</a> trains on all ten (408k pairs, augmented to
+  ~5M), and an <a href="#r-empiricalfwi">empirical study</a> finds combined training improves MAE
+  ≈13% with stronger leave-one-out generalization. That evidence is for the <em>conditional map</em>,
+  not a learned prior.</li>
+</ul>
+
+<table>
+<caption class="pill" style="text-align:left;margin-bottom:6px">Training scope &amp; evaluation by method (camp tags as in §6)</caption>
+<tr><th>Work</th><th>Camp</th><th>Trains on</th><th>Evaluates on</th></tr>
+<tr><td>InversionNet · VelocityGAN</td><td>supervised</td><td>one model per OpenFWI dataset</td><td>that dataset's test split</td></tr>
+<tr><td>DiffusionVel</td><td><span class="tag tB">B</span></td><td>separate model per dataset (B-families)</td><td>per-dataset MAE/RMSE/SSIM</td></tr>
+<tr><td>RED-DiffEq</td><td><span class="tag tA">A</span></td><td>OpenFWI diffusion prior</td><td>OpenFWI + zero-shot Marmousi/Overthrust</td></tr>
+<tr><td>I2SB Schrödinger bridge</td><td><span class="tag tB">B</span></td><td>all 10 families (code released)</td><td>per-dataset</td></tr>
+<tr><td>FWI large-model / empirical study</td><td><span class="tag tB">B</span></td><td>all families pooled (→ augmented)</td><td>combined + leave-one-out</td></tr>
+<tr><td><strong>This project</strong></td><td><span class="tag tA">A</span></td><td>single family now (FlatVel-A) → pooled later</td><td>held-out maps + DPS inversion</td></tr>
+</table>
+
+<div class="callout key">
+<strong>Implication for this project.</strong> Our closest analogs (camp&nbsp;A / DiffusionVel) train
+<em>per family</em>, so the first result should too: a single-family prior (FlatVel-A) steered by the
+wave equation is directly comparable and free of the multimodality a pooled 10-family prior introduces.
+The pooled "one prior, many geologies" run is a deliberate <em>follow-up</em>, not the first experiment.
+</div>
+
+<!-- ============================================================= -->
+<h2 class="sec" id="genmodels">5 · Background: diffusion &amp; flow-matching generative models</h2>
+
+<h3>5.1 Score-based diffusion</h3>
 <p>Diffusion models corrupt data with a forward SDE and learn to reverse it via the
 <em>score</em> $\nabla_{\mathbf{x}}\log p_t(\mathbf{x})$
 (<a href="#r-songsde">Song et al. 2021</a>). The same marginals admit a deterministic
 <strong>probability-flow ODE</strong> — the conceptual bridge to flow matching.</p>
 
-<h3>4.2 Flow matching</h3>
+<h3>5.2 Flow matching</h3>
 <p><strong>Flow Matching</strong> (<a href="#r-fm">Lipman et al. 2023</a>) trains a velocity
 field $v_\theta(\mathbf{x},t)$ by regressing it against an analytic conditional velocity
 along a fixed probability path — <em>simulation-free</em>. With the Gaussian
@@ -239,7 +351,7 @@ trajectories are nearly straight, so few ODE steps (NFEs) suffice at sampling:</
 paths literally straight (regress against $\mathbf{x}_1-\mathbf{x}_0$) and "reflows" to
 reach 1–2-step generation; it underpins SD3/FLUX (<a href="#r-sd3">Esser et al. 2024</a>).</p>
 
-<h3>4.3 Stochastic interpolants — the unifying view</h3>
+<h3>5.3 Stochastic interpolants — the unifying view</h3>
 <p><strong>Stochastic Interpolants</strong>
 (<a href="#r-si">Albergo, Boffi &amp; Vanden-Eijnden 2023</a>) write
 $\mathbf{x}_t=\alpha(t)\mathbf{x}_0+\beta(t)\mathbf{x}_1+\gamma(t)\boldsymbol{\epsilon}$,
@@ -247,7 +359,7 @@ recovering flow matching ($\gamma{=}0$, linear $\alpha,\beta$) and diffusion (VP
 as special cases. <em>The mfm reference package in this repo implements the linear
 interpolant.</em></p>
 
-<h3>4.4 Consistency models &amp; flow maps</h3>
+<h3>5.4 Consistency models &amp; flow maps</h3>
 <p>To sample in one/few steps, <strong>consistency models</strong>
 (<a href="#r-consistency">Song et al. 2023</a>) learn the flow map to $t{=}0$;
 <strong>flow maps</strong> (<a href="#r-flowmaps">Boffi et al. 2025</a>) generalize to map
@@ -270,7 +382,7 @@ distributions.)</p>
 </table>
 
 <!-- ============================================================= -->
-<h2 class="sec" id="gen-fwi">5 · Generative models for FWI — the three camps</h2>
+<h2 class="sec" id="gen-fwi">6 · Generative models for FWI — the three camps</h2>
 
 <h3><span class="tag tA">A</span>&nbsp; Unconditional prior + inference-time guidance</h3>
 <p>Train a prior $p(\mathbf{m})$ on velocity models offline; at solve time, steer it toward
@@ -296,7 +408,7 @@ inference is one fast pass. Dominant on OpenFWI leaderboards.</p>
 <ul>
   <li><strong>DiffusionVel</strong> (<a href="#r-diffusionvel">Zhang, Li &amp; Huang 2024</a>) —
   ensemble of conditional + unconditional diffusion; best published conditional OpenFWI
-  numbers (table in §3). Notable for <em>multi-information integration</em> — see §5.D.</li>
+  numbers (table in §3). Notable for <em>multi-information integration</em> — see §6.D.</li>
   <li><strong>Conditional Rectified Flow</strong> (<a href="#r-condrf">Xu et al. 2026</a>)
   and the <strong>I2SB Schrödinger bridge</strong> (<a href="#r-i2sb">Stankevich &amp;
   Petrov 2025</a>, code available, all 10 families) — the <em>flow-matching</em> entrants,
@@ -330,7 +442,7 @@ maps. Almost every FWI generative paper puts physics at inference (camp A) or no
 prior — is the opening this project targets.
 </div>
 
-<h3 id="multimeas">5.D&nbsp; Incorporating heterogeneous knowledge (multiple measurement types)</h3>
+<h3 id="multimeas">6.D&nbsp; Incorporating heterogeneous knowledge (multiple measurement types)</h3>
 <p>Real surveys carry more than one observation: seismic shot gathers, sparse but accurate
 <em>well logs</em>, a smooth <em>background/migration velocity</em>, gravity, and qualitative
 <em>geological priors</em>. A recent line fuses these into one generative inversion:</p>
@@ -356,7 +468,7 @@ multi-measurement direction).
 </div>
 
 <!-- ============================================================= -->
-<h2 class="sec" id="fm-inverse">6 · Flow matching for inverse problems</h2>
+<h2 class="sec" id="fm-inverse">7 · Flow matching for inverse problems</h2>
 <p>Because flow models lack an explicit score, the diffusion posterior-sampling machinery had
 to be re-derived for them — directly relevant to a future conditional $p(\mathbf{v}\mid
 \mathbf{d})$ for FWI:</p>
@@ -375,8 +487,8 @@ to be re-derived for them — directly relevant to a future conditional $p(\math
 </ul>
 
 <!-- ============================================================= -->
-<h2 class="sec" id="physics-gen">7 · Physics-informed generative models (cross-cutting)</h2>
-<p>The PIDM→PBFM line (§5C) is the core, but the broader family — PINF (physics-informed
+<h2 class="sec" id="physics-gen">8 · Physics-informed generative models (cross-cutting)</h2>
+<p>The PIDM→PBFM line (§6C) is the core, but the broader family — PINF (physics-informed
 normalizing flows), PCFM, and diffusion/flow guidance with PDE penalties — shares one idea:
 <em>let the governing equations shape the generative density</em>, either through a training
 penalty (PIDM/PBFM/PINF) or an inference-time projection (PCFM, DPS-style guidance). FWI is a
@@ -384,13 +496,13 @@ natural, high-impact, and largely untried target for this family because its for
 (the wave equation) is well-defined and differentiable.</p>
 
 <!-- ============================================================= -->
-<h2 class="sec" id="position">8 · Where this project sits</h2>
+<h2 class="sec" id="position">9 · Where this project sits</h2>
 <p>This repository combines:</p>
 <ul>
   <li>a <strong>Meta-Flow-Map / stochastic-interpolant prior</strong> over OpenFWI velocity
-  maps (the <code>mfm</code> stack; §4.4) — fast, few-step, with built-in posterior
+  maps (the <code>mfm</code> stack; §5.4) — fast, few-step, with built-in posterior
   sampling; and</li>
-  <li><strong>PIDM/PBFM-style physics-residual training</strong> (§5C) — to be applied to
+  <li><strong>PIDM/PBFM-style physics-residual training</strong> (§6C) — to be applied to
   the seismic setting.</li>
 </ul>
 <p>In the camp taxonomy, the unconditional velocity-map prior is already built and tuned
@@ -450,6 +562,10 @@ scoping step toward the actual inverse problem.
 <li id="r-fmps">Song, K. et al. (2024). <em>Flow matching posterior sampling.</em> <a href="https://arxiv.org/abs/2411.07625">arXiv:2411.07625</a></li>
 <li id="r-pcfm">(2025). <em>Physics-constrained flow matching (PCFM).</em> <a href="https://arxiv.org/abs/2506.04171">arXiv:2506.04171</a></li>
 <li id="r-deepwave">Richardson, A. <em>Deepwave: wave propagation &amp; FWI in PyTorch.</em> <a href="https://github.com/ar4/deepwave">github.com/ar4/deepwave</a></li>
+<li id="r-largemodel">(2026). <em>Improving full-waveform inversion in the large-model era.</em> <a href="https://arxiv.org/abs/2603.00377">arXiv:2603.00377</a></li>
+<li id="r-empiricalfwi">(2024). <em>An empirical study of large-scale data-driven full-waveform inversion.</em> Scientific Reports 14. <a href="https://doi.org/10.1038/s41598-024-68573-7">doi:10.1038/s41598-024-68573-7</a></li>
+<li id="r-geofwi">(2026). <em>GeoFWI: a large velocity-model dataset for benchmarking deep-learning FWI.</em> <a href="https://www.researchgate.net/publication/401625268_GeoFWI_A_Large_Velocity_Model_Data_Set_for_Benchmarking_Full_Waveform_Inversion_Using_Deep_Learning">ResearchGate</a></li>
+<li id="r-subsurfacegen">(2026). <em>SubsurfaceGen: procedural generation of field-scale earth models and seismic data.</em> <a href="https://arxiv.org/abs/2605.30541">arXiv:2605.30541</a></li>
 </ol>
 
 <div class="docnav bottom"><span class="here">Prior work · 1 / 2</span>
