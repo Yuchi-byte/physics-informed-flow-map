@@ -55,6 +55,14 @@ MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$'
   .eq{overflow-x:auto}
   .foot{margin-top:60px;border-top:1px solid var(--line);padding-top:16px;color:var(--muted);font-size:13px}
   @media (max-width:880px){.wrap{grid-template-columns:1fr}nav{display:none}main{padding:28px 20px 90px}}
+  .docnav{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:0 0 26px;padding:9px 14px;
+    background:var(--panel,#161a22);border:1px solid var(--line,#262c38);border-radius:8px;font-size:13.5px}
+  .docnav a{color:var(--a,#9bd0ff);text-decoration:none}
+  .docnav a:hover{text-decoration:underline}
+  .docnav .here{color:var(--muted,#9aa3b2)}
+  .docnav .sep{color:var(--line,#262c38)}
+  .docnav .end{margin-left:auto}
+  .docnav.bottom{margin:48px 0 0}
 </style>
 </head>
 <body>
@@ -78,6 +86,9 @@ MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$'
 
 <h1>Generative Priors &amp; Flow Matching for Full-Waveform Inversion</h1>
 <p class="sub">Prior-work review · compiled 2026-06-25 · <span class="pill">physics-informed-flow-map</span></p>
+
+<div class="docnav"><span class="here">Prior work · 1 / 2</span>
+<span class="end"><a href="index.html">Index</a> <span class="sep">·</span> <a href="research-plan.html">Next: Research plan →</a></span></div>
 
 <section id="overview">
 <p class="lede">Full-waveform inversion (FWI) recovers a subsurface velocity map from seismic
@@ -441,8 +452,10 @@ scoping step toward the actual inverse problem.
 <li id="r-deepwave">Richardson, A. <em>Deepwave: wave propagation &amp; FWI in PyTorch.</em> <a href="https://github.com/ar4/deepwave">github.com/ar4/deepwave</a></li>
 </ol>
 
-<p class="foot">Companion markdown notes: <code>docs/research/2026-06-25-diffusion-fwi-baselines.md</code>.
-Tags <span class="tag tA">A</span> prior+guidance · <span class="tag tB">B</span> conditional ·
+<div class="docnav bottom"><span class="here">Prior work · 1 / 2</span>
+<span class="end"><a href="index.html">Index</a> <span class="sep">·</span> <a href="research-plan.html">Next: Research plan →</a></span></div>
+
+<p class="foot">Tags <span class="tag tA">A</span> prior+guidance · <span class="tag tB">B</span> conditional ·
 <span class="tag tC">C</span> physics-in-training. Equations via MathJax.</p>
 
 </main>

@@ -59,6 +59,14 @@ MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$
     background:rgba(110,168,254,.16);color:var(--accent);border:1px solid var(--accent)}
   @media (max-width:880px){.wrap{grid-template-columns:1fr}nav{display:none}main{padding:28px 20px 90px}
     .pipe{flex-direction:column}.arrow{transform:rotate(90deg);padding:6px 0}}
+  .docnav{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:0 0 26px;padding:9px 14px;
+    background:var(--panel,#161a22);border:1px solid var(--line,#262c38);border-radius:8px;font-size:13.5px}
+  .docnav a{color:var(--a,#9bd0ff);text-decoration:none}
+  .docnav a:hover{text-decoration:underline}
+  .docnav .here{color:var(--muted,#9aa3b2)}
+  .docnav .sep{color:var(--line,#262c38)}
+  .docnav .end{margin-left:auto}
+  .docnav.bottom{margin:48px 0 0}
 </style>
 </head>
 <body>
@@ -85,6 +93,9 @@ MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$
 
 <h1>Flow-Map Priors with Inference-Time Tilting for Full-Waveform Inversion</h1>
 <p class="sub">Research plan &amp; idea · 2026-06-25 · <span class="pill">physics-informed-flow-map</span></p>
+
+<div class="docnav"><span class="here">Research plan · 2 / 2</span>
+<span class="end"><a href="prior-work.html">← Prev: Prior work</a> <span class="sep">·</span> <a href="index.html">Index</a></span></div>
 
 <!-- ===================================================== -->
 <section id="idea">
@@ -382,9 +393,11 @@ axis-A research on the tilting signal itself.
 <li id="r-deepwave">Richardson, A. <em>Deepwave: wave propagation &amp; FWI in PyTorch.</em> <a href="https://github.com/ar4/deepwave">github.com/ar4/deepwave</a></li>
 </ol>
 
-<p class="foot">Companion: <a href="prior-work.html">prior-work review</a> ·
-<code>docs/research/2026-06-25-diffusion-fwi-baselines.md</code>. M0 done; M1 (Deepwave) is the
-next concrete build. Each milestone gets its own spec→plan→implementation cycle.</p>
+<div class="docnav bottom"><span class="here">Research plan · 2 / 2</span>
+<span class="end"><a href="prior-work.html">← Prev: Prior work</a> <span class="sep">·</span> <a href="index.html">Index</a></span></div>
+
+<p class="foot">M0 done; M1 (Deepwave) is the next concrete build. Each milestone gets its own
+spec→plan→implementation cycle.</p>
 
 </main>
 </div>
