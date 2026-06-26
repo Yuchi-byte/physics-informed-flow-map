@@ -52,8 +52,9 @@ class TrainingConfig(Config):
     lr: float = 1e-3
     warmup_steps: int = Field(0, ge=0)
     eval_every_epochs: int = Field(0, ge=0)
-    ckpt_every_epochs: int = Field(0, ge=0)
-    artifact_every_epochs: int = Field(0, ge=0)
+    ckpt_every_epochs: int = Field(
+        0, ge=0
+    )  # local save + wandb artifact upload cadence
     ema: EmaConfig = EmaConfig()
 
 
@@ -161,9 +162,10 @@ def main(dcfg: DictConfig) -> None:
             aliases.append("final")
         if is_best:
             aliases.append("best")
+        # A cadence checkpoint (ckpt_every_epochs) is both saved locally and uploaded.
         if (
-            cfg.training.artifact_every_epochs
-            and (epoch + 1) % cfg.training.artifact_every_epochs == 0
+            cfg.training.ckpt_every_epochs
+            and (epoch + 1) % cfg.training.ckpt_every_epochs == 0
         ):
             aliases.append("periodic")
         path = run.save_checkpoint(

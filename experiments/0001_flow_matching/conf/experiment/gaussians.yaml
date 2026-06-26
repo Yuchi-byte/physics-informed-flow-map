@@ -6,8 +6,7 @@ defaults:
 training:
   n_epochs: 100
   eval_every_epochs: 10
-  ckpt_every_epochs: 10
-  artifact_every_epochs: 10  # upload every checkpoint as a wandb artifact (also best + final)
+  ckpt_every_epochs: 10  # local save + wandb artifact upload (also best + final)
   ema:
     enabled: true
 sampling:
