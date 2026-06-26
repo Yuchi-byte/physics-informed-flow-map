@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - override /model: dit
+  - override /dataset: openfwi
+
+training:
+  n_epochs: 100
+  batch_size: 64
+  lr: 1.0e-4  # mfm's FWI LR (10x below the 1e-3 default; tames the early curve)
+  warmup_steps: 2000  # mfm's linear warmup over ~5% of the ~42k-step run
+  eval_every_epochs: 20
+  ckpt_every_epochs: 20
+  ema:
+    enabled: true
+sampling:
+  sampler_steps: 200

@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - override /model: mlp
+  - override /dataset: gaussians
+
+training:
+  n_epochs: 100
+  eval_every_epochs: 10
+  ckpt_every_epochs: 10  # local save + wandb artifact upload (also best + final)
+  ema:
+    enabled: true
+sampling:
+  sampler_steps: 200

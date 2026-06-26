@@ -1,0 +1,5 @@
+kind: dit
+hidden: 256
+depth: 6
+num_heads: 8
+patch_size: 4

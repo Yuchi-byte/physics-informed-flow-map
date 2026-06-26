@@ -1,0 +1,5 @@
+name: gaussians
+n_modes: 8
+radius: 4.0
+std: 0.5
+n_samples: 100000
