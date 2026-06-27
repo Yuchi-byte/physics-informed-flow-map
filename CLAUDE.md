@@ -74,8 +74,12 @@ are developing **improvements within Camp A**; physics stays at inference, not t
 **Camp C is not our target — it is not really applicable to this problem.**
 
 The human-curated research narrative lives in `docs/research/*.html` (`prior-work.html`,
-`research-plan.html`) — **the user curates these directly and requests regeneration; do not
-silently rewrite them.** Keep the camp positioning above consistent with them when it shifts.
+`research-plan.html`) — **read these before working on the method, inference, or positioning.**
+`prior-work.html` §5.5 is the authoritative account of how Meta Flow Maps work and the steering
+estimators we build on (the stochastic one-step posterior; MFM-G — the gradient-based / IWAE
+estimator we use — vs. MFM-GF and DPS); `research-plan.html` holds the current thesis (posterior
+quality, not cost). **The user curates these directly and requests regeneration; do not silently
+rewrite them.** Keep the camp positioning above consistent with them when it shifts.
 AI-generated journals/reports (`experiments/JOURNAL.md`, `experiments/*/report.md`) are
 **AI-facing** and are NOT kept under `docs/research/`.
 

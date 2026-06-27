@@ -381,6 +381,78 @@ distributions.)</p>
 <tr><td>PDE order</td><td>2nd-order (parabolic)</td><td>1st-order (transport)</td></tr>
 </table>
 
+<h3>5.5 Meta Flow Maps in depth — the stochastic posterior this project steers</h3>
+<p>The <code>mfm</code> package is the engine for our inference, so it is worth stating
+precisely what it learns and the inference-time machinery it unlocks. (Equation numbers below
+refer to <a href="#r-mfm">Potaptchik et al. 2026</a>.)</p>
+
+<p><strong>Model.</strong> A meta flow map is an <em>average-velocity</em> field
+$v_\theta(s,u,\mathbf{x},t_{\text{cond}},\mathbf{x}_{\text{cond}})$ that transports a state at
+time $s$ to time $u$ in a single step via the map
+$X(s,u,\mathbf{x})=\mathbf{x}+(u-s)\,v_\theta$. On the diagonal $s{=}u$ it reduces to the
+ordinary flow-matching velocity $v_t$; off the diagonal it is a genuine few-step map. The extra
+arguments $(t_{\text{cond}},\mathbf{x}_{\text{cond}})$ are the <em>conditioning</em> channel: the
+map is told it has already observed a noised state $\mathbf{x}_{\text{cond}}=\mathbf{x}_{t_{\text{cond}}}$
+at level $t_{\text{cond}}$, so it learns the <em>conditional posterior</em>
+$p_{1|t_{\text{cond}}}(\cdot\mid\mathbf{x}_{\text{cond}})$ over clean data, not just the marginal.</p>
+
+<p><strong>Training.</strong> Two terms (both implemented in <code>mfm/losses/losses.py</code>).
+(i) A diagonal flow-matching loss regresses $v_\theta(s,s,\cdot)$ against $\mathbf{x}_1-\mathbf{x}_0$.
+(ii) An off-diagonal <em>self-consistency</em> ("mutual-flow") loss enforces that the few-step map
+agrees with its own instantaneous velocity, regressing $v_\theta(s,u,\cdot)$ against the tangent
+target $v_{ss}+(u-s)\,\partial_s X$ — a directional derivative computed in one forward pass with a
+<strong>Jacobian-vector product</strong> (<code>torch.func.jvp</code>). The key practical point:
+in the <code>mf</code> regime this target is built from the model and the data alone, so the flow
+map is trained <em>from scratch with no teacher</em> (GLASS distillation from a pretrained DMF is
+an option, not a requirement). A warm-up trains the diagonal first, then the jump size $u-s$ and
+the conditioning level $t_{\text{cond}}$ are annealed open.</p>
+
+<p class="pill"><strong>The payoff — one-step posterior sampling.</strong> From any state
+$\mathbf{x}_t$, set $t_{\text{cond}}{=}t,\ \mathbf{x}_{\text{cond}}{=}\mathbf{x}_t$; then each fresh
+noise draw $\boldsymbol\epsilon\sim\mathcal N(0,I)$ gives a clean sample
+$\hat{\mathbf{x}}_1=\boldsymbol\epsilon+v_\theta(0,1,\boldsymbol\epsilon,t,\mathbf{x}_t)
+=\Phi(\boldsymbol\epsilon;t,\mathbf{x}_t)\sim p_{1|t}(\cdot\mid\mathbf{x}_t)$ in
+<strong>one network evaluation</strong>. Many i.i.d. posterior draws, no inner ODE/SDE rollout —
+this is what consistency models and ordinary flow maps cannot give, and it is the whole reason MFM
+exists.</p>
+
+<p><strong>Why a posterior sampler is the missing piece for steering.</strong> To bias a generator
+toward a reward $r$ (for us, data fit) the optimally controlled process adds the gradient of a
+<em>value function</em> to the drift (Doob's $h$-transform):</p>
+<p class="eq">$$\dot{\mathbf{x}}^\star_t=b_t(\mathbf{x}^\star_t)+\tfrac{\sigma_t^2}{2}\,\nabla V_t(\mathbf{x}^\star_t),
+\qquad V_t(\mathbf{x})=\log\mathbb{E}\!\left[e^{r(\mathbf{x}_1)}\mid \mathbf{x}_t=\mathbf{x}\right].\tag{16,19}$$</p>
+<p>The base drift $b_t$ is free from the pretrained model; the only hard part is estimating
+$\nabla V_t$, which is an expectation over exactly the posterior $p_{1|t}(\cdot\mid\mathbf{x}_t)$ the
+flow map now samples cheaply. The paper gives two consistent Monte-Carlo estimators:</p>
+<ul>
+  <li><strong>MFM-GF (gradient-free, Eq. 20)</strong> — a self-normalised, reward-weighted average
+  of posterior draws $\sum_i \hat{\mathbf{x}}_1^{(i)}e^{r^{(i)}}\!/\!\sum_i e^{r^{(i)}}$. Needs only
+  reward <em>evaluations</em>, so it handles non-differentiable rewards, but scales poorly with
+  dimension and needs many draws.</li>
+  <li><strong>MFM-G (gradient-based, Eq. 22)</strong> — the reparametrised estimator
+  $\nabla_{\mathbf{x}}\log\frac1N\sum_i e^{\,r(\Phi(\boldsymbol\epsilon^{(i)};t,\mathbf{x}))}$,
+  i.e. the <strong>IWAE</strong> log-mean-exp bound (<a href="#r-iwae">Burda et al. 2016</a>)
+  differentiated through both the reward and the one-step posterior map. It requires a
+  differentiable reward and posterior map, and in the paper it <em>substantially</em> outperforms
+  MFM-GF, DPS, and Best-of-$N$ — even the single-draw ($N{=}1$) variant beats the baselines.</li>
+</ul>
+<p>For contrast, plain DPS-style guidance uses the single <em>Tweedie posterior mean</em>
+$\hat{\mathbf{x}}_1=\mathbf{x}_t+(1-t)\,v_t$ in place of genuine draws — exact only when the reward
+is linear, and biased by a Jensen gap otherwise. MFM-G is precisely the upgrade that removes that
+bias when posterior draws are available.</p>
+
+<div class="callout key">
+<strong>What this means for our FWI tilting.</strong> Our reward is the data log-likelihood
+$r(\mathbf{v})=-\tfrac{1}{2\sigma^2}\lVert F(\mathbf{v})-\mathbf{d}\rVert^2$, and $F$ is the
+<em>differentiable</em> Deepwave wave solver — so $\nabla r$ is available and <strong>MFM-G is the
+estimator we use</strong> (the gradient-free MFM-GF is a fallback for non-differentiable misfits).
+Concretely this replaces the biased Tweedie-mean misfit gradient in DPS with the gradient of
+$\log\frac1N\sum_i\exp\!\big(\!-\lVert F(\hat{\mathbf{v}}^{(i)})-\mathbf{d}\rVert^2/2\sigma^2\big)$
+over $N$ genuine posterior draws $\hat{\mathbf{v}}^{(i)}\sim p(\mathbf{v}\mid\mathbf{x}_t)$. The win
+is posterior <em>quality</em> (less-biased likelihood + calibrated uncertainty from the spread of
+draws), not cost: each step now costs $N$ forward+adjoint wave solves instead of one. This is the
+camp-A inference upgrade this project is building toward; see the research plan.</div>
+
 <!-- ============================================================= -->
 <h2 class="sec" id="gen-fwi">6 · Generative models for FWI — the three camps</h2>
 
@@ -547,6 +619,7 @@ scoping step toward the actual inverse problem.
 <li id="r-flowmaps">Boffi, N., Albergo, M. &amp; Vanden-Eijnden, E. (2025). <em>How to build a consistency model: learning flow maps via self-distillation.</em> NeurIPS. <a href="https://arxiv.org/abs/2505.18825">arXiv:2505.18825</a></li>
 <li id="r-mfm">Potaptchik, P. et al. (2026). <em>Meta Flow Maps enable scalable reward alignment.</em> ICML. <a href="https://arxiv.org/abs/2601.14430">arXiv:2601.14430</a></li>
 <li id="r-mfmwass">Atanackovic, L. et al. (2024). <em>Meta Flow Matching: integrating vector fields on the Wasserstein manifold.</em> ICML. <a href="https://arxiv.org/abs/2408.14608">arXiv:2408.14608</a></li>
+<li id="r-iwae">Burda, Y., Grosse, R. &amp; Salakhutdinov, R. (2016). <em>Importance weighted autoencoders.</em> ICLR. <a href="https://arxiv.org/abs/1509.00519">arXiv:1509.00519</a></li>
 <li id="r-dps">Chung, H. et al. (2023). <em>Diffusion posterior sampling for general noisy inverse problems.</em> ICLR. <a href="https://arxiv.org/abs/2209.14687">arXiv:2209.14687</a></li>
 <li id="r-reddiffeq">Shan, S., Zhu, M., Lin, Y. &amp; Lu, L. (2026). <em>Regularization by denoising diffusion models for inverse PDE problems, with application to FWI (RED-DiffEq).</em> Communications Physics. <a href="https://arxiv.org/abs/2509.21659">arXiv:2509.21659</a> · <a href="https://doi.org/10.1038/s42005-026-02677-6">doi:10.1038/s42005-026-02677-6</a></li>
 <li id="r-priorfwi">Wang, F. et al. (2023). <em>A prior-regularized FWI using generative diffusion models.</em> <a href="https://arxiv.org/abs/2306.12776">arXiv:2306.12776</a></li>

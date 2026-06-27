@@ -72,4 +72,7 @@ wandb/
 
 # Subagent-driven-development scratch (briefs, reports, review packages)
 .superpowers/
+
+# Locally saved reference papers (committed assets live under packages/*/assets)
+docs/research/*.pdf
 experiments/0002_fwi_tilting/poc_result.png
