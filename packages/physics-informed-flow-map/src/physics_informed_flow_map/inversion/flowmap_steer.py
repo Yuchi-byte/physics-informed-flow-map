@@ -62,6 +62,7 @@ class FlowMapSteerModule:
         n_samples: int,
         device: torch.device,
         guidance_scale: float = 1.0,
+        renorm: bool = True,
         sde: bool = True,
         resolution: int = 64,
     ) -> None:
@@ -74,6 +75,10 @@ class FlowMapSteerModule:
         self.n_samples = n_samples
         self.device = device
         self.guidance_scale = guidance_scale
+        # renorm=True pins the steering to guidance_scale*||base_drift|| every step (stable but
+        # prevents self-attenuation); renorm=False lets the raw reward-gradient magnitude (set by
+        # sigma) decay naturally as samples fit the data.
+        self.renorm = renorm
         self.sde = sde
         self.resolution = resolution
 
@@ -86,7 +91,7 @@ class FlowMapSteerModule:
             drift_estimator=self.drift_estimator,
             mc_samples=self.mc_samples,
             guidance_scale=self.guidance_scale,
-            renorm_gradient=True,
+            renorm_gradient=self.renorm,
         )
         x0 = torch.randn(
             self.n_samples, 1, self.resolution, self.resolution, device=self.device
