@@ -1,0 +1,5 @@
+kind: dit  # the flow priors' DiT backbone as an eps-denoiser (architecture-matched to 0001/0002)
+hidden: 256
+depth: 6
+num_heads: 8
+patch_size: 4

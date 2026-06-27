@@ -47,7 +47,11 @@ class MethodConfig(Config):
 
 
 class ModelConfig(Config):
-    kind: str = "unet"
+    kind: str = "unet"  # unet | dit (the flow priors' DiT backbone as an eps-denoiser)
+    hidden: int = 256  # DiT only; must match the trained prior
+    depth: int = 6
+    num_heads: int = 8
+    patch_size: int = 4
 
 
 class DiffusionConfig(Config):
@@ -93,9 +97,16 @@ def main(dcfg: DictConfig) -> None:
 
     # Prior: the diffusers UNet denoiser trained by run.py. Untrained when ckpt is empty.
     channels, size, _ = cfg.dataset.shape
-    denoiser = build_denoiser(cfg.model.kind, sample_size=size, channels=channels).to(
-        dev
-    )
+    denoiser = build_denoiser(
+        cfg.model.kind,
+        sample_size=size,
+        channels=channels,
+        hidden=cfg.model.hidden,
+        depth=cfg.model.depth,
+        num_heads=cfg.model.num_heads,
+        patch_size=cfg.model.patch_size,
+        num_train_timesteps=cfg.diffusion.num_train_timesteps,
+    ).to(dev)
     if cfg.ckpt:
         if not Path(cfg.ckpt).is_file():
             raise SystemExit(

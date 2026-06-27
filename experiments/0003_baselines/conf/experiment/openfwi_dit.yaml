@@ -1,0 +1,20 @@
+# @package _global_
+# Diffusion prior on FlatVel_A with the flow priors' DiT backbone (architecture-matched to
+# 0001/0002), predict-noise. Higher LR (2e-4) than the UNet recipe for a stronger baseline.
+defaults:
+  - override /dataset: openfwi
+  - override /model: dit
+training:
+  n_epochs: 100
+  batch_size: 64
+  lr: 2.0e-4
+  warmup_steps: 2000
+  eval_every_epochs: 10
+  ckpt_every_epochs: 10
+  ema:
+    enabled: true
+diffusion:
+  num_train_timesteps: 1000
+  num_sample_steps: 200
+sampling:
+  n_eval_viz: 64

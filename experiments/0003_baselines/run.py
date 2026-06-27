@@ -45,7 +45,13 @@ class EmaConfig(Config):
 
 class ModelConfig(Config):
     # build_denoiser seam; sample_size/channels derive from the dataset shape.
-    kind: str = "unet"
+    kind: str = "unet"  # unet | dit (the flow priors' DiT backbone as an eps-denoiser)
+    hidden: int = (
+        256  # DiT only; match the flow prior for an architecture-controlled compare
+    )
+    depth: int = 6
+    num_heads: int = 8
+    patch_size: int = 4
 
 
 class DiffusionConfig(Config):
@@ -106,9 +112,16 @@ def main(dcfg: DictConfig) -> None:
 
     channels, size, _ = cfg.dataset.shape
     shape = cfg.dataset.shape
-    denoiser = build_denoiser(cfg.model.kind, sample_size=size, channels=channels).to(
-        device
-    )
+    denoiser = build_denoiser(
+        cfg.model.kind,
+        sample_size=size,
+        channels=channels,
+        hidden=cfg.model.hidden,
+        depth=cfg.model.depth,
+        num_heads=cfg.model.num_heads,
+        patch_size=cfg.model.patch_size,
+        num_train_timesteps=cfg.diffusion.num_train_timesteps,
+    ).to(device)
     scheduler = DDPMScheduler(num_train_timesteps=cfg.diffusion.num_train_timesteps)
     num_timesteps = cfg.diffusion.num_train_timesteps
 

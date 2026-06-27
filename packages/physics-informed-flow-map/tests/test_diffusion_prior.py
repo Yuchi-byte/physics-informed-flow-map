@@ -27,9 +27,18 @@ def test_build_denoiser_unet_shape() -> None:
     assert out.shape == (2, 1, 16, 16)
 
 
+def test_build_denoiser_dit_shape() -> None:
+    # patch_size must divide sample_size; small dims keep the DiT forward fast.
+    denoiser = build_denoiser("dit", sample_size=16, channels=1, patch_size=4)
+    x = torch.randn(2, 1, 16, 16)
+    t = torch.tensor([3, 7])
+    out = denoiser(x, t).sample
+    assert out.shape == (2, 1, 16, 16)
+
+
 def test_build_denoiser_unknown_kind_raises() -> None:
     with pytest.raises(NotImplementedError):
-        build_denoiser("dit")
+        build_denoiser("nope")
 
 
 def test_train_diffusion_prior_runs_with_ema_and_logging() -> None:
