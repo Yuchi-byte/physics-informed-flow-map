@@ -25,6 +25,12 @@ def to_mps_native(v_norm: Tensor, native: int = NATIVE) -> Tensor:
     return ((v + 1.0) / 2.0 * (VMAX - VMIN) + VMIN)[:, 0]
 
 
+def mps_to_norm(v_mps: Tensor) -> Tensor:
+    """Velocity in m/s -> ``[-1, 1]`` (the prior's training domain and the OpenFWI metric
+    scale). Inverse of the ``[-1,1] -> m/s`` map in :func:`to_mps_native`."""
+    return (v_mps - VMIN) / (VMAX - VMIN) * 2.0 - 1.0
+
+
 def seismic_forward(v_norm: Tensor) -> Tensor:
     """Differentiable map from normalized prior samples ``(B,1,res,res)`` to stacked seismic
     data ``(B, n_sources, n_receivers, nt)`` — the guidance/likelihood operator."""

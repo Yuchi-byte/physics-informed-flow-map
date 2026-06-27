@@ -3,10 +3,11 @@
 The scoring core (:func:`score_target`, :func:`ssim`, :meth:`InversionStats.aggregate`) is
 pure — it takes tensors and a forward callable, so it is unit-testable without the wave
 solver. :class:`Evaluator` wires in the real Deepwave operator and the held-out OpenFWI split
-at the edges. Because the ground-truth-free pick (lowest data misfit) is unreliable, every
-metric is reported under three selection rules: ``oracle`` (lowest MAE — needs the truth),
-``gt_free`` (lowest data misfit — what a real inversion must use), and ``posterior_mean``
-(the per-pixel mean of the samples).
+at the edges. Metrics follow the OpenFWI convention — MAE/RMSE/SSIM on the velocity map
+normalised to ``[-1, 1]`` — and report the *expected value across posterior samples*
+(``mean_i metric(x_i, x_true)``), i.e. the quality of a typical sample rather than of a
+single selected one or of the blurry per-pixel sample mean. ``misfit`` is the lone
+data-domain number (mean over samples of ``||forward(x_i) - d_obs||^2``).
 """
 
 from __future__ import annotations
@@ -19,12 +20,11 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from ..flow_matching.datasets import OpenFWIDatasetConfig
-from ..flow_matching.openfwi import VMAX, VMIN
 from ..physics.forward import simulate
 from .base import InversionModule
-from .bridge import held_out_targets
+from .bridge import held_out_targets, mps_to_norm
 
-DATA_RANGE = VMAX - VMIN  # velocity span (m/s) for SSIM constants
+DATA_RANGE = 2.0  # span of the [-1, 1] normalised velocity, for SSIM constants
 
 ForwardFn = Callable[[Tensor], Tensor]  # (H, W) m/s -> seismic data
 
@@ -67,38 +67,31 @@ def score_target(
     d_obs: Tensor,
     forward_fn: ForwardFn,
 ) -> dict[str, float]:
-    """Metrics for one target's posterior samples against the truth.
+    """Expected metrics over one target's posterior samples against the truth.
 
     Args:
         v_hat: ``(n, H, W)`` velocity samples in m/s.
         v_true: ``(H, W)`` ground-truth velocity in m/s.
         d_obs: observed data for this target.
-        forward_fn: ``(H, W) m/s -> data`` (for the data-misfit of each sample).
+        forward_fn: ``(H, W) m/s -> data`` (for each sample's data misfit, in m/s).
 
-    Returns a flat dict of MAE/RMSE/SSIM under the three selection rules, plus the achieved
-    data misfit of the GT-free pick / posterior mean / per-sample mean.
+    MAE/RMSE/SSIM are computed on the ``[-1, 1]``-normalised velocity (OpenFWI scale) and
+    averaged over samples — the expected quality of a typical posterior draw. ``misfit`` is the
+    mean data-domain residual over samples, kept in physical units (the forward operator's).
     """
-    mae = _mae(v_hat, v_true)  # (n,)
-    rmse = _rmse(v_hat, v_true)
+    vh, vt = (
+        mps_to_norm(v_hat),
+        mps_to_norm(v_true),
+    )  # [-1, 1] for the OpenFWI-scale metrics
     misfit = torch.stack(
         [((forward_fn(v_hat[i]) - d_obs) ** 2).sum() for i in range(v_hat.shape[0])]
     )
-    oracle = int(mae.argmin())
-    gt_free = int(misfit.argmin())
-    v_mean = v_hat.mean(dim=0)
+    ssim_vals = torch.tensor([ssim(vh[i], vt) for i in range(vh.shape[0])])
     return {
-        "mae_oracle": float(mae[oracle]),
-        "mae_gt_free": float(mae[gt_free]),
-        "mae_postmean": float(_mae(v_mean, v_true)),
-        "rmse_oracle": float(rmse[oracle]),
-        "rmse_gt_free": float(rmse[gt_free]),
-        "rmse_postmean": float(_rmse(v_mean, v_true)),
-        "ssim_oracle": ssim(v_hat[oracle], v_true),
-        "ssim_gt_free": ssim(v_hat[gt_free], v_true),
-        "ssim_postmean": ssim(v_mean, v_true),
-        "misfit_gt_free": float(misfit[gt_free]),
-        "misfit_postmean": float(((forward_fn(v_mean) - d_obs) ** 2).sum()),
-        "misfit_mean": float(misfit.mean()),
+        "mae": float(_mae(vh, vt).mean()),
+        "rmse": float(_rmse(vh, vt).mean()),
+        "ssim": float(ssim_vals.mean()),
+        "misfit": float(misfit.mean()),
     }
 
 
@@ -129,15 +122,14 @@ class InversionStats:
         return {"n_targets": self.n_targets, "n_solves": self.n_solves, **self.agg}
 
     def __str__(self) -> str:
-        rows = [f"[{self.module}]  n={self.n_targets}  solves/inv={self.n_solves:.0f}"]
-        for metric in ("mae", "rmse", "ssim"):
-            cells = "  ".join(
-                f"{rule}={self.agg[f'{metric}_{rule}_mean']:.3g}±{self.agg[f'{metric}_{rule}_std']:.2g}"
-                for rule in ("oracle", "gt_free", "postmean")
-            )
-            rows.append(f"  {metric:5s} {cells}")
-        rows.append(f"  misfit gt_free={self.agg['misfit_gt_free_mean']:.3g}")
-        return "\n".join(rows)
+        cells = "  ".join(
+            f"{metric.upper()}={self.agg[f'{metric}_mean']:.3g}±{self.agg[f'{metric}_std']:.2g}"
+            for metric in ("mae", "rmse", "ssim")
+        )
+        return (
+            f"[{self.module}]  n={self.n_targets}  solves/inv={self.n_solves:.0f}\n"
+            f"  {cells}  misfit={self.agg['misfit_mean']:.3g}"
+        )
 
 
 class Evaluator:
