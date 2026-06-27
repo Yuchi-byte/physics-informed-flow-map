@@ -13,9 +13,13 @@ from mfm.models.base_model import BaseModel
 from torch import Tensor, nn
 
 from ..baselines import dps_sample
+from ..physics.classical import regularized_fwi
+from ..physics.forward import simulate
 from ..physics.tilt import guided_sample
 from .base import InversionResult
 from .bridge import seismic_forward, to_mps_native
+
+NATIVE = 70  # OpenFWI velocity-map resolution the wave solver runs on
 
 
 class FlowTiltModule:
@@ -60,6 +64,45 @@ class FlowTiltModule:
             normalize_grad=self.normalize_grad,
         )
         return InversionResult(to_mps_native(samples), n_solves=self.steps * b)
+
+
+class ClassicalFWIModule:
+    """Classical regularized FWI (no learned prior) — gradient descent on the velocity model
+    with a Tikhonov or TV penalty, steered by the same wave equation."""
+
+    def __init__(
+        self,
+        *,
+        reg: str,
+        reg_weight: float,
+        iters: int,
+        lr: float,
+        n_samples: int,
+        device: torch.device,
+        native: int = NATIVE,
+    ) -> None:
+        self.name = f"classical_{reg}·w{reg_weight:g}"
+        self.reg = reg
+        self.reg_weight = reg_weight
+        self.iters = iters
+        self.lr = lr
+        self.n_samples = n_samples
+        self.device = device
+        self.native = native
+
+    def invert(self, d_obs: Tensor) -> InversionResult:
+        v_mps, n_solves = regularized_fwi(
+            simulate,
+            d_obs,
+            shape=(self.native, self.native),
+            n_samples=self.n_samples,
+            iters=self.iters,
+            lr=self.lr,
+            reg=self.reg,
+            reg_weight=self.reg_weight,
+            device=self.device,
+        )
+        return InversionResult(v_mps, n_solves=n_solves)
 
 
 class DiffusionDPSModule:
