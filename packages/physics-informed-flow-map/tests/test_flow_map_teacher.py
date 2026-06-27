@@ -1,4 +1,4 @@
-"""The 0004 teacher (esd_teacher) distillation path: the off-diagonal target comes from a
+"""The 0002 teacher (esd_teacher) distillation path: the off-diagonal target comes from a
 frozen teacher while the diagonal stays on data. Unconditional only."""
 
 import copy

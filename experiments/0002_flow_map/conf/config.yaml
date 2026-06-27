@@ -10,6 +10,6 @@ seed: 0
 
 hydra:
   run:
-    dir: runs/0004_flow_map/${now:%Y-%m-%dT%H-%M-%SZ}
+    dir: runs/0002_flow_map/${now:%Y-%m-%dT%H-%M-%SZ}
   job:
     chdir: false

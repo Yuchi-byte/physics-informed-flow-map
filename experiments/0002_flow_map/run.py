@@ -1,9 +1,9 @@
 """Train a meta flow map (mfm, from scratch) on swappable datasets via Hydra.
 
-    uv run python experiments/0004_flow_map/run.py                       # gaussians
-    uv run python experiments/0004_flow_map/run.py experiment=mnist
-    uv run python experiments/0004_flow_map/run.py experiment=openfwi
-    uv run python experiments/0004_flow_map/run.py experiment=smoke
+    uv run python experiments/0002_flow_map/run.py                       # gaussians
+    uv run python experiments/0002_flow_map/run.py experiment=mnist
+    uv run python experiments/0002_flow_map/run.py experiment=openfwi
+    uv run python experiments/0002_flow_map/run.py experiment=smoke
 
 Same harness as 0001 (same datasets/model/EMA/eval/checkpoint), but the loss adds mfm's
 off-diagonal ``s<u`` consistency term (enabled after ``flow_map_warmup_steps``), training a
@@ -15,7 +15,7 @@ Two regimes, selected by ``training.teacher_ckpt``:
     from that frozen prior (``esd_teacher``) and warm-start the student from it. Unconditional
     datasets only (gaussians, openfwi); the conditional teacher path is ImageNet-specific in mfm.
 
-    uv run python experiments/0004_flow_map/run.py experiment=openfwi \\
+    uv run python experiments/0002_flow_map/run.py experiment=openfwi \\
         training=teacher training.teacher_ckpt=runs/0001_flow_matching/<run>/checkpoints/step_9_ema.pt
 
 Validate on gaussians → mnist → openfwi. Logs held-out FM loss as the run summary scalar.
@@ -52,7 +52,7 @@ from physics_informed_flow_map.flow_matching.sample import (
 )
 from physics_informed_flow_map.flow_matching.train import make_loss_fn, train
 
-EXPERIMENT = "0004_flow_map"
+EXPERIMENT = "0002_flow_map"
 
 
 class EmaConfig(Config):
@@ -155,7 +155,7 @@ def load_teacher(
     model_cfg: ModelConfig,
     device: torch.device,
 ) -> BaseModel:
-    """Build a 0004-shaped model, load a 0001 checkpoint's weights into it, and freeze it."""
+    """Build a flow-map-shaped model, load a 0001 checkpoint's weights into it, and freeze it."""
     state = torch.load(_resolve_ckpt(ref), map_location=device, weights_only=False)
     teacher = build_model(shape, num_classes, model_cfg).to(device)
     teacher.load_state_dict(state["model"])

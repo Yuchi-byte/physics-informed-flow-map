@@ -1,0 +1,3 @@
+name: flow_tilt  # DPS-style wave-equation tilting of the flow-map prior
+guidance_strength: 1.0
+normalize_grad: true

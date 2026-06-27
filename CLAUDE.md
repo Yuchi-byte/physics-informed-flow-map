@@ -68,9 +68,10 @@ The spine of the field is three camps for generative FWI:
 - **Camp C — bake PDE residuals into *training* of the generative model.** PIDM, PBFM.
 
 **Where we are:** this project is **solidly in Camp A** — a learned prior (`experiments/0001`
-flow-matching prior) steered by the wave equation at inference (`experiments/0002` DPS-style
-tilting). We are developing **improvements within Camp A**; physics stays at inference, not
-training. **Camp C is not our target — it is not really applicable to this problem.**
+flow-matching prior, `experiments/0002` flow-map prior) steered by the wave equation at inference
+(each experiment's `inversion.py` DPS-style tilting; `experiments/0003` diffusion baselines). We
+are developing **improvements within Camp A**; physics stays at inference, not training.
+**Camp C is not our target — it is not really applicable to this problem.**
 
 The human-curated research narrative lives in `docs/research/*.html` (`prior-work.html`,
 `research-plan.html`) — **the user curates these directly and requests regeneration; do not

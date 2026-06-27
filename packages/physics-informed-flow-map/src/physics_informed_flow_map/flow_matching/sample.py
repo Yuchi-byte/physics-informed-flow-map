@@ -49,7 +49,7 @@ def sample_few_step(
 ) -> Tensor:
     """Few-step flow-map sampling: walk ``s→u`` in ``n_steps`` jumps via ``model.X(s,u,x,v)``.
 
-    Meaningful only for a trained meta flow map (``0004``); on a pure flow-matching prior the
+    Meaningful only for a trained meta flow map (``0002``); on a pure flow-matching prior the
     off-diagonal ``v(s,u)`` is unconstrained, so few-step samples will be poor.
     """
     model.eval()
