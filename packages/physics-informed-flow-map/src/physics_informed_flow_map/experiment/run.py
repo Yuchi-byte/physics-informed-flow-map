@@ -166,21 +166,21 @@ def start_run(
     run_dir: Path,
     config: dict[str, Any],
     *,
-    project: str = DEFAULT_PROJECT,
+    project: str | None = None,
     name: str | None = None,
 ) -> Run:
     """Open a wandb run and prepare ``run_dir/checkpoints/``.
 
-    ``experiment`` names the run group; ``run_dir`` is the Hydra run directory
-    (``HydraConfig.get().runtime.output_dir``); ``config`` is ``Config.dump()``.
-    Connectivity is wandb-native via ``WANDB_MODE`` (default online).
+    Each ``experiment`` gets its own wandb project by default (override with ``project``).
+    ``run_dir`` is the Hydra run directory; ``config`` is ``Config.dump()``. Connectivity is
+    wandb-native via ``WANDB_MODE`` (default online).
     """
     run_dir = Path(run_dir)
     ckpt_dir = run_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     run = wandb.init(
-        project=project,
+        project=project or f"{DEFAULT_PROJECT}-{experiment}",
         name=name,
         group=experiment,
         dir=str(run_dir),

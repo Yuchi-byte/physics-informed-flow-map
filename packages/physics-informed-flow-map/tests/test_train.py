@@ -38,8 +38,7 @@ def test_train_runs_and_logs() -> None:
     epoch_logs = [r for r in logged if "train/loss" in r]
     assert len(epoch_logs) == 3
     assert all(
-        {"train/loss", "train/grad_norm", "train/lr", "time/epoch_s", "perf/it_per_s"}
-        <= r.keys()
+        {"train/loss", "train/grad_norm", "train/lr", "time/epoch_s"} <= r.keys()
         for r in epoch_logs
     )
     # A single end-of-run wall-clock summary is logged last.

@@ -45,7 +45,7 @@ def train_loop(
     Args:
         compute_loss: ``(model, batch, step) -> scalar loss``; moves ``batch`` to ``device``.
         log: receives per-epoch ``train/loss``, ``train/grad_norm``, ``train/lr``,
-            ``time/epoch_s``, ``perf/it_per_s`` and, at eval epochs, ``val/loss`` +
+            ``time/epoch_s`` and, at eval epochs, ``val/loss`` +
             ``time/eval_s`` (each with ``step`` + ``epoch``). A final ``time/total_min``
             is logged once at the end. (GPU memory comes from wandb's system metrics.)
         warmup_steps: linear LR warmup ``0.1x -> 1x`` over this many optimizer steps, then
@@ -127,7 +127,6 @@ def train_loop(
                     "train/grad_norm": epoch_grad_norm / epoch_steps,
                     "train/lr": optimizer.param_groups[0]["lr"],
                     "time/epoch_s": epoch_time,
-                    "perf/it_per_s": epoch_steps / epoch_time if epoch_time else 0.0,
                 },
             )
 
