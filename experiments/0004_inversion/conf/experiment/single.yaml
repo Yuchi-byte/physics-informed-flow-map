@@ -1,0 +1,5 @@
+# @package _global_
+# Single held-out target → recovered-velocity figure + scalars (the run.py default).
+target_index: 0  # which seed-0 validation-split map to invert
+n_samples: 4
+steps: 200

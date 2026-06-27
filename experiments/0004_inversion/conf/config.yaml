@@ -1,0 +1,27 @@
+defaults:
+  - _self_
+  - prior: flow_matching
+  - method: flow_tilt
+  - dataset: openfwi
+  - experiment: single
+
+seed: 0
+ckpt: ""  # trained prior (a training-framework checkpoint); empty = untrained, plumbing only
+target_index: 0  # index into the seed-0 validation split selecting the held-out target map
+n_samples: 4
+steps: 200  # sampler / reverse steps (matched cost across priors)
+
+model:  # DiT backbone shape; must match the trained prior (e.g. 320/8 vs 256/6). Ignored by the diffusion UNet.
+  hidden: 256
+  depth: 6
+  num_heads: 8
+  patch_size: 4
+
+hydra:
+  run:
+    dir: runs/0004_inversion/${now:%Y-%m-%dT%H-%M-%SZ}
+  sweep:  # keep --multirun output under the gitignored runs/, not a root multirun/
+    dir: runs/0004_inversion/${now:%Y-%m-%dT%H-%M-%SZ}
+    subdir: ${hydra.job.num}
+  job:
+    chdir: false

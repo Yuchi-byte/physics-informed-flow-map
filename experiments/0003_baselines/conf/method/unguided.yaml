@@ -1,3 +1,0 @@
-name: unguided  # prior sample, no physics guidance — the control
-guidance_strength: 0.0
-normalize_grad: true

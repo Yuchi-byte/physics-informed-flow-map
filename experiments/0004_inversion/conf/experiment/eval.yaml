@@ -1,0 +1,31 @@
+# @package _global_
+# Multi-method sweep for eval.py: score the camp-A inverters on the same held-out maps at a
+# matched solve budget (steps * n_samples). Point each entry's ckpt= at a trained prior
+# (gitignored runs/...); empty ckpt falls back to an untrained prior (plumbing only).
+n_samples: 4
+steps: 200
+
+evaluation:
+  families: [FlatVel_A]
+  n_targets: 8
+  methods:
+    - label: fm·tilt·g1
+      prior: { name: flow_matching }
+      ckpt: ""
+      method: { name: flow_tilt, guidance_strength: 1.0 }
+    - label: fm·prior·g0
+      prior: { name: flow_matching }
+      ckpt: ""
+      method: { name: unguided, guidance_strength: 0.0 }
+    - label: flowmap·tilt·g1
+      prior: { name: flow_map }
+      ckpt: ""
+      method: { name: flow_tilt, guidance_strength: 1.0 }
+    - label: flowmap·mfm_g
+      prior: { name: flow_map }
+      ckpt: ""
+      method: { name: mfm_g, drift_estimator: iwae, sigma: 1000.0, renorm: false }
+    - label: diff·dps·g0.3
+      prior: { name: diffusion, denoiser_kind: unet }
+      ckpt: ""
+      method: { name: dps, guidance_strength: 0.3 }

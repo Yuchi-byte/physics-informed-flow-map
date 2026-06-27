@@ -1,3 +1,0 @@
-name: dps  # canonical Diffusion Posterior Sampling (Chung et al. 2023)
-guidance_strength: 0.5
-normalize_grad: true

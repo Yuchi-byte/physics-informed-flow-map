@@ -1,0 +1,3 @@
+name: diffusion  # diffusion prior (0003); a diffusers denoiser + DDPM scheduler
+denoiser_kind: unet  # unet | dit (the flow priors' DiT backbone as an eps-denoiser)
+num_train_timesteps: 1000  # DDPM schedule the prior was trained on

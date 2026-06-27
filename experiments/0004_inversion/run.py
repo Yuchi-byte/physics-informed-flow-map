@@ -1,0 +1,292 @@
+"""Invert a held-out velocity map with a trained prior — the unified camp-A inversion entry.
+
+    uv run python experiments/0004_inversion/run.py prior=flow_matching method=flow_tilt ckpt=<...>
+    uv run python experiments/0004_inversion/run.py prior=flow_map     method=mfm_g     ckpt=<...>
+    uv run python experiments/0004_inversion/run.py prior=diffusion    method=dps       ckpt=<...>
+    uv run python experiments/0004_inversion/run.py --multirun prior=flow_map method=mfm_g,flow_tilt,unguided ckpt=<...>
+
+Loads a prior trained by one of the training frameworks (``0001_flow_matching``, ``0002_flow_map``,
+``0003_baselines`` — do not retrain here), simulates seismic data ``d`` from a held-out
+(validation-split) OpenFWI map with the Deepwave forward operator, then steers the prior toward
+``d`` to recover the velocity. The ``prior`` group picks the prior family/loader and the ``method``
+group picks the inference-time scheme:
+
+  * ``flow_tilt`` — DPS-style wave-equation tilting with the single-point Tweedie mean (flow priors).
+  * ``mfm_g`` / ``mfm_gf`` — Meta Flow Maps' gradient / gradient-free steering through the flow
+    map's own time-conditional posterior (paper Eq. 22 / Eq. 20; ``prior-work.html`` §5.5). flow_map.
+  * ``dps`` — canonical Diffusion Posterior Sampling (diffusion prior).
+  * ``unguided`` — prior sample, no physics (the control that shows the wave equation does the work).
+
+Scoring + figure are shared across all methods via ``inversion.single_target``; this entry only
+supplies how to load each prior and how to invert. ``eval.py`` is the multi-map sweep counterpart.
+
+Caveat: ``d_obs`` comes from the same noiseless forward operator used inside the guidance term
+(an "inverse crime"), so recovery is optimistic.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import cast
+
+import hydra
+import torch
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig
+from pydantic import Field, model_validator
+
+from physics_informed_flow_map.experiment import Config, start_run
+from physics_informed_flow_map.flow_matching.datasets import (
+    DatasetConfig,
+    OpenFWIDatasetConfig,
+)
+from physics_informed_flow_map.inversion import FlowMapSteerModule
+from physics_informed_flow_map.inversion.bridge import mps_to_norm, seismic_forward
+from physics_informed_flow_map.inversion.single_target import (
+    Inverter,
+    invert_and_report,
+)
+from physics_informed_flow_map.physics.tilt import guided_sample
+
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent))
+from loaders import (  # noqa: E402
+    FLOW_PRIORS,
+    load_diffusion_prior,
+    load_flow_prior,
+)
+
+EXPERIMENT = "0004_inversion"
+
+# prior family -> the inference-time methods it supports (the validated compatibility matrix).
+_COMPAT: dict[str, set[str]] = {
+    "flow_matching": {"unguided", "flow_tilt"},
+    "flow_map": {"unguided", "flow_tilt", "mfm_g", "mfm_gf"},
+    "diffusion": {"unguided", "dps"},
+}
+_PRIORS = set(_COMPAT)
+_METHODS = {m for ms in _COMPAT.values() for m in ms}
+_MFM_METHODS = {"mfm_g", "mfm_gf"}
+
+
+def check_compatible(prior: str, method: str) -> None:
+    """Raise if ``prior`` cannot run ``method`` (the approved compatibility matrix)."""
+    if prior not in _PRIORS:
+        raise ValueError(f"unknown prior '{prior}' ({' | '.join(sorted(_PRIORS))})")
+    if method not in _METHODS:
+        raise ValueError(f"unknown method '{method}' ({' | '.join(sorted(_METHODS))})")
+    if method not in _COMPAT[prior]:
+        ok = ", ".join(p for p in sorted(_PRIORS) if method in _COMPAT[p])
+        raise ValueError(
+            f"method '{method}' is incompatible with prior '{prior}' "
+            f"(valid priors for '{method}': {ok})"
+        )
+
+
+class PriorConfig(Config):
+    name: str = "flow_matching"  # flow_matching | flow_map | diffusion
+    denoiser_kind: str = "unet"  # diffusion only: unet | dit
+    num_train_timesteps: int = Field(1000, gt=0)  # diffusion only: DDPM schedule
+
+
+class MethodConfig(Config):
+    name: str = "flow_tilt"  # flow_tilt | unguided | mfm_g | mfm_gf | dps
+    # Guidance scale: DPS step size (flow_tilt/dps), steering scale (mfm_g/mfm_gf).
+    # 0 => unguided (the control invert_and_report runs for the misfit ratio).
+    guidance_strength: float = 1.0
+    normalize_grad: bool = True  # flow_tilt/dps only: unit-normalise the DPS gradient
+    # MFM-G / MFM-GF knobs (ignored by the other methods):
+    drift_estimator: str = (
+        "iwae"  # iwae = MFM-G (gradient); sne = MFM-GF (gradient-free)
+    )
+    mc_samples: int = Field(
+        4, gt=0
+    )  # posterior draws/step; wave solves/step scale with it
+    sigma: float = Field(
+        1000.0, gt=0.0
+    )  # likelihood temperature in r=-||F(v)-d||^2/(2σ²)
+    renorm: bool = False  # pin steering magnitude to the base-drift norm each step
+    sde: bool = True  # SDE (Euler-Maruyama) sampler; false => ODE (Euler)
+
+
+class ModelConfig(Config):
+    hidden: int = 256
+    depth: int = 6
+    num_heads: int = 8
+    patch_size: int = 4
+
+
+class EvalEntry(Config):
+    """One (prior, method, ckpt) inverter in an ``eval.py`` sweep (see ``conf/experiment/eval``)."""
+
+    label: str
+    prior: PriorConfig = PriorConfig()
+    ckpt: str = ""
+    method: MethodConfig = MethodConfig()
+    model: ModelConfig = ModelConfig()
+
+
+class EvalConfig(Config):
+    """The ``eval.py`` multi-map sweep params (unused by ``run.py``)."""
+
+    families: list[str] = Field(default_factory=lambda: ["FlatVel_A"])
+    n_targets: int = Field(8, gt=0)
+    methods: list[EvalEntry] = Field(default_factory=list)
+
+
+class InversionConfig(Config):
+    seed: int = 0
+    ckpt: str = ""  # trained prior (a training-framework checkpoint); empty = untrained, plumbing only
+    target_index: int = Field(0, ge=0)  # index into the seed-0 validation split
+    n_samples: int = Field(4, gt=0)
+    steps: int = Field(200, gt=0)  # sampler / reverse steps
+    model: ModelConfig = ModelConfig()
+    dataset: DatasetConfig = OpenFWIDatasetConfig()
+    prior: PriorConfig = PriorConfig()
+    method: MethodConfig = MethodConfig()
+    evaluation: EvalConfig = EvalConfig()  # eval.py sweep params (experiment=eval)
+
+    @model_validator(mode="after")
+    def _check(self) -> "InversionConfig":
+        if not isinstance(self.dataset, OpenFWIDatasetConfig):
+            raise ValueError(
+                "inversion targets OpenFWI velocity maps (dataset=openfwi)"
+            )
+        check_compatible(self.prior.name, self.method.name)
+        for entry in self.evaluation.methods:  # validate the sweep entries too
+            check_compatible(entry.prior.name, entry.method.name)
+        return self
+
+
+InversionConfig.model_rebuild()
+
+
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(dcfg: DictConfig) -> None:
+    cfg = InversionConfig.from_dictconfig(dcfg)
+    assert isinstance(cfg, InversionConfig)
+    assert isinstance(cfg.dataset, OpenFWIDatasetConfig)  # narrowed by the validator
+
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(cfg.seed)
+
+    run_dir = Path(HydraConfig.get().runtime.output_dir)
+    name = f"invert-{cfg.prior.name}-{cfg.method.name}"
+    run = start_run(EXPERIMENT, run_dir, cfg.dump(), name=name)
+
+    channels, size, _ = cfg.dataset.shape
+    n = cfg.n_samples
+    n_solves = (
+        0  # forward (PDE) solves consumed by the guided pass (matched-cost reporting)
+    )
+
+    if cfg.prior.name in FLOW_PRIORS:
+        prior = load_flow_prior(
+            cfg.dataset.shape,
+            hidden=cfg.model.hidden,
+            depth=cfg.model.depth,
+            num_heads=cfg.model.num_heads,
+            patch_size=cfg.model.patch_size,
+            ckpt=cfg.ckpt,
+            device=dev,
+            prior=cfg.prior.name,
+        )
+
+        if cfg.method.name in _MFM_METHODS:
+            # Native flow-map steering (FlowMapSteerModule), adapted to the shared [-1, 1] Inverter
+            # contract. guidance=0 => base drift (unguided control: estimator "base", no solves).
+            def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+                estimator = (
+                    cfg.method.drift_estimator if guidance_strength != 0.0 else "base"
+                )
+                module = FlowMapSteerModule(
+                    prior,
+                    drift_estimator=estimator,
+                    mc_samples=cfg.method.mc_samples,
+                    sigma=cfg.method.sigma,
+                    n_steps=cfg.steps,
+                    n_samples=n,
+                    device=dev,
+                    guidance_scale=guidance_strength,
+                    renorm=cfg.method.renorm,
+                    sde=cfg.method.sde,
+                    resolution=size,
+                )
+                return mps_to_norm(module.invert(d_obs).v_hat)[:, None]
+
+            n_solves = (
+                cfg.steps * cfg.method.mc_samples * n
+            )  # mc posterior solves per step
+        else:
+            # DPS Tweedie baseline (flow_tilt) / unguided control: tilt from a fixed noise context
+            # x0 (reused guided/unguided), using v(t,t,x|noise) at t_cond=0.
+            x0 = torch.randn(n, channels, size, size, device=dev)
+            t_cond = torch.zeros(n, device=dev)
+
+            def velocity_fn(x: torch.Tensor, t: float) -> torch.Tensor:
+                tb = torch.full((x.shape[0],), t, device=dev)
+                return cast(torch.Tensor, prior.v(tb, tb, x, t_cond, x0))
+
+            def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+                return guided_sample(
+                    velocity_fn,
+                    x0,
+                    seismic_forward,
+                    d_obs,
+                    sampler_steps=cfg.steps,
+                    guidance_strength=guidance_strength,
+                    normalize_grad=cfg.method.normalize_grad,
+                )
+
+            n_solves = cfg.steps * n  # one Tweedie sim per step per sample
+    else:  # diffusion prior + dps / unguided
+        from physics_informed_flow_map.baselines import dps_sample
+
+        denoiser, scheduler = load_diffusion_prior(
+            cfg.dataset.shape,
+            denoiser_kind=cfg.prior.denoiser_kind,
+            hidden=cfg.model.hidden,
+            depth=cfg.model.depth,
+            num_heads=cfg.model.num_heads,
+            patch_size=cfg.model.patch_size,
+            num_train_timesteps=cfg.prior.num_train_timesteps,
+            ckpt=cfg.ckpt,
+            device=dev,
+        )
+
+        def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+            return dps_sample(
+                denoiser,
+                scheduler,
+                cfg.dataset.shape,
+                seismic_forward,
+                d_obs,
+                n_samples=n,
+                num_steps=cfg.steps,
+                guidance_strength=guidance_strength,
+                device=dev,
+                normalize_grad=cfg.method.normalize_grad,
+            )
+
+        n_solves = cfg.steps * n
+
+    invert_fn: Inverter = invert
+    out = run.ckpt_dir.parent / "inversion.png"
+    summary, caption = invert_and_report(
+        invert_fn,
+        dataset_cfg=cfg.dataset,
+        target_index=cfg.target_index,
+        method_name=cfg.method.name,
+        guidance=cfg.method.guidance_strength,
+        steps=cfg.steps,
+        device=dev,
+        out_png=out,
+    )
+    summary["inv/n_solves"] = float(0 if cfg.method.name == "unguided" else n_solves)
+    run.log_image("inversion", out, caption=caption)
+    run.finish(**summary)
+
+
+if __name__ == "__main__":
+    main()
