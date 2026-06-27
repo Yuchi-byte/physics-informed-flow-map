@@ -12,7 +12,7 @@ from diffusers import DDPMScheduler
 from mfm.models.base_model import BaseModel
 from torch import Tensor, nn
 
-from ..baselines import dps_sample
+from ..baselines import dps_sample, red_diffeq_sample
 from ..physics.classical import regularized_fwi
 from ..physics.forward import simulate
 from ..physics.tilt import guided_sample
@@ -145,4 +145,54 @@ class DiffusionDPSModule:
         )
         return InversionResult(
             to_mps_native(samples), n_solves=self.steps * self.n_samples
+        )
+
+
+class REDDiffEqModule:
+    """RED-DiffEq: the diffusion prior as a Regularization-by-Denoising term in a
+    wave-equation-steered optimization (an alternative inference scheme to DPS)."""
+
+    def __init__(
+        self,
+        denoiser: nn.Module,
+        scheduler: DDPMScheduler,
+        *,
+        eta_data: float,
+        eta_reg: float,
+        t_denoise: int,
+        iters: int,
+        n_samples: int,
+        device: torch.device,
+        resolution: int = 64,
+        normalize_grad: bool = True,
+    ) -> None:
+        self.name = f"red_diffeq·d{eta_data:g}·r{eta_reg:g}"
+        self.denoiser = denoiser
+        self.scheduler = scheduler
+        self.eta_data = eta_data
+        self.eta_reg = eta_reg
+        self.t_denoise = t_denoise
+        self.iters = iters
+        self.n_samples = n_samples
+        self.device = device
+        self.resolution = resolution
+        self.normalize_grad = normalize_grad
+
+    def invert(self, d_obs: Tensor) -> InversionResult:
+        samples = red_diffeq_sample(
+            self.denoiser,
+            self.scheduler,
+            (1, self.resolution, self.resolution),
+            seismic_forward,
+            d_obs,
+            n_samples=self.n_samples,
+            iters=self.iters,
+            eta_data=self.eta_data,
+            eta_reg=self.eta_reg,
+            t_denoise=self.t_denoise,
+            device=self.device,
+            normalize_grad=self.normalize_grad,
+        )
+        return InversionResult(
+            to_mps_native(samples), n_solves=self.iters * self.n_samples
         )

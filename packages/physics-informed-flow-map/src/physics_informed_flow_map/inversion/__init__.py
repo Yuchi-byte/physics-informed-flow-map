@@ -5,7 +5,12 @@ module recovers held-out velocity maps.
 from .base import InversionModule, InversionResult
 from .bridge import held_out_targets, mps_to_norm, seismic_forward, to_mps_native
 from .evaluate import Evaluator, InversionStats, score_target, ssim
-from .modules import ClassicalFWIModule, DiffusionDPSModule, FlowTiltModule
+from .modules import (
+    ClassicalFWIModule,
+    DiffusionDPSModule,
+    FlowTiltModule,
+    REDDiffEqModule,
+)
 
 __all__ = [
     "InversionModule",
@@ -17,6 +22,7 @@ __all__ = [
     "FlowTiltModule",
     "DiffusionDPSModule",
     "ClassicalFWIModule",
+    "REDDiffEqModule",
     "held_out_targets",
     "mps_to_norm",
     "seismic_forward",

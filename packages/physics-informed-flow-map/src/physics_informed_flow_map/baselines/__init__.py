@@ -6,10 +6,12 @@ from physics_informed_flow_map.baselines.diffusion_prior import (
     train_diffusion_prior,
 )
 from physics_informed_flow_map.baselines.diffusion_sample import ddpm_sample
+from physics_informed_flow_map.baselines.red_diffeq import red_diffeq_sample
 
 __all__ = [
     "build_denoiser",
     "ddpm_sample",
     "dps_sample",
+    "red_diffeq_sample",
     "train_diffusion_prior",
 ]
