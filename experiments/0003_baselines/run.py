@@ -122,7 +122,7 @@ def main(dcfg: DictConfig) -> None:
         patch_size=cfg.model.patch_size,
         num_train_timesteps=cfg.diffusion.num_train_timesteps,
     ).to(device)
-    scheduler = DDPMScheduler(num_train_timesteps=cfg.diffusion.num_train_timesteps)
+    scheduler = DDPMScheduler(num_train_timesteps=cfg.diffusion.num_train_timesteps)  # type: ignore[no-untyped-call]  # diffusers __init__ is untyped
     num_timesteps = cfg.diffusion.num_train_timesteps
 
     loader = torch.utils.data.DataLoader(
@@ -153,7 +153,7 @@ def main(dcfg: DictConfig) -> None:
             xb = xb.to(device)
             noise = torch.randn_like(xb)
             t = torch.randint(0, num_timesteps, (xb.shape[0],), device=device)
-            x_t = scheduler.add_noise(xb, noise, t)
+            x_t = scheduler.add_noise(xb, noise, t)  # type: ignore[attr-defined]  # diffusers stub omits add_noise
             pred = model(x_t, t).sample
             total += float(F.mse_loss(pred, noise).item())
             n += 1

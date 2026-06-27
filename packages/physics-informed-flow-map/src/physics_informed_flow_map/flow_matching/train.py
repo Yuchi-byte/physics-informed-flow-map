@@ -45,7 +45,7 @@ def _loss_cfg(
     anneal_end_step: int = _DISABLED,
     distillation_type: str = "mf",
     loss_weighting: str = "l2",
-    t_cond_0_rate: float = 1.0,
+    uncond_prob: float = 1.0,
     t_cond_power: float = 1.0,
     t_cond_warmup_steps: int = 0,
 ) -> _Cfg:
@@ -59,12 +59,13 @@ def _loss_cfg(
     return _Cfg(
         SI=_Cfg(t_max=1.0),
         trainer=_Cfg(
-            # t_cond is the conditioning time: t_cond=0 conditions on pure noise (unconditional);
-            # t_cond>0 conditions on a partially-noised reference, the posterior p(x1|x_t) substrate.
-            # t_cond_0_rate=1.0 stays fully unconditional. Teacher-free (mf) gets its conditioning
-            # signal only from high t_cond, so power=1 (uniform), not mfm's teacher-recipe power=2.
+            # t_cond is mfm's conditioning time: t_cond=0 conditions on pure noise (unconditional);
+            # t_cond>0 conditions on a partially-noised reference x_cond, the posterior p(x1|x_t)
+            # substrate. uncond_prob=1.0 stays fully unconditional. Teacher-free (mf) gets its
+            # conditioning signal only from t_cond>0, so power=1 (uniform), not the teacher recipe's 2.
+            # mfm's sample_t_cond reads these exact cfg keys, so the mapped-in names stay mfm's.
             t_cond_warmup_steps=t_cond_warmup_steps,
-            t_cond_0_rate=t_cond_0_rate,
+            t_cond_0_rate=uncond_prob,  # our `uncond_prob` -> mfm's cfg key
             t_cond_power=t_cond_power,
             # The off-diagonal consistency term turns on at `step > num_warmup_steps`;
             # _DISABLED keeps pure FM, a finite value trains a flow map.
@@ -104,13 +105,13 @@ def make_loss_fn(
     anneal_end_step: int = _DISABLED,
     distillation_type: str = "mf",
     loss_weighting: str = "l2",
-    t_cond_0_rate: float = 1.0,
+    uncond_prob: float = 1.0,
     t_cond_power: float = 1.0,
     t_cond_warmup_steps: int = 0,
 ) -> Callable[..., Any]:
     """mfm's SI consistency loss. Defaults to pure FM (off-diagonal disabled); a finite
     ``num_warmup_steps`` enables the ``s<u`` flow-map term. ``loss_weighting="adaptive"`` uses
-    mfm's per-sample adaptive reweighting. ``t_cond_0_rate<1`` trains the intermediate-state
+    mfm's per-sample adaptive reweighting. ``uncond_prob<1`` trains the intermediate-state
     posterior (the time-conditional flow map). Used for train and (at ``step=0``, so always
     pure-FM) validation."""
     return cast(
@@ -122,7 +123,7 @@ def make_loss_fn(
                 anneal_end_step=anneal_end_step,
                 distillation_type=distillation_type,
                 loss_weighting=loss_weighting,
-                t_cond_0_rate=t_cond_0_rate,
+                uncond_prob=uncond_prob,
                 t_cond_power=t_cond_power,
                 t_cond_warmup_steps=t_cond_warmup_steps,
             ),
@@ -145,7 +146,7 @@ def train(
     flow_map_anneal_end: int = _DISABLED,
     distillation_type: str = "mf",
     loss_weighting: str = "l2",
-    t_cond_0_rate: float = 1.0,
+    uncond_prob: float = 1.0,
     t_cond_power: float = 1.0,
     t_cond_warmup_steps: int = 0,
     teacher_model: BaseModel | None = None,
@@ -173,7 +174,7 @@ def train(
         anneal_end_step=flow_map_anneal_end,
         distillation_type=distillation_type,
         loss_weighting=loss_weighting,
-        t_cond_0_rate=t_cond_0_rate,
+        uncond_prob=uncond_prob,
         t_cond_power=t_cond_power,
         t_cond_warmup_steps=t_cond_warmup_steps,
     )

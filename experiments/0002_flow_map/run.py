@@ -72,11 +72,18 @@ class TrainingConfig(Config):
     flow_map_anneal_end: int = Field(20000, gt=0)
     distillation_type: str = "mf"
     loss_weighting: str = "adaptive"
-    # t_cond schedule: 0_rate = fraction unconditional; power shapes the rest (1 = uniform,
-    # the from-data §4.3.1 setting; >1 concentrates near 0). See train._loss_cfg.
-    t_cond_0_rate: float = Field(0.1, ge=0.0, le=1.0)
-    t_cond_power: float = Field(1.0, gt=0.0)
-    t_cond_warmup_steps: int = Field(0, ge=0)
+    # Conditioning schedule. t_cond is mfm's "conditioning time" = the noise level at which the
+    # map is told it observed a context state x_cond along x_τ=(1-τ)·noise+τ·data: t_cond=0 sees
+    # pure noise (unconditional), t_cond>0 sees a partial observation, so the map learns the
+    # posterior p(data | x_{t_cond}) that inference steers (mfm's velocity API fixes the name
+    # `t_cond`). uncond_prob = P(a sample is unconditional, t_cond=0); 0.1 ⇒ 90% conditional.
+    uncond_prob: float = Field(0.1, ge=0.0, le=1.0)  # mfm cfg key: t_cond_0_rate
+    t_cond_power: float = Field(
+        1.0, gt=0.0
+    )  # nonzero t_cond ~ U(0,1)**power; 1=uniform, >1 near 0
+    t_cond_warmup_steps: int = Field(
+        0, ge=0
+    )  # force t_cond=0 (unconditional) for this many steps
     # Optional frozen 0001 prior to distil from (local ckpt path or wandb artifact ref).
     # Set => esd_teacher distillation + warm-start; unset => from-scratch mf.
     teacher_ckpt: str | None = None
@@ -186,7 +193,7 @@ def main(dcfg: DictConfig) -> None:
     )
     if len(loader) == 0:
         raise SystemExit(
-            f"empty loader: dataset ({len(dataset)} samples) is smaller than "
+            f"empty loader: dataset ({len(dataset)} samples) is smaller than "  # type: ignore[arg-type]  # torch's Dataset base isn't typed Sized; ours are map-style
             f"batch_size={cfg.training.batch_size} with drop_last=True"
         )
     model = build_model(cfg.dataset.shape, cfg.dataset.num_classes, cfg.model).to(
@@ -310,7 +317,7 @@ def main(dcfg: DictConfig) -> None:
         flow_map_anneal_end=cfg.training.flow_map_anneal_end,
         distillation_type=distillation_type,
         loss_weighting=cfg.training.loss_weighting,
-        t_cond_0_rate=cfg.training.t_cond_0_rate,
+        uncond_prob=cfg.training.uncond_prob,
         t_cond_power=cfg.training.t_cond_power,
         t_cond_warmup_steps=cfg.training.t_cond_warmup_steps,
         teacher_model=teacher,

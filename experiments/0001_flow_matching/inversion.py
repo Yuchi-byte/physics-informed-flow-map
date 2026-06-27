@@ -20,6 +20,7 @@ Caveat: ``d_obs`` comes from the same noiseless forward operator used inside the
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import hydra
 import torch
@@ -126,7 +127,7 @@ def main(dcfg: DictConfig) -> None:
 
     def velocity_fn(x: torch.Tensor, t: float) -> torch.Tensor:
         tb = torch.full((x.shape[0],), t, device=dev)
-        return prior.v(tb, tb, x, t_cond, x0)
+        return cast(torch.Tensor, prior.v(tb, tb, x, t_cond, x0))
 
     def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
         return guided_sample(

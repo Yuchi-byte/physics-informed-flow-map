@@ -104,7 +104,7 @@ def main(dcfg: DictConfig) -> None:
     )
     if len(loader) == 0:
         raise SystemExit(
-            f"empty loader: dataset ({len(dataset)} samples) is smaller than "
+            f"empty loader: dataset ({len(dataset)} samples) is smaller than "  # type: ignore[arg-type]  # torch's Dataset base isn't typed Sized; ours are map-style
             f"batch_size={cfg.training.batch_size} with drop_last=True"
         )
     model = build_model(cfg.dataset.shape, cfg.dataset.num_classes, cfg.model).to(

@@ -46,7 +46,7 @@ def test_esd_teacher_trains_and_freezes_teacher() -> None:
         loss_weighting="adaptive",
         flow_map_warmup_steps=0,  # off-diagonal (teacher-distilled) on immediately
         flow_map_anneal_end=1,
-        t_cond_0_rate=0.1,
+        uncond_prob=0.1,
         t_cond_power=2.0,
         teacher_model=teacher,
     )

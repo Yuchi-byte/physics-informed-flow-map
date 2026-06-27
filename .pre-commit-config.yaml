@@ -19,8 +19,10 @@ repos:
         files: ^(packages/physics-informed-flow-map|experiments)/
 
       - id: mypy
-        name: mypy (package src + tests)
-        entry: uv run mypy packages/physics-informed-flow-map/src packages/physics-informed-flow-map/tests
+        name: mypy (package src + tests + experiments)
+        # Experiments are standalone Hydra scripts in digit-prefixed dirs (run.py/inversion.py
+        # collide as duplicate modules across dirs), so each dir is checked on its own.
+        entry: bash -c 'uv run mypy packages/physics-informed-flow-map/src packages/physics-informed-flow-map/tests experiments/new.py && for d in experiments/*/; do uv run mypy "$d" || exit 1; done'
         language: system
         types: [python]
         pass_filenames: false

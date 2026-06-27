@@ -30,9 +30,19 @@ dev = [
 
 [tool.mypy]
 mypy_path = ["packages/physics-informed-flow-map/src"]
+plugins = ["pydantic.mypy"]
 strict = true
 disallow_any_generics = false
 disallow_any_explicit = false
+# Experiments are standalone Hydra scripts in digit-prefixed dirs (not importable packages),
+# so run.py/inversion.py collide as duplicate modules — check each dir on its own base.
+explicit_package_bases = true
+warn_unreachable = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
 module = ["mfm.*", "diffusers.*", "torchvision.*", "matplotlib.*", "torchdiffeq.*", "wandb.*", "hydra.*", "tqdm.*", "deepwave.*"]
