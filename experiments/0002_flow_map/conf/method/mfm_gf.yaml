@@ -1,0 +1,10 @@
+name: mfm_gf  # Meta Flow Maps gradient-FREE steering — paper Eq. 20 (the non-differentiable fallback)
+drift_estimator: sne  # self-normalised, reward-weighted posterior average; no backprop through r
+mc_samples: 4  # posterior draws per step; wave solves/step scale with this
+# Likelihood temperature in the softmax reward weights r = -||F(v)-d||^2 / (2 sigma^2): smaller
+# concentrates the weights on the best draw. Scaled to the noiseless seismic-residual magnitude.
+sigma: 1000.0
+guidance_strength: 1.0  # steering scale (0 => unguided base drift, the control)
+# Paper Eq. 38 steers with exactly sigma_t^2 * grad V_t — NO renormalisation (see mfm_g.yaml).
+renorm: false
+sde: true  # SDE (Euler-Maruyama) sampler; false => ODE (Euler)

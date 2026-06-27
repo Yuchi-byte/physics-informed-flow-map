@@ -1,18 +1,27 @@
-"""Invert a held-out velocity map with a trained Meta-Flow-Map prior — camp-A flow tilting.
+"""Invert a held-out velocity map with a trained Meta-Flow-Map prior — camp-A flow steering.
 
-    uv run python experiments/0002_flow_map/inversion.py ckpt=<run.py EMA ckpt> method=flow_tilt
+    uv run python experiments/0002_flow_map/inversion.py ckpt=<run.py EMA ckpt> method=mfm_g
+    uv run python experiments/0002_flow_map/inversion.py ckpt=<...> method=flow_tilt
     uv run python experiments/0002_flow_map/inversion.py ckpt=<...> method=unguided
-    uv run python experiments/0002_flow_map/inversion.py --multirun ckpt=<...> method=flow_tilt,unguided
+    uv run python experiments/0002_flow_map/inversion.py --multirun ckpt=<...> method=mfm_g,flow_tilt,unguided
 
 Loads a flow-map prior trained by ``run.py`` (do not retrain here), simulates seismic data ``d``
-from a held-out (validation-split) OpenFWI map with the Deepwave forward operator, then DPS-style
-tilts the prior toward ``d`` to recover the velocity. Uses the unconditional diagonal velocity
-``v(t,t,x|noise)`` (same scheme as ``0001_flow_matching/inversion.py``); the flow map's
-time-conditional posterior is not yet exploited here. Diffusion counterpart:
-``0003_baselines/inversion.py`` — so the flow-map and diffusion camps compare head-to-head.
+from a held-out (validation-split) OpenFWI map with the Deepwave forward operator, then steers the
+prior toward ``d`` to recover the velocity. Three methods:
 
-Scoring + figure are shared via ``inversion.single_target``; this entry only supplies how to
-invert (flow-map prior + ``guided_sample``).
+  * ``mfm_g`` — Meta Flow Maps' gradient-based (IWAE) steering (paper Eq. 22; ``prior-work.html``
+    §5.5). Estimates ∇V_t by backpropping the data log-likelihood through ``mc_samples`` one-step
+    posterior draws ``v(0,1,ε | t_cond=t, x_cond=x_t)`` — the flow map's *own* time-conditional
+    posterior, not a Tweedie mean. Our differentiable Deepwave reward makes this the estimator of
+    choice. ``mfm_gf`` is the gradient-free fallback (self-normalised, Eq. 20).
+  * ``flow_tilt`` — DPS baseline: steers with the single-point Tweedie mean ``x1≈x_t+(1-t)v`` at
+    ``t_cond=0`` (same scheme as ``0001_flow_matching/inversion.py``; does *not* use the posterior).
+  * ``unguided`` — prior sample, no physics (the control).
+
+Diffusion counterpart: ``0003_baselines/inversion.py`` — so the flow-map and diffusion camps
+compare head-to-head. Scoring + figure are shared via ``inversion.single_target``; this entry only
+supplies how to invert. The MFM-G path reuses ``inversion.FlowMapSteerModule`` (the native steering
+that wraps mfm's drift/sampler), adapted to the shared ``[-1, 1]`` ``Inverter`` contract.
 
 Caveat: ``d_obs`` comes from the same noiseless forward operator used inside the guidance term
 (an "inverse crime"), so recovery is optimistic.
@@ -21,6 +30,7 @@ Caveat: ``d_obs`` comes from the same noiseless forward operator used inside the
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import hydra
 import torch
@@ -34,17 +44,36 @@ from physics_informed_flow_map.flow_matching.datasets import (
     OpenFWIDatasetConfig,
 )
 from physics_informed_flow_map.flow_matching.models import DiTModelConfig, build_model
-from physics_informed_flow_map.inversion.bridge import seismic_forward
-from physics_informed_flow_map.inversion.single_target import invert_and_report
+from physics_informed_flow_map.inversion import FlowMapSteerModule
+from physics_informed_flow_map.inversion.bridge import mps_to_norm, seismic_forward
+from physics_informed_flow_map.inversion.single_target import (
+    Inverter,
+    invert_and_report,
+)
 from physics_informed_flow_map.physics.tilt import guided_sample
 
 EXPERIMENT = "0002_flow_map"
 
+_MFM_METHODS = {"mfm_g", "mfm_gf"}  # native flow-map steering (FlowMapSteerModule)
+_TILT_METHODS = {"flow_tilt", "unguided"}  # DPS Tweedie baseline + control
+
 
 class MethodConfig(Config):
-    name: str = "flow_tilt"  # flow_tilt | unguided
+    name: str = "flow_tilt"  # flow_tilt | unguided | mfm_g | mfm_gf
+    # Guidance scale: the DPS step size for flow_tilt, the steering scale for mfm_g/mfm_gf.
+    # 0 => unguided (the control invert_and_report runs for the misfit ratio).
     guidance_strength: float = 1.0
-    normalize_grad: bool = True
+    normalize_grad: bool = True  # flow_tilt only: unit-normalise the DPS gradient
+    # MFM-G / MFM-GF knobs (ignored by flow_tilt/unguided):
+    drift_estimator: str = (
+        "iwae"  # iwae = MFM-G (gradient); sne = MFM-GF (gradient-free)
+    )
+    mc_samples: int = Field(
+        4, gt=0
+    )  # posterior draws/step; wave solves/step scale with it
+    sigma: float = Field(1.0, gt=0.0)  # likelihood temperature in r=-||F(v)-d||^2/(2σ²)
+    renorm: bool = True  # pin steering magnitude to the base-drift norm each step
+    sde: bool = True  # SDE (Euler-Maruyama) sampler; false => ODE (Euler)
 
 
 class ModelConfig(Config):
@@ -70,9 +99,18 @@ class InversionConfig(Config):
             raise ValueError(
                 "inversion targets OpenFWI velocity maps (dataset=openfwi)"
             )
-        if self.method.name not in {"flow_tilt", "unguided"}:
+        if self.method.name not in _MFM_METHODS | _TILT_METHODS:
             raise ValueError(
-                f"unknown method '{self.method.name}' (flow_tilt | unguided)"
+                f"unknown method '{self.method.name}' "
+                "(mfm_g | mfm_gf | flow_tilt | unguided)"
+            )
+        if self.method.name in _MFM_METHODS and self.method.drift_estimator not in {
+            "iwae",
+            "sne",
+        }:
+            raise ValueError(
+                f"method={self.method.name} needs drift_estimator iwae (MFM-G) or sne "
+                f"(MFM-GF), got '{self.method.drift_estimator}'"
             )
         return self
 
@@ -117,29 +155,61 @@ def main(dcfg: DictConfig) -> None:
         print("[inversion] no ckpt= given: using an UNTRAINED prior (plumbing only)")
     prior.eval()
 
-    # The flow-map prior tilts from a fixed noise context x0 (reused across guided/unguided).
     n = cfg.n_samples
-    x0 = torch.randn(n, channels, size, size, device=dev)
-    t_cond = torch.zeros(n, device=dev)
+    n_solves = 0  # forward (PDE) solves consumed by the guided pass (for matched-cost reporting)
 
-    def velocity_fn(x: torch.Tensor, t: float) -> torch.Tensor:
-        tb = torch.full((x.shape[0],), t, device=dev)
-        return prior.v(tb, tb, x, t_cond, x0)
+    if cfg.method.name in _TILT_METHODS:
+        # DPS Tweedie baseline: tilt from a fixed noise context x0 (reused guided/unguided),
+        # using the unconditional diagonal velocity v(t,t,x|noise) at t_cond=0.
+        x0 = torch.randn(n, channels, size, size, device=dev)
+        t_cond = torch.zeros(n, device=dev)
 
-    def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
-        return guided_sample(
-            velocity_fn,
-            x0,
-            seismic_forward,
-            d_obs,
-            sampler_steps=cfg.steps,
-            guidance_strength=guidance_strength,
-            normalize_grad=cfg.method.normalize_grad,
-        )
+        def velocity_fn(x: torch.Tensor, t: float) -> torch.Tensor:
+            tb = torch.full((x.shape[0],), t, device=dev)
+            return cast(torch.Tensor, prior.v(tb, tb, x, t_cond, x0))
 
+        def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+            return guided_sample(
+                velocity_fn,
+                x0,
+                seismic_forward,
+                d_obs,
+                sampler_steps=cfg.steps,
+                guidance_strength=guidance_strength,
+                normalize_grad=cfg.method.normalize_grad,
+            )
+
+        n_solves = cfg.steps * n  # one Tweedie sim per step per sample
+    else:
+        # MFM-G/MFM-GF: native flow-map steering through FlowMapSteerModule, adapted to the
+        # shared [-1, 1] Inverter contract (its v_hat is m/s; map back so invert_and_report
+        # scores and figures it like the others). guidance=0 => base drift (the unguided control,
+        # estimator "base": no posterior draws, no wave solves).
+        def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+            estimator = (
+                cfg.method.drift_estimator if guidance_strength != 0.0 else "base"
+            )
+            module = FlowMapSteerModule(
+                prior,
+                drift_estimator=estimator,
+                mc_samples=cfg.method.mc_samples,
+                sigma=cfg.method.sigma,
+                n_steps=cfg.steps,
+                n_samples=n,
+                device=dev,
+                guidance_scale=guidance_strength,
+                renorm=cfg.method.renorm,
+                sde=cfg.method.sde,
+                resolution=size,
+            )
+            return mps_to_norm(module.invert(d_obs).v_hat)[:, None]
+
+        n_solves = cfg.steps * cfg.method.mc_samples * n  # mc posterior solves per step
+
+    invert_fn: Inverter = invert
     out = run.ckpt_dir.parent / "inversion.png"
     summary, caption = invert_and_report(
-        invert,
+        invert_fn,
         dataset_cfg=cfg.dataset,
         target_index=cfg.target_index,
         method_name=cfg.method.name,
@@ -148,6 +218,7 @@ def main(dcfg: DictConfig) -> None:
         device=dev,
         out_png=out,
     )
+    summary["inv/n_solves"] = float(0 if cfg.method.name == "unguided" else n_solves)
     run.log_image("inversion", out, caption=caption)
     run.finish(**summary)
 

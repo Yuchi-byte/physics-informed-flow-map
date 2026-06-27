@@ -1,0 +1,13 @@
+name: mfm_g  # Meta Flow Maps gradient-based (IWAE) steering — paper Eq. 22 / prior-work.html 5.5
+drift_estimator: iwae  # backprop the data log-likelihood through the one-step posterior draws
+mc_samples: 4  # posterior draws v(0,1,eps|t_cond=t,x_cond=x_t) per step; wave solves/step scale with this
+# Likelihood temperature in r = -||F(v)-d||^2 / (2 sigma^2): sets how sharply the IWAE
+# log-mean-exp weights concentrate on the best draw. Scaled to the noiseless seismic-residual
+# magnitude (d_obs is (5,70,1001)); ~1000 keeps the weights from collapsing onto a single draw.
+sigma: 1000.0
+guidance_strength: 1.0  # MFM-G steering scale (0 => unguided base drift, the control)
+# Paper Eq. 38 steers with exactly sigma_t^2 * grad V_t — NO renormalisation. renorm=true instead
+# pins the steering to ||base_drift|| every step, killing the gradient's natural self-attenuation
+# (grad V_t -> 0 as data is fit) and over-fitting. False is faithful to the paper.
+renorm: false
+sde: true  # SDE (Euler-Maruyama) sampler, as in the paper; false => ODE (Euler)
