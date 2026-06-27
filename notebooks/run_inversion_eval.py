@@ -35,12 +35,21 @@ STEPS = int(os.environ.get("EVAL_STEPS", 200))  # generative budget: STEPS * N_S
 N_SAMPLES = int(os.environ.get("EVAL_N_SAMPLES", 4))
 SEED = 0
 
-# FlatVel_A prior checkpoints (gitignored runs/ — update to your latest). The flow priors and the
-# DiT diffusion share one DiT backbone; the UNet diffusion is the architecture control.
-FLOW_CKPT = "runs/0001_flow_matching/2026-06-26T23-40-26Z/checkpoints/step_99_ema.pt"
-FLOWMAP_CKPT = "runs/0002_flow_map/2026-06-26T20-57-58Z/checkpoints/step_99_ema.pt"
-DIFF_UNET_CKPT = "runs/0003_baselines/2026-06-26T11-22-31Z/checkpoints/step_99_ema.pt"
-DIFF_DIT_CKPT = "runs/0003_baselines/2026-06-27T00-21-12Z/checkpoints/step_99_ema.pt"
+# FlatVel_A prior checkpoints (gitignored runs/ — update to your latest, or override via env).
+# The flow priors and the DiT diffusion share one DiT backbone; the UNet diffusion is the
+# architecture control.
+FLOW_CKPT = os.environ.get(
+    "FLOW_CKPT", "runs/0001_flow_matching/2026-06-26T23-40-26Z/checkpoints/step_99_ema.pt"
+)
+FLOWMAP_CKPT = os.environ.get(
+    "FLOWMAP_CKPT", "runs/0002_flow_map/2026-06-26T20-57-58Z/checkpoints/step_99_ema.pt"
+)
+DIFF_UNET_CKPT = os.environ.get(
+    "DIFF_UNET_CKPT", "runs/0003_baselines/2026-06-26T11-22-31Z/checkpoints/step_99_ema.pt"
+)
+DIFF_DIT_CKPT = os.environ.get(
+    "DIFF_DIT_CKPT", "runs/0003_baselines/2026-06-27T00-21-12Z/checkpoints/step_99_ema.pt"
+)
 
 
 def _repo_root() -> Path:
