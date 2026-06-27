@@ -4,19 +4,17 @@
     uv run python experiments/0003_baselines/inversion.py ckpt=<...> method=unguided
     uv run python experiments/0003_baselines/inversion.py --multirun ckpt=<...> method=dps,unguided
 
-Loads a diffusion prior trained by ``run.py`` (do not retrain here), simulates seismic data
-``d`` from a held-out (validation-split) OpenFWI map with the Deepwave forward operator, then
-runs the chosen inference-time scheme to recover the velocity. The ``method`` config group picks
-which published baseline to reproduce — ``dps`` (canonical Diffusion Posterior Sampling) or
-``unguided`` (prior sample, no physics; the control that shows the wave equation is doing the work).
+Loads a diffusion prior trained by ``run.py`` (do not retrain here), simulates seismic data ``d``
+from a held-out (validation-split) OpenFWI map with the Deepwave forward operator, then runs the
+chosen inference-time scheme to recover the velocity. The ``method`` group picks ``dps`` (canonical
+Diffusion Posterior Sampling) or ``unguided`` (prior sample, no physics — the control).
 
-This is the diffusion counterpart to ``0002_fwi_tilting/poc.py`` (flow-map prior + tilting): same
-held-out map, same forward operator, same metrics, so the two camps compare head-to-head. Reports
-per-sample MAE/RMSE (m/s) vs the true map plus the ground-truth-free pick (lowest data misfit), the
-data-misfit reduction vs an unguided sample, and writes a ``true | v_hat | error`` figure.
+Diffusion counterpart to ``0001_flow_matching/inversion.py`` (flow prior + tilting): same held-out
+map, forward operator, metrics, and figure (shared via ``inversion.single_target``), so the two
+camps compare head-to-head. This entry only supplies how to invert (diffusion prior + ``dps_sample``).
 
-Caveat (shared with the flow PoC): ``d_obs`` comes from the *same* noiseless forward operator used
-inside the guidance term (an "inverse crime"), so recovery is optimistic relative to field FWI.
+Caveat (shared with the flow inversion): ``d_obs`` comes from the same noiseless forward operator
+used inside the guidance term (an "inverse crime"), so recovery is optimistic.
 """
 
 from __future__ import annotations
@@ -24,13 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import hydra
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
-import torch.nn.functional as F
 from diffusers import DDPMScheduler
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
@@ -42,8 +34,8 @@ from physics_informed_flow_map.flow_matching.datasets import (
     DatasetConfig,
     OpenFWIDatasetConfig,
 )
-from physics_informed_flow_map.flow_matching.openfwi import VMAX, VMIN
-from physics_informed_flow_map.physics.forward import simulate
+from physics_informed_flow_map.inversion.bridge import seismic_forward
+from physics_informed_flow_map.inversion.single_target import invert_and_report
 
 EXPERIMENT = "0003_baselines"
 
@@ -87,28 +79,6 @@ class InversionConfig(Config):
 InversionConfig.model_rebuild()
 
 
-def to_mps70(v_norm: torch.Tensor) -> torch.Tensor:
-    """(B,1,64,64) in [-1,1] -> (B,70,70) velocity in m/s (clamped to the trained range)."""
-    v70 = F.interpolate(v_norm, size=70, mode="bilinear", align_corners=False).clamp(
-        -1.0, 1.0
-    )
-    return ((v70 + 1.0) / 2.0 * (VMAX - VMIN) + VMIN)[:, 0]
-
-
-def held_out_native(
-    cfg: OpenFWIDatasetConfig, target_index: int
-) -> tuple[int, np.ndarray]:
-    """``(global_index, native 70x70 m/s map)`` for the ``target_index``-th validation map.
-
-    Drawn from the same seed-0 validation split the prior held out of training (no leakage).
-    """
-    full, _, val_idx = cfg._split()
-    gidx = val_idx[target_index]
-    path, row = full.index[gidx]
-    native = np.ascontiguousarray(np.load(path, mmap_mode="r")[row, 0])  # (70,70) m/s
-    return gidx, native
-
-
 @hydra.main(version_base=None, config_path="conf", config_name="inversion")
 def main(dcfg: DictConfig) -> None:
     cfg = InversionConfig.from_dictconfig(dcfg)
@@ -140,91 +110,33 @@ def main(dcfg: DictConfig) -> None:
     denoiser.eval()
     scheduler = DDPMScheduler(num_train_timesteps=cfg.diffusion.num_train_timesteps)  # type: ignore[no-untyped-call]
 
-    # Held-out (val-split) OpenFWI map (native 70x70, m/s) -> observed seismic data.
-    gidx, native = held_out_native(cfg.dataset, cfg.target_index)
-    v_true = torch.from_numpy(native).float().to(dev)
-    d_obs = simulate(v_true).detach()
-    print(f"target: val map global index {gidx} (native {tuple(v_true.shape)})")
-
-    # Bridge: prior sample (B,1,64,64) in [-1,1] -> physical seismic data.
-    def forward_fn(v_norm: torch.Tensor) -> torch.Tensor:
-        v_mps = to_mps70(v_norm)
-        return torch.stack([simulate(v_mps[b]) for b in range(v_mps.shape[0])])
-
-    shape = cfg.dataset.shape
-    n = cfg.n_samples
-    steps = cfg.diffusion.num_sample_steps
-    gs = cfg.method.guidance_strength if cfg.method.name == "dps" else 0.0
-
-    def invert(guidance_strength: float) -> torch.Tensor:
+    def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
         return dps_sample(
             denoiser,
             scheduler,
-            shape,
-            forward_fn,
+            cfg.dataset.shape,
+            seismic_forward,
             d_obs,
-            n_samples=n,
-            num_steps=steps,
+            n_samples=cfg.n_samples,
+            num_steps=cfg.diffusion.num_sample_steps,
             guidance_strength=guidance_strength,
             device=dev,
             normalize_grad=cfg.method.normalize_grad,
         )
 
-    guided = invert(gs)
-    # Unguided control for the misfit-reduction ratio (reuse when the method is itself unguided).
-    unguided = guided if gs == 0.0 else invert(0.0)
-
-    vg = to_mps70(guided)
-    mae = (vg - v_true).abs().mean(dim=(1, 2))
-    rmse = ((vg - v_true) ** 2).mean(dim=(1, 2)).sqrt()
-    dm_g = ((forward_fn(guided) - d_obs) ** 2).sum(dim=(1, 2, 3))
-    dm_u = ((forward_fn(unguided) - d_obs) ** 2).sum(dim=(1, 2, 3))
-    oracle = int(mae.argmin())  # needs ground truth — not available in a real inversion
-    reported = int(dm_g.argmin())  # ground-truth-free pick: lowest data misfit
-
-    ratio = float(dm_g.mean() / dm_u.mean())
-    print(f"method={cfg.method.name}  guidance={gs:g}  steps={steps}  n={n}")
-    print(f"  MAE (m/s):  {[round(x) for x in mae.tolist()]}")
-    print(
-        f"  MAE mean={round(float(mae.mean()))}  median={round(float(mae.median()))}  worst={round(float(mae.max()))}"
-    )
-    print(
-        f"  oracle (needs GT) best MAE = {round(float(mae[oracle]))}  [sample {oracle}]"
-    )
-    print(
-        f"  reported (min data misfit) MAE = {round(float(mae[reported]))}  [sample {reported}]"
-    )
-    print(
-        f"  data misfit  guided={float(dm_g.mean()):.3e}  unguided={float(dm_u.mean()):.3e}  ratio={ratio:.3f}"
-    )
-
     out = run.ckpt_dir.parent / "inversion.png"
-    vt = v_true.cpu().numpy()
-    vh = vg[reported].detach().cpu().numpy()
-    fig, ax = plt.subplots(1, 3, figsize=(9, 3.2))
-    ax[0].imshow(vt, cmap="viridis")
-    ax[0].set_title("true v")
-    ax[0].axis("off")
-    ax[1].imshow(vh, cmap="viridis", vmin=vt.min(), vmax=vt.max())
-    ax[1].set_title(f"v_hat, min-misfit (MAE {round(float(mae[reported]))} m/s)")
-    ax[1].axis("off")
-    im = ax[2].imshow(vh - vt, cmap="RdBu", vmin=-500, vmax=500)
-    ax[2].set_title("error")
-    ax[2].axis("off")
-    fig.colorbar(im, ax=ax[2], fraction=0.046)
-    fig.tight_layout()
-    fig.savefig(out, dpi=140, bbox_inches="tight")
-    run.log_image("inversion", out, caption=f"{cfg.method.name} · val map {gidx}")
-
-    run.finish(
-        **{
-            "inv/mae_mean": float(mae.mean()),
-            "inv/mae_reported": float(mae[reported]),
-            "inv/rmse_mean": float(rmse.mean()),
-            "inv/misfit_ratio": ratio,
-            "inv/target_index": gidx,
-        }
+    summary, caption = invert_and_report(
+        invert,
+        dataset_cfg=cfg.dataset,
+        target_index=cfg.target_index,
+        method_name=cfg.method.name,
+        guidance=cfg.method.guidance_strength,
+        steps=cfg.diffusion.num_sample_steps,
+        device=dev,
+        out_png=out,
     )
+    run.log_image("inversion", out, caption=caption)
+    run.finish(**summary)
 
 
 if __name__ == "__main__":

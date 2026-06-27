@@ -19,7 +19,7 @@ from .bridge import seismic_forward, to_mps_native
 
 
 class FlowTiltModule:
-    """DPS-style tilting of a flow-map prior (the ``0002`` method)."""
+    """DPS-style tilting of a flow / flow-map prior (the 0001 & 0002 inversion method)."""
 
     def __init__(
         self,
