@@ -188,6 +188,7 @@ def main(dcfg: DictConfig) -> None:
         lr=cfg.training.lr,
         device=device,
         log=run.log,
+        log_step=run.log_step,
         warmup_steps=cfg.training.warmup_steps,
         ema_enabled=cfg.training.ema.enabled,
         ema_decay=cfg.training.ema.decay,

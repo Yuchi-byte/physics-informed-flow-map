@@ -83,8 +83,18 @@ rewrite them.** Keep the camp positioning above consistent with them when it shi
 AI-generated journals/reports (`experiments/JOURNAL.md`, `experiments/*/report.md`) are
 **AI-facing** and are NOT kept under `docs/research/`.
 
+## Git workflow
+
+**Commit frequently.** After any coherent set of related changes — a feature addition, a bug fix, a refactor of a module — commit immediately without waiting to be asked. Use descriptive commit messages focused on *why*, not *what*. This keeps work safe across pod restarts and lets the user pick up exactly where things left off on a new RunPod instance.
+
+```bash
+git add <specific files>    # never git add -A; avoid staging .env or large binaries
+git commit -m "feat/fix/refactor: description"
+```
+
 ## Environment notes
 
 - Python 3.12, managed with `uv`.
 - PyTorch is installed from the `pytorch-cu130` index on Linux (CUDA 13.0).
 - The MFM package supports three attention backends selectable via `conf/model/sit_xl_2.yaml`: torch SDPA (default), Flash Attention v2 (A100), Flash Attention v3 (H100/H200).
+- This project runs on **RunPod**. The network volume is mounted at `/workspace`; all project files and `runs/` outputs are on it and persist across pod restarts.

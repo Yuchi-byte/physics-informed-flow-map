@@ -312,6 +312,7 @@ def main(dcfg: DictConfig) -> None:
         device=device,
         num_classes=cfg.dataset.num_classes,
         log=run.log,
+        log_step=run.log_step,
         warmup_steps=cfg.training.warmup_steps,
         flow_map_warmup_steps=cfg.training.flow_map_warmup_steps,
         flow_map_anneal_end=cfg.training.flow_map_anneal_end,

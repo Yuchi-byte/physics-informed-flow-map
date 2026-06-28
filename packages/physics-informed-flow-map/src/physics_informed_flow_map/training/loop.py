@@ -30,6 +30,7 @@ def train_loop(
     lr: float,
     device: torch.device,
     log: Callable[..., None] | None = None,
+    log_step: Callable[..., None] | None = None,
     warmup_steps: int = 0,
     grad_clip: float = 1.0,
     ema_enabled: bool = False,
@@ -48,6 +49,8 @@ def train_loop(
             ``time/epoch_s`` and, at eval epochs, ``val/loss`` +
             ``time/eval_s`` (each with ``step`` + ``epoch``). A final ``time/total_min``
             is logged once at the end. (GPU memory comes from wandb's system metrics.)
+        log_step: called every optimizer step with ``step``, ``epoch``, ``loss``,
+            ``grad_norm``, ``lr`` — for high-frequency local logging (not sent to wandb).
         warmup_steps: linear LR warmup ``0.1x -> 1x`` over this many optimizer steps, then
             constant (mirrors mfm). ``0`` disables it.
         on_eval: ``(eval_model, epoch) -> metric | None`` at the eval cadence; a new best
@@ -110,6 +113,14 @@ def train_loop(
             history.append(
                 {"step": float(step), "epoch": float(epoch), "total": loss_f}
             )
+            if log_step is not None:
+                log_step(
+                    step=step,
+                    epoch=epoch,
+                    loss=loss_f,
+                    grad_norm=grad_norm,
+                    lr=optimizer.param_groups[0]["lr"],
+                )
             epoch_loss += loss_f
             epoch_grad_norm += grad_norm
             epoch_steps += 1
