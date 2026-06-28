@@ -63,7 +63,7 @@ EXPERIMENT = "0004_inversion"
 _COMPAT: dict[str, set[str]] = {
     "flow_matching": {"unguided", "flow_tilt"},
     "flow_map": {"unguided", "flow_tilt", "mfm_g", "mfm_gf"},
-    "diffusion": {"unguided", "dps"},
+    "diffusion": {"unguided", "dps", "red_diffeq"},
 }
 _PRIORS = set(_COMPAT)
 _METHODS = {m for ms in _COMPAT.values() for m in ms}
@@ -108,6 +108,15 @@ class MethodConfig(Config):
     )  # likelihood temperature in r=-||F(v)-d||^2/(2σ²)
     renorm: bool = False  # pin steering magnitude to the base-drift norm each step
     sde: bool = True  # SDE (Euler-Maruyama) sampler; false => ODE (Euler)
+    # RED-DiffEq knobs (diffusion prior; ignored by the other methods).
+    eta_data: float = Field(
+        0.1, ge=0.0
+    )  # data-misfit step (state-space when normalize_grad)
+    eta_reg: float = Field(0.05, ge=0.0)  # RED prior-residual step
+    t_denoise: int = Field(100, gt=0)  # fixed DDPM level the Tweedie denoiser runs at
+    iters: int = Field(
+        0, ge=0
+    )  # RED-DiffEq optimisation steps; 0 => use the global `steps`
 
 
 class ModelConfig(Config):
@@ -138,6 +147,7 @@ class EvalConfig(Config):
 class InversionConfig(Config):
     seed: int = 0
     ckpt: str = ""  # trained prior (a training-framework checkpoint); empty = untrained, plumbing only
+    diff_ckpt: str = ""  # sweep-only: a second checkpoint for diffusion entries to interpolate (${diff_ckpt})
     target_index: int = Field(0, ge=0)  # index into the seed-0 validation split
     n_samples: int = Field(4, gt=0)
     steps: int = Field(200, gt=0)  # sampler / reverse steps
@@ -240,8 +250,8 @@ def main(dcfg: DictConfig) -> None:
                 )
 
             n_solves = cfg.steps * n  # one Tweedie sim per step per sample
-    else:  # diffusion prior + dps / unguided
-        from physics_informed_flow_map.baselines import dps_sample
+    else:  # diffusion prior + dps / red_diffeq / unguided
+        from physics_informed_flow_map.baselines import dps_sample, red_diffeq_sample
 
         denoiser, scheduler = load_diffusion_prior(
             cfg.dataset.shape,
@@ -255,21 +265,45 @@ def main(dcfg: DictConfig) -> None:
             device=dev,
         )
 
-        def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
-            return dps_sample(
-                denoiser,
-                scheduler,
-                cfg.dataset.shape,
-                seismic_forward,
-                d_obs,
-                n_samples=n,
-                num_steps=cfg.steps,
-                guidance_strength=guidance_strength,
-                device=dev,
-                normalize_grad=cfg.method.normalize_grad,
-            )
+        if cfg.method.name == "red_diffeq":
+            # RED-DiffEq optimisation: eta_data/eta_reg are the knobs; guidance=0 still flags the
+            # control (invert_and_report runs it for the misfit ratio), so gate eta_data on it.
+            def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+                return red_diffeq_sample(
+                    denoiser,
+                    scheduler,
+                    cfg.dataset.shape,
+                    seismic_forward,
+                    d_obs,
+                    n_samples=n,
+                    iters=cfg.method.iters or cfg.steps,
+                    eta_data=cfg.method.eta_data if guidance_strength != 0.0 else 0.0,
+                    eta_reg=cfg.method.eta_reg,
+                    t_denoise=cfg.method.t_denoise,
+                    device=dev,
+                    normalize_grad=cfg.method.normalize_grad,
+                )
+        else:  # dps / unguided
 
-        n_solves = cfg.steps * n
+            def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+                return dps_sample(
+                    denoiser,
+                    scheduler,
+                    cfg.dataset.shape,
+                    seismic_forward,
+                    d_obs,
+                    n_samples=n,
+                    num_steps=cfg.steps,
+                    guidance_strength=guidance_strength,
+                    device=dev,
+                    normalize_grad=cfg.method.normalize_grad,
+                )
+
+        n_solves = (
+            cfg.method.iters or cfg.steps
+            if cfg.method.name == "red_diffeq"
+            else cfg.steps
+        ) * n
 
     invert_fn: Inverter = invert
     out = run.ckpt_dir.parent / "inversion.png"

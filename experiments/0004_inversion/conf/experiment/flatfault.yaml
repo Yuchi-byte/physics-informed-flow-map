@@ -1,0 +1,43 @@
+# @package _global_
+# FlatFault_A comparison (the multimodal-fault test bed). Flow-map prior (MFM-G vs DPS-tilt) AND a
+# separately-trained 320/8 DiT diffusion prior (canonical DPS vs RED-DiffEq) — the full camp-A matrix
+# on one held-out split. Flow entries interpolate the flow-map ckpt via ${ckpt}; the diffusion
+# entries carry their own ${diff_ckpt} (a different checkpoint, same 320/8 backbone as a denoiser).
+n_samples: 4
+steps: 100
+ckpt: ""  # FlatFault_A 320/8 flow-map, e.g. runs/0002_flow_map/<ts>/checkpoints/step_119_ema.pt
+diff_ckpt: ""  # FlatFault_A 320/8 DiT diffusion, e.g. runs/0003_baselines/<ts>/checkpoints/step_119_ema.pt
+model: { hidden: 320, depth: 8 }
+
+evaluation:
+  families: [FlatFault_A]
+  n_targets: 16
+  methods:
+    - label: flowmap·prior·g0
+      prior: { name: flow_map }
+      ckpt: ${ckpt}
+      model: { hidden: 320, depth: 8 }
+      method: { name: unguided, guidance_strength: 0.0 }
+    - label: flowmap·tilt·g1 (DPS)
+      prior: { name: flow_map }
+      ckpt: ${ckpt}
+      model: { hidden: 320, depth: 8 }
+      method: { name: flow_tilt, guidance_strength: 1.0 }
+    - label: flowmap·mfm_g·σ100
+      prior: { name: flow_map }
+      ckpt: ${ckpt}
+      model: { hidden: 320, depth: 8 }
+      method: { name: mfm_g, drift_estimator: iwae, sigma: 100.0, renorm: false, mc_samples: 4 }
+    - label: diffusion·dps
+      prior: { name: diffusion, denoiser_kind: dit }
+      ckpt: ${diff_ckpt}
+      model: { hidden: 320, depth: 8 }
+      method: { name: dps, guidance_strength: 0.5 }
+    - label: diffusion·red_diffeq
+      prior: { name: diffusion, denoiser_kind: dit }
+      ckpt: ${diff_ckpt}
+      model: { hidden: 320, depth: 8 }
+      # Prior-dominant balance (tuned on FlatFault_A): a weaker data step keeps iterates physical.
+      # NOTE this leaves data misfit high — RED-DiffEq can't fit data as hard as DPS while staying
+      # on-manifold here (the data-vs-prior tradeoff); see report.md.
+      method: { name: red_diffeq, eta_data: 0.1, eta_reg: 1.0, t_denoise: 250, iters: 300 }

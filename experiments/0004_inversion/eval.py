@@ -30,6 +30,7 @@ from physics_informed_flow_map.inversion import (
     FlowMapSteerModule,
     FlowTiltModule,
     InversionModule,
+    REDDiffEqModule,
 )
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -38,7 +39,17 @@ from run import EvalEntry, InversionConfig, check_compatible  # noqa: E402
 
 EXPERIMENT = "0004_inversion"
 _MFM_METHODS = {"mfm_g", "mfm_gf"}
-_COLS = ["method", "mae_mean", "rmse_mean", "ssim_mean", "misfit_mean", "n_solves"]
+_COLS = [
+    "method",
+    "mae_mean",
+    "ssim_mean",
+    "crps_mean",
+    "energy_mean",
+    "cov90_mean",
+    "cov_err_mean",
+    "misfit_mean",
+    "n_solves",
+]
 
 
 def build_module(
@@ -101,16 +112,30 @@ def build_module(
             ckpt=entry.ckpt,
             device=device,
         )
-        module = DiffusionDPSModule(
-            denoiser,
-            scheduler,
-            guidance=g,
-            steps=steps,
-            n_samples=n_samples,
-            device=device,
-            resolution=resolution,
-            normalize_grad=entry.method.normalize_grad,
-        )
+        if entry.method.name == "red_diffeq":
+            module = REDDiffEqModule(
+                denoiser,
+                scheduler,
+                eta_data=entry.method.eta_data if g != 0.0 else 0.0,
+                eta_reg=entry.method.eta_reg,
+                t_denoise=entry.method.t_denoise,
+                iters=entry.method.iters or steps,
+                n_samples=n_samples,
+                device=device,
+                resolution=resolution,
+                normalize_grad=entry.method.normalize_grad,
+            )
+        else:  # dps / unguided
+            module = DiffusionDPSModule(
+                denoiser,
+                scheduler,
+                guidance=g,
+                steps=steps,
+                n_samples=n_samples,
+                device=device,
+                resolution=resolution,
+                normalize_grad=entry.method.normalize_grad,
+            )
     module.name = entry.label
     return module
 

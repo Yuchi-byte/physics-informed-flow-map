@@ -1,0 +1,9 @@
+name: red_diffeq  # RED-DiffEq: diffusion prior as a Regularization-by-Denoising term — diffusion prior only
+# Two corrections per iteration from a smooth start (iters = global `steps`):
+#   data:  -eta_data * d/dx ||F(x)-d_obs||^2   (wave-equation pull; per-sample unit-normalised)
+#   prior: -eta_reg  * (x - D(x))              (RED residual; D = Tweedie denoiser at fixed t_denoise)
+eta_data: 0.1  # data-misfit step (state-space step when normalize_grad)
+eta_reg: 0.05  # RED prior-residual step
+t_denoise: 100  # fixed DDPM noise level the Tweedie denoiser runs at
+normalize_grad: true  # unit-normalise the data gradient
+guidance_strength: 1.0  # unused by RED-DiffEq (eta_data/eta_reg are the knobs); 0 still flags the control
