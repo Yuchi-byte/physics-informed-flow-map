@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Callable, cast
 
 import torch
 from torch import Tensor
@@ -20,22 +20,41 @@ def sample(
     *,
     sampler_steps: int,
     device: torch.device,
+    on_step: Callable[[int, Tensor], None] | None = None,
 ) -> Tensor:
+    """Sample from the flow prior via Euler ODE integration.
+
+    When ``on_step`` is None the fast ``ode_sampler_fn`` (torchdiffeq) is used.
+    When provided, an equivalent manual Euler loop runs so ``on_step(step, x_t)``
+    can be called at every step — useful for trajectory visualisation.
+    """
     model.eval()
     x_noise = torch.randn(n_samples, *shape, device=device)
     t_cond = torch.zeros(n_samples, device=device)
-    return cast(
-        Tensor,
-        ode_sampler_fn(
-            model,
-            xt_cond=x_noise,
-            t_cond=t_cond,
-            n_steps=sampler_steps,
-            solver="euler",
-            eps_start=x_noise,
-            v_type="standard",
-        ),
-    )
+    if on_step is None:
+        return cast(
+            Tensor,
+            ode_sampler_fn(
+                model,
+                xt_cond=x_noise,
+                t_cond=t_cond,
+                n_steps=sampler_steps,
+                solver="euler",
+                eps_start=x_noise,
+                v_type="standard",
+            ),
+        )
+    # Manual Euler loop (identical to ode_sampler_fn with solver="euler") so we can
+    # capture intermediate states for trajectory logging.
+    x = x_noise.clone()
+    dt = 1.0 / sampler_steps
+    for i in range(sampler_steps):
+        t = i * dt
+        tb = torch.full((n_samples,), t, device=device)
+        v = model.v(tb, tb, x, t_cond, x_noise)
+        on_step(i, x)
+        x = x + dt * v
+    return x
 
 
 @torch.no_grad()

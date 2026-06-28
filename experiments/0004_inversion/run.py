@@ -36,6 +36,7 @@ from omegaconf import DictConfig
 from pydantic import Field, model_validator
 
 from physics_informed_flow_map.experiment import Config, start_run
+from physics_informed_flow_map.flow_matching.openfwi import viz_velocity
 from physics_informed_flow_map.flow_matching.datasets import (
     DatasetConfig,
     OpenFWIDatasetConfig,
@@ -151,6 +152,7 @@ class InversionConfig(Config):
     target_index: int = Field(0, ge=0)  # index into the seed-0 validation split
     n_samples: int = Field(4, gt=0)
     steps: int = Field(200, gt=0)  # sampler / reverse steps
+    viz_every: int = Field(50, ge=0)  # save trajectory image every N steps (0 = off)
     model: ModelConfig = ModelConfig()
     dataset: DatasetConfig = OpenFWIDatasetConfig()
     prior: PriorConfig = PriorConfig()
@@ -239,6 +241,13 @@ def main(dcfg: DictConfig) -> None:
                 return cast(torch.Tensor, prior.v(tb, tb, x, t_cond, x0))
 
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+                step_cb = None
+                if guidance_strength != 0.0 and cfg.viz_every > 0:
+                    step_cb = run.make_step_saver(
+                        f"flow_tilt_g{guidance_strength:.2g}",
+                        lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
+                        every=cfg.viz_every,
+                    )
                 return guided_sample(
                     velocity_fn,
                     x0,
@@ -247,6 +256,7 @@ def main(dcfg: DictConfig) -> None:
                     sampler_steps=cfg.steps,
                     guidance_strength=guidance_strength,
                     normalize_grad=cfg.method.normalize_grad,
+                    on_step=step_cb,
                 )
 
             n_solves = cfg.steps * n  # one Tweedie sim per step per sample
@@ -269,6 +279,13 @@ def main(dcfg: DictConfig) -> None:
             # RED-DiffEq optimisation: eta_data/eta_reg are the knobs; guidance=0 still flags the
             # control (invert_and_report runs it for the misfit ratio), so gate eta_data on it.
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+                step_cb = None
+                if guidance_strength != 0.0 and cfg.viz_every > 0:
+                    step_cb = run.make_step_saver(
+                        f"red_diffeq_g{guidance_strength:.2g}",
+                        lambda x, p: viz_velocity(x, p),
+                        every=cfg.viz_every,
+                    )
                 return red_diffeq_sample(
                     denoiser,
                     scheduler,
@@ -282,10 +299,18 @@ def main(dcfg: DictConfig) -> None:
                     t_denoise=cfg.method.t_denoise,
                     device=dev,
                     normalize_grad=cfg.method.normalize_grad,
+                    on_step=step_cb,
                 )
         else:  # dps / unguided
 
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+                step_cb = None
+                if guidance_strength != 0.0 and cfg.viz_every > 0:
+                    step_cb = run.make_step_saver(
+                        f"dps_g{guidance_strength:.2g}",
+                        lambda x, p: viz_velocity(x, p),
+                        every=cfg.viz_every,
+                    )
                 return dps_sample(
                     denoiser,
                     scheduler,
@@ -297,6 +322,7 @@ def main(dcfg: DictConfig) -> None:
                     guidance_strength=guidance_strength,
                     device=dev,
                     normalize_grad=cfg.method.normalize_grad,
+                    on_step=step_cb,
                 )
 
         n_solves = (

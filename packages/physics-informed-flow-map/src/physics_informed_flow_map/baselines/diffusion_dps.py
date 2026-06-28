@@ -29,6 +29,7 @@ def dps_sample(
     guidance_strength: float,
     device: torch.device,
     normalize_grad: bool = True,
+    on_step: Callable[..., None] | None = None,
 ) -> Tensor:
     """Canonical DPS over a ``diffusers`` reverse process. Returns ``(n_samples, *shape)`` at ``t=0``.
 
@@ -50,13 +51,14 @@ def dps_sample(
         device: device to sample on.
         normalize_grad: if True, scale each sample's correction to unit norm before applying
             ``guidance_strength`` (the gradient-normalisation lesson from the flow PoC).
+        on_step: optional callback ``(step_idx, x0hat, data_fidelity=...)`` for trajectory logging.
 
     Returns:
         Samples at ``t=0``, shape ``(n_samples, *shape)``.
     """
     scheduler.set_timesteps(num_steps, device=device)  # type: ignore[attr-defined]
     x = torch.randn(n_samples, *shape, device=device)
-    for t in scheduler.timesteps:  # type: ignore[attr-defined]
+    for step_idx, t in enumerate(scheduler.timesteps):  # type: ignore[attr-defined]
         x = x.detach().requires_grad_(True)
         eps = denoiser(x, t).sample
         step = scheduler.step(eps, int(t), x)  # type: ignore[attr-defined]
@@ -72,4 +74,8 @@ def dps_sample(
             grad = torch.zeros_like(x)
 
         x = (step.prev_sample - guidance_strength * grad).detach()
+
+        if on_step is not None:
+            data_fidelity = float(((forward_fn(x0hat.detach()) - d_obs) ** 2).mean())
+            on_step(step_idx, x0hat.detach(), data_fidelity=data_fidelity)
     return x

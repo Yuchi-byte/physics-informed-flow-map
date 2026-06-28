@@ -38,6 +38,7 @@ def red_diffeq_sample(
     t_denoise: int,
     device: torch.device,
     normalize_grad: bool = True,
+    on_step: Callable[..., None] | None = None,
 ) -> Tensor:
     """RED-DiffEq optimization; returns ``(n_samples, *shape)`` normalized models in ``[-1, 1]``.
 
@@ -71,7 +72,7 @@ def red_diffeq_sample(
     sa, s1 = abar.sqrt(), (1.0 - abar).sqrt()
     t_batch = torch.full((n_samples,), t_denoise, device=device, dtype=torch.long)
 
-    for _ in range(iters):
+    for i in range(iters):
         x_g = x.detach().requires_grad_(True)
         loss = ((forward_fn(x_g) - d_obs) ** 2).sum()
         (grad,) = torch.autograd.grad(loss, x_g)
@@ -85,5 +86,9 @@ def red_diffeq_sample(
             eps_pred = denoiser(x_t, t_batch).sample
             x0_hat = (x_t - s1 * eps_pred) / sa
             x = (x - eta_data * grad - eta_reg * (x - x0_hat)).clamp(-1.0, 1.0)
+
+        if on_step is not None:
+            data_fidelity = float(((forward_fn(x.detach()) - d_obs) ** 2).mean())
+            on_step(i, x.detach(), data_fidelity=data_fidelity)
 
     return x.detach()

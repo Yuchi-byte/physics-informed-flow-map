@@ -24,6 +24,7 @@ def guided_sample(
     sampler_steps: int,
     guidance_strength: float,
     normalize_grad: bool = False,
+    on_step: Callable[..., None] | None = None,
 ) -> Tensor:
     """Guided Euler sampling of a flow prior toward an observation ``d_obs``.
 
@@ -47,6 +48,8 @@ def guided_sample(
             applying ``guidance_strength`` (so the step size is independent of the wildly
             scale-dependent raw gradient magnitude). ``guidance_strength`` is then a
             state-space step size per Euler step.
+        on_step: optional callback ``(step, x1_hat, data_fidelity=..., grad_norm=...)``
+            called every step for trajectory logging and visualisation.
 
     Returns:
         Samples at ``t=1``, shape ``(B, *sample_shape)``.
@@ -67,7 +70,13 @@ def guided_sample(
                 norm = grad.flatten(1).norm(dim=1).clamp_min(1e-12)
                 grad = grad / norm.reshape(-1, *([1] * (grad.ndim - 1)))
         else:
+            x1_hat = (x + (1.0 - t) * v).detach()
             grad = torch.zeros_like(x)
+
+        if on_step is not None:
+            data_fidelity = float(((forward_fn(x1_hat.detach()) - d_obs) ** 2).mean())
+            grad_norm = float(grad.flatten(1).norm(dim=1).mean())
+            on_step(i, x1_hat.detach(), data_fidelity=data_fidelity, grad_norm=grad_norm)
 
         with torch.no_grad():
             x = x + dt * v - guidance_strength * grad

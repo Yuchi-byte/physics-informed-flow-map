@@ -105,6 +105,7 @@ class SamplingConfig(Config):
         default_factory=lambda: [0.2, 0.4, 0.6, 0.8, 0.9]
     )
     n_eval_viz: int = Field(64, gt=0)
+    viz_every: int = Field(0, ge=0)  # save ODE trajectory image every N steps (0 = off)
 
 
 class FlowMapConfig(Config):
@@ -253,12 +254,18 @@ def main(dcfg: DictConfig) -> None:
         return total / max(n, 1)
 
     def on_eval(m: BaseModel, epoch: int) -> float | None:
+        traj_saver = run.make_step_saver(
+            f"ode_epoch{epoch}",
+            lambda x, p: cfg.dataset.visualize(x[: cfg.sampling.n_eval_viz], p),
+            every=cfg.sampling.viz_every,
+        )
         s = sample(
             m,
             cfg.sampling.n_eval_viz,
             cfg.dataset.shape,
             sampler_steps=cfg.sampling.sampler_steps,
             device=device,
+            on_step=traj_saver if cfg.sampling.viz_every > 0 else None,
         )
         p = run.ckpt_dir.parent / f"samples_epoch{epoch}.png"
         cfg.dataset.visualize(s, p)

@@ -23,8 +23,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+import matplotlib
 import torch
 import wandb
+
+matplotlib.use("Agg")
 
 DEFAULT_PROJECT = "physics-informed-flow-map"
 
@@ -182,6 +185,37 @@ class Run:
                     )
 
         return on_checkpoint
+
+    def make_step_saver(
+        self,
+        key: str,
+        viz_fn: Callable[[Any, Path], None],
+        *,
+        every: int = 50,
+    ) -> Callable[..., None]:
+        """Return an ``on_step(step, x_est, **scalars)`` callback for sampler trajectory logging.
+
+        Saves a visualisation image to ``log_dir/trajectory/{key}/step_{i:04d}.png`` every
+        ``every`` steps (local only — not uploaded to wandb, which would be too expensive).
+        Any ``**scalars`` passed by the sampler (data_fidelity, grad_norm, …) are written to
+        ``steps.jsonl`` on every call regardless of ``every``.
+
+        Args:
+            key: sub-directory name, e.g. ``"inversion_flow_tilt"`` or ``"sample_ode"``.
+            viz_fn: ``(x_est_tensor, out_path)`` — a callable that saves a visualisation PNG.
+            every: save an image every this many steps (default 50).
+        """
+        traj_dir = self.log_dir / "trajectory" / key
+        traj_dir.mkdir(parents=True, exist_ok=True)
+
+        def on_step(step: int, x_est: Any, **scalars: float) -> None:
+            if scalars:
+                self.log_step(phase=key, step=step, **scalars)
+            if step % every == 0:
+                path = traj_dir / f"step_{step:04d}.png"
+                viz_fn(x_est, path)
+
+        return on_step
 
     def finish(self, **summary: Any) -> None:
         """Record summary scalars to the wandb run summary, write ``summary.json``, and close."""
