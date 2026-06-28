@@ -73,3 +73,32 @@ def test_evaluator_loops_targets() -> None:
     assert stats.n_targets == 2 and stats.n_solves == 5.0
     # Normalised MAE: 0 on target 0, |−1 − (−0.8)| = 0.2 on target 1 -> mean 0.1.
     assert abs(stats.agg["mae_mean"] - 0.1) < 1e-4
+
+
+def test_distributional_scores_reward_calibration() -> None:
+    # Truth in m/s; a confidently-wrong near-deterministic ensemble vs a calibrated spread one.
+    torch.manual_seed(0)
+    v_true = torch.full((16, 16), 2400.0)  # mid-scale
+    # Near-zero spread, biased away from truth (the DPS-like failure mode).
+    sharp_wrong = (v_true + 600.0)[None] + torch.randn(8, 16, 16) * 1.0
+    # Spread roughly covering the truth (a calibrated-ish posterior).
+    calibrated = v_true[None] + torch.randn(8, 16, 16) * 400.0
+    sw = score_target(sharp_wrong, v_true, _identity(v_true), _identity)
+    cal = score_target(calibrated, v_true, _identity(v_true), _identity)
+
+    for k in ("crps", "energy", "cov50", "cov90", "cov_err"):
+        assert k in sw and k in cal
+    # The confidently-wrong ensemble under-covers (cov far below nominal -> large cov_err) and
+    # has worse (higher) CRPS than the calibrated one.
+    assert sw["cov90"] < 0.2  # zero-spread, wrong: truth almost never inside
+    assert sw["cov_err"] > cal["cov_err"]
+    assert sw["crps"] > cal["crps"]
+
+
+def test_distributional_scores_handle_single_sample() -> None:
+    # n=1: spread terms must not divide by zero.
+    v_true = torch.full((4, 4), 1500.0)
+    s = score_target(
+        torch.stack([v_true + 300.0]), v_true, _identity(v_true), _identity
+    )
+    assert s["crps"] == s["crps"] and s["energy"] == s["energy"]  # not NaN

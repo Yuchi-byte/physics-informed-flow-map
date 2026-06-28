@@ -3,11 +3,17 @@
 The scoring core (:func:`score_target`, :func:`ssim`, :meth:`InversionStats.aggregate`) is
 pure — it takes tensors and a forward callable, so it is unit-testable without the wave
 solver. :class:`Evaluator` wires in the real Deepwave operator and the held-out OpenFWI split
-at the edges. Metrics follow the OpenFWI convention — MAE/RMSE/SSIM on the velocity map
-normalised to ``[-1, 1]`` — and report the *expected value across posterior samples*
-(``mean_i metric(x_i, x_true)``), i.e. the quality of a typical sample rather than of a
-single selected one or of the blurry per-pixel sample mean. ``misfit`` is the lone
-data-domain number (mean over samples of ``||forward(x_i) - d_obs||^2``).
+at the edges.
+
+Two metric families, both on the ``[-1, 1]``-normalised velocity (OpenFWI scale):
+
+* *Per-sample* (OpenFWI convention) — MAE/RMSE/SSIM as the *expected value across posterior
+  samples* (``mean_i metric(x_i, x_true)``), i.e. the quality of a typical draw. Plus ``misfit``,
+  the data-domain residual ``mean_i ||forward(x_i) - d_obs||^2``.
+* *Distributional* — strictly-proper scores over the whole sample *set*: ``crps`` (per-pixel),
+  ``energy`` (joint), and calibration ``cov50``/``cov90``/``cov_err``. These reward a calibrated
+  posterior and penalise a confidently-wrong point estimate (zero spread), which the per-sample
+  and posterior-mean metrics cannot see.
 """
 
 from __future__ import annotations
@@ -61,6 +67,68 @@ def _rmse(a: Tensor, b: Tensor) -> Tensor:
     return ((a - b) ** 2).mean(dim=(-2, -1)).sqrt()
 
 
+def crps_ensemble(samples: Tensor, truth: Tensor) -> float:
+    """Mean per-pixel CRPS of the ensemble against the truth (lower is better).
+
+    Empirical fair estimator (Gneiting & Raftery 2007):
+    ``CRPS = (1/n)Σ_i|x_i-y| - (1/(2n(n-1)))Σ_{i,j}|x_i-x_j|``. A strictly proper score —
+    rewards accuracy *and* calibrated spread, so a confidently-wrong point estimate (zero spread)
+    is penalised. ``samples`` ``(n, H, W)``, ``truth`` ``(H, W)``, both on the ``[-1, 1]`` scale.
+    """
+    n = samples.shape[0]
+    accuracy = (samples - truth).abs().mean(dim=0)  # (H, W) = (1/n)Σ|x_i-y|
+    if n < 2:
+        spread = torch.zeros_like(accuracy)
+    else:
+        pair = (
+            (samples[:, None] - samples[None, :]).abs().sum(dim=(0, 1))
+        )  # Σ_{i,j}|x_i-x_j|
+        spread = pair / (2 * n * (n - 1))
+    return float((accuracy - spread).mean())
+
+
+def energy_score(samples: Tensor, truth: Tensor) -> float:
+    """Per-pixel-RMS-normalised energy score (β=1) of the joint ensemble vs truth (lower better).
+
+    Multivariate generalisation of CRPS over the whole map:
+    ``ES = (1/n)Σ_i||x_i-y|| - (1/(2n(n-1)))Σ_{i,j}||x_i-x_j||``. Euclidean norms are divided by
+    ``sqrt(D)`` (``D = H*W``) so the score stays on a per-pixel scale, comparable to MAE.
+    """
+    n = samples.shape[0]
+    rms = samples[0].numel() ** 0.5
+    s = samples.reshape(n, -1)
+    y = truth.reshape(-1)
+    accuracy = (s - y).norm(dim=1).mean() / rms  # mean_i ||x_i-y|| / sqrt(D)
+    if n < 2:
+        spread = accuracy.new_zeros(())
+    else:
+        pair = torch.cdist(s[None], s[None]).squeeze(0).sum()  # Σ_{i,j}||x_i-x_j||
+        spread = pair / (2 * n * (n - 1)) / rms
+    return float(accuracy - spread)
+
+
+def coverage(
+    samples: Tensor, truth: Tensor, levels: tuple[float, ...] = (0.5, 0.9)
+) -> dict[str, float]:
+    """Empirical central-credible-interval coverage per nominal level + mean calibration error.
+
+    For each level ``a``, the per-pixel central ``a`` interval is taken from the ensemble quantiles;
+    ``cov{a}`` is the fraction of pixels whose truth lands inside. ``cov_err`` is the mean
+    ``|coverage - nominal|`` over levels (0 = perfectly calibrated; a zero-spread estimator under-
+    covers badly). ``samples`` ``(n, H, W)``, ``truth`` ``(H, W)``.
+    """
+    out: dict[str, float] = {}
+    errs: list[float] = []
+    for a in levels:
+        lo = torch.quantile(samples, (1 - a) / 2, dim=0)
+        hi = torch.quantile(samples, (1 + a) / 2, dim=0)
+        cov = float(((truth >= lo) & (truth <= hi)).float().mean())
+        out[f"cov{int(a * 100)}"] = cov
+        errs.append(abs(cov - a))
+    out["cov_err"] = sum(errs) / len(errs)
+    return out
+
+
 def score_target(
     v_hat: Tensor,
     v_true: Tensor,
@@ -92,6 +160,11 @@ def score_target(
         "rmse": float(_rmse(vh, vt).mean()),
         "ssim": float(ssim_vals.mean()),
         "misfit": float(misfit.mean()),
+        # Distributional scores over the posterior sample set (reward calibrated spread, not just
+        # a typical sample). A near-deterministic method (e.g. DPS) should score poorly here.
+        "crps": crps_ensemble(vh, vt),
+        "energy": energy_score(vh, vt),
+        **coverage(vh, vt),  # cov50, cov90, cov_err
     }
 
 
@@ -126,9 +199,15 @@ class InversionStats:
             f"{metric.upper()}={self.agg[f'{metric}_mean']:.3g}±{self.agg[f'{metric}_std']:.2g}"
             for metric in ("mae", "rmse", "ssim")
         )
+        dist = (
+            f"CRPS={self.agg['crps_mean']:.3g}  ES={self.agg['energy_mean']:.3g}  "
+            f"cov50={self.agg['cov50_mean']:.2f} cov90={self.agg['cov90_mean']:.2f} "
+            f"cov_err={self.agg['cov_err_mean']:.3g}"
+        )
         return (
             f"[{self.module}]  n={self.n_targets}  solves/inv={self.n_solves:.0f}\n"
-            f"  {cells}  misfit={self.agg['misfit_mean']:.3g}"
+            f"  {cells}  misfit={self.agg['misfit_mean']:.3g}\n"
+            f"  {dist}"
         )
 
 
