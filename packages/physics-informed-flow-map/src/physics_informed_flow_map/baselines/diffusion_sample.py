@@ -6,6 +6,8 @@ for evaluation (visual grids).
 
 from __future__ import annotations
 
+from typing import Callable
+
 import torch
 from diffusers import DDPMScheduler
 from torch import Tensor, nn
@@ -29,7 +31,6 @@ def ddpm_sample(
     ``(n_samples, *shape)``. When ``on_step`` is provided it is called as
     ``on_step(step_idx, x0hat)`` where ``x0hat`` is the Tweedie clean estimate at each step.
     """
-    from typing import Callable  # local import avoids circular at module level
 
     denoiser = denoiser.to(device)
     denoiser.eval()
