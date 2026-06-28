@@ -152,7 +152,7 @@ class InversionConfig(Config):
     target_index: int = Field(0, ge=0)  # index into the seed-0 validation split
     n_samples: int = Field(4, gt=0)
     steps: int = Field(200, gt=0)  # sampler / reverse steps
-    viz_every: int = Field(50, ge=0)  # save trajectory image every N steps (0 = off)
+    n_frames: int = Field(3, ge=0)  # trajectory snapshots per inversion run (0 = off)
     model: ModelConfig = ModelConfig()
     dataset: DatasetConfig = OpenFWIDatasetConfig()
     prior: PriorConfig = PriorConfig()
@@ -242,11 +242,12 @@ def main(dcfg: DictConfig) -> None:
 
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
                 step_cb = None
-                if guidance_strength != 0.0 and cfg.viz_every > 0:
+                if guidance_strength != 0.0 and cfg.n_frames > 0:
                     step_cb = run.make_step_saver(
                         f"flow_tilt_g{guidance_strength:.2g}",
                         lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
-                        every=cfg.viz_every,
+                        total_steps=cfg.steps,
+                        n_frames=cfg.n_frames,
                     )
                 return guided_sample(
                     velocity_fn,
@@ -280,11 +281,12 @@ def main(dcfg: DictConfig) -> None:
             # control (invert_and_report runs it for the misfit ratio), so gate eta_data on it.
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
                 step_cb = None
-                if guidance_strength != 0.0 and cfg.viz_every > 0:
+                if guidance_strength != 0.0 and cfg.n_frames > 0:
                     step_cb = run.make_step_saver(
                         f"red_diffeq_g{guidance_strength:.2g}",
                         lambda x, p: viz_velocity(x, p),
-                        every=cfg.viz_every,
+                        total_steps=cfg.method.iters or cfg.steps,
+                        n_frames=cfg.n_frames,
                     )
                 return red_diffeq_sample(
                     denoiser,
@@ -305,11 +307,12 @@ def main(dcfg: DictConfig) -> None:
 
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
                 step_cb = None
-                if guidance_strength != 0.0 and cfg.viz_every > 0:
+                if guidance_strength != 0.0 and cfg.n_frames > 0:
                     step_cb = run.make_step_saver(
                         f"dps_g{guidance_strength:.2g}",
                         lambda x, p: viz_velocity(x, p),
-                        every=cfg.viz_every,
+                        total_steps=cfg.steps,
+                        n_frames=cfg.n_frames,
                     )
                 return dps_sample(
                     denoiser,

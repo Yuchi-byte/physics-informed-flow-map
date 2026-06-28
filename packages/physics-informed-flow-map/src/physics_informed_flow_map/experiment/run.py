@@ -191,29 +191,38 @@ class Run:
         key: str,
         viz_fn: Callable[[Any, Path], None],
         *,
-        every: int = 50,
+        total_steps: int,
+        n_frames: int = 3,
     ) -> Callable[..., None]:
         """Return an ``on_step(step, x_est, **scalars)`` callback for sampler trajectory logging.
 
-        Saves a visualisation image to ``log_dir/trajectory/{key}/step_{i:04d}.png`` every
-        ``every`` steps (local only — not uploaded to wandb, which would be too expensive).
-        Any ``**scalars`` passed by the sampler (data_fidelity, grad_norm, …) are written to
-        ``steps.jsonl`` on every call regardless of ``every``.
+        Saves ``n_frames`` evenly-spaced snapshots across the sampler trajectory, both to disk
+        (``log_dir/trajectory/{key}/step_{i:04d}.png``) and to W&B via :meth:`log_image`.
+        Any ``**scalars`` (data_fidelity, grad_norm, …) are written to ``steps.jsonl`` on
+        every call regardless of the frame schedule.
 
         Args:
-            key: sub-directory name, e.g. ``"inversion_flow_tilt"`` or ``"sample_ode"``.
-            viz_fn: ``(x_est_tensor, out_path)`` — a callable that saves a visualisation PNG.
-            every: save an image every this many steps (default 50).
+            key: sub-directory name / W&B image key, e.g. ``"dps_guided"``.
+            viz_fn: ``(x_est_tensor, out_path)`` — callable that saves a PNG to ``out_path``.
+            total_steps: total number of sampler steps (needed to space frames evenly).
+            n_frames: how many snapshots to save (default 3: start, mid, end).
         """
         traj_dir = self.log_dir / "trajectory" / key
         traj_dir.mkdir(parents=True, exist_ok=True)
+        if n_frames <= 1:
+            checkpoints: set[int] = {0}
+        else:
+            checkpoints = {
+                round(i * (total_steps - 1) / (n_frames - 1)) for i in range(n_frames)
+            }
 
         def on_step(step: int, x_est: Any, **scalars: float) -> None:
             if scalars:
                 self.log_step(phase=key, step=step, **scalars)
-            if step % every == 0:
+            if step in checkpoints:
                 path = traj_dir / f"step_{step:04d}.png"
                 viz_fn(x_est, path)
+                self.log_image(f"traj/{key}", path, caption=f"step {step}/{total_steps}")
 
         return on_step
 

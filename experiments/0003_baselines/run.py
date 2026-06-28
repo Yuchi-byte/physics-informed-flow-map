@@ -76,7 +76,6 @@ TrainingConfig.model_rebuild()
 
 class SamplingConfig(Config):
     n_eval_viz: int = Field(64, gt=0)  # samples drawn for each viz (per-epoch + final)
-    viz_every: int = Field(0, ge=0)   # save DDPM trajectory image every N reverse steps (0 = off)
 
 
 class DiffusionBaselineConfig(Config):
@@ -161,11 +160,6 @@ def main(dcfg: DictConfig) -> None:
         return total / max(n, 1)
 
     def on_eval(model: nn.Module, epoch: int) -> float | None:
-        traj_saver = run.make_step_saver(
-            f"ddpm_epoch{epoch}",
-            lambda x, p: cfg.dataset.visualize(x[: cfg.sampling.n_eval_viz], p),
-            every=cfg.sampling.viz_every,
-        )
         s = ddpm_sample(
             model,
             scheduler,
@@ -173,7 +167,6 @@ def main(dcfg: DictConfig) -> None:
             n_samples=cfg.sampling.n_eval_viz,
             num_steps=cfg.diffusion.num_sample_steps,
             device=device,
-            on_step=traj_saver if cfg.sampling.viz_every > 0 else None,
         )
         p = run.ckpt_dir.parent / f"samples_epoch{epoch}.png"
         cfg.dataset.visualize(s, p)
