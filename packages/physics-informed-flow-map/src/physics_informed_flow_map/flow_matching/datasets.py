@@ -36,13 +36,13 @@ def _make_gaussians(
     seed: int = 0,
 ) -> Dataset:
     g = torch.Generator().manual_seed(seed)
-    angles = 2 * math.pi * torch.arange(n_modes) / n_modes
+    angles = 2 * math.pi * torch.arange(n_modes) / n_modes # shape is (n_modes,)
     centers = torch.stack(
         [radius * torch.cos(angles), radius * torch.sin(angles)], dim=1
-    )
-    idx = torch.randint(0, n_modes, (n_samples,), generator=g)
-    x = centers[idx] + std * torch.randn(n_samples, 2, generator=g)
-    labels = torch.zeros(n_samples, dtype=torch.long)
+    ) # shape is (n_modes, 2)
+    idx = torch.randint(0, n_modes, (n_samples,), generator=g) # shape is (n_samples,)
+    x = centers[idx] + std * torch.randn(n_samples, 2, generator=g) # shape is (n_samples, 2)
+    labels = torch.zeros(n_samples, dtype=torch.long) # shape is (n_samples,)
     return TensorDataset(x.float(), labels)
 
 
