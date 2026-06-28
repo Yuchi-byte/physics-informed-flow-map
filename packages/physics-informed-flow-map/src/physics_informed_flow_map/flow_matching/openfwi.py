@@ -1,8 +1,11 @@
-"""OpenFWI velocity-map dataset (lazy, memory-mapped) + a colormap visualizer.
+"""OpenFWI velocity-map dataset + a colormap visualizer.
 
 Velocity maps are normalised from [1500, 4500] m/s to [-1, 1] and optionally
 resized from the native 70x70 to a square training resolution. The dataset is
 unconditional: every sample is paired with a dummy label 0.
+
+Data is pre-loaded into RAM on first construction to avoid per-sample NFS I/O
+during training (the full FlatVel_A split is ~500 MB, trivial vs. available RAM).
 """
 
 from __future__ import annotations
@@ -25,11 +28,11 @@ NATIVE = 70
 
 
 class OpenFWIVelocityDataset(Dataset):
-    """Lazy, memory-mapped OpenFWI velocity maps across one or more families."""
+    """OpenFWI velocity maps, pre-loaded into RAM for fast multi-worker access."""
 
     def __init__(self, root: Path, families: list[str], resolution: int = 64) -> None:
         self.resolution = resolution
-        self.index: list[tuple[Path, int]] = []
+        rows: list[np.ndarray] = []
         for family in families:
             family_dir = root / family
             files = sorted(family_dir.glob("model/*.npy")) + sorted(
@@ -42,16 +45,17 @@ class OpenFWIVelocityDataset(Dataset):
                     f"Download from the 'ashynf/OpenFWI' HuggingFace dataset."
                 )
             for f in files:
-                n_rows = int(np.load(f, mmap_mode="r").shape[0])
-                self.index.extend((f, i) for i in range(n_rows))
+                arr = np.load(f)  # load full file into RAM once
+                for i in range(arr.shape[0]):
+                    rows.append(arr[i])
+        # Stack into one contiguous array so workers share it via fork (copy-on-write).
+        self._data = np.stack(rows, axis=0)  # (N, 1, 70, 70) float32
 
     def __len__(self) -> int:
-        return len(self.index)
+        return len(self._data)
 
     def __getitem__(self, idx: int) -> tuple[Tensor, int]:
-        path, row = self.index[idx]
-        arr = np.load(path, mmap_mode="r")[row]  # (1, 70, 70) float32
-        x = torch.from_numpy(arr.copy()).float()
+        x = torch.from_numpy(self._data[idx].copy()).float()
         x = ((x - VMIN) / (VMAX - VMIN) * 2.0 - 1.0).clamp(-1.0, 1.0)
         if self.resolution != NATIVE:
             x = F.interpolate(
