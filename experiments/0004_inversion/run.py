@@ -319,6 +319,7 @@ def main(dcfg: DictConfig) -> None:
     )
     summary["inv/n_solves"] = float(0 if cfg.method.name == "unguided" else n_solves)
     run.log_image("inversion", out, caption=caption)
+    run.log(**summary)  # mirror to metrics.jsonl on the network volume
     run.finish(**summary)
 
 
