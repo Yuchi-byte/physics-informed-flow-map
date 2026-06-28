@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Likelihood Scale Problem — MSE misfit, σ, and gradient renormalization</title>
+<script>
+MathJax = { tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] } };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+<style>
+  :root{--bg:#0f1115;--panel:#161a22;--ink:#e6e8ec;--muted:#9aa3b2;--line:#262c38;
+    --accent:#6ea8fe;--accent2:#7ee0c0;--warn:#ffcf6e;--a:#9bd0ff;--gap:#ffb3c7;}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{display:grid;grid-template-columns:262px 1fr;max-width:1180px;margin:0 auto;}
+  nav{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:28px 18px;
+    border-right:1px solid var(--line);font-size:13.5px}
+  nav h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:18px 0 8px}
+  nav a{display:block;color:var(--a);text-decoration:none;padding:3px 0;opacity:.85}
+  nav a:hover{opacity:1}
+  nav .lead{font-weight:700;color:var(--ink);margin-bottom:6px;font-size:15px}
+  main{padding:40px 48px 120px;min-width:0}
+  h1{font-size:29px;line-height:1.2;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 26px;font-size:15px}
+  h2.sec{font-size:22px;margin:46px 0 6px;padding-top:10px;border-top:1px solid var(--line)}
+  h3{font-size:17.5px;margin:24px 0 6px;color:#dfe6f5}
+  h4{font-size:15px;margin:16px 0 4px;color:#cdd5e2}
+  p{margin:10px 0}a{color:var(--a)}
+  code{background:#0b0e13;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:13.5px}
+  .lede{font-size:17px;color:#d4dae6}
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:8px;padding:14px 16px;margin:18px 0}
+  .callout.idea{border-left-color:var(--accent2)}
+  .callout.risk{border-left-color:var(--warn)}
+  .callout.gap{border-left-color:var(--gap)}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#11151c;color:#cdd5e2;font-weight:600}
+  tr:nth-child(even) td{background:#12161e}
+  .eq{overflow-x:auto}
+  .pill{font-size:12px;color:var(--muted)}
+  .foot{margin-top:60px;border-top:1px solid var(--line);padding-top:16px;color:var(--muted);font-size:13px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;margin-right:8px;
+    background:rgba(126,224,192,.16);color:var(--accent2);border:1px solid var(--accent2)}
+  .q{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;margin-right:8px;
+    background:rgba(255,179,199,.14);color:var(--gap);border:1px solid var(--gap)}
+  @media (max-width:880px){.wrap{grid-template-columns:1fr}nav{display:none}main{padding:28px 20px 90px}}
+  .docnav{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:0 0 26px;padding:9px 14px;
+    background:var(--panel,#161a22);border:1px solid var(--line,#262c38);border-radius:8px;font-size:13.5px}
+  .docnav a{color:var(--a,#9bd0ff);text-decoration:none}
+  .docnav a:hover{text-decoration:underline}
+  .docnav .here{color:var(--muted,#9aa3b2)}
+  .docnav .sep{color:var(--line,#262c38)}
+  .docnav .end{margin-left:auto}
+  .docnav.bottom{margin:48px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <div class="lead">The Likelihood Scale Problem</div>
+  <div class="pill">MSE misfit, σ, and gradient renormalization</div>
+  <h2>Contents</h2>
+  <a href="#tension">1 · The tension</a>
+  <a href="#origin">2 · Where the MSE misfit comes from</a>
+  <a href="#stepknob">3 · σ has always been a step knob</a>
+  <a href="#convenience">4 · L2 is a convenience, not a truth</a>
+  <a href="#steer">5 · The steering gradient</a>
+  <a href="#survey">6 · Everyone renormalizes</a>
+  <a href="#proposal">7 · Constructive proposal</a>
+  <a href="#refs">References</a>
+  <h2>See also</h2>
+  <a href="prior-work.html">Prior-work review →</a>
+  <a href="research-plan.html">Research plan →</a>
+</nav>
+<main>
+
+<h1>The Likelihood Scale Problem</h1>
+<p class="sub">MSE data misfit, the noise scale σ, and why every steering method renormalizes its
+gradient · 2026-06-27 · <span class="pill">working note — for review &amp; discussion</span></p>
+
+<div class="docnav"><span class="here">Working note · not yet in the curated set</span>
+<span class="end"><a href="prior-work.html">Prior work</a> <span class="sep">·</span>
+<a href="research-plan.html">Research plan</a> <span class="sep">·</span> <a href="index.html">Index</a></span></div>
+
+<p class="lede">When we steer a learned prior toward seismic data, we add a gradient of a
+data-misfit reward $r(v)=-\tfrac{1}{2\sigma^2}\lVert F(v)-d\rVert^2$. MFM's theory says the
+<em>exact</em> value-gradient steer — with this reward and a calibrated σ — samples the exact
+Bayesian posterior, with <strong>no</strong> renormalization. Yet that exact, renorm-free steer is
+precisely what <strong>blows up</strong> in our runs, and the empirical fix (gradient
+renormalization) <em>leaves</em> the exact theory. This note traces the misfit to its assumptions,
+explains why the exact estimator explodes (variance and stiffness, not a wrong magnitude), and asks
+whether we can stabilize it <em>without</em> abandoning exactness.</p>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="tension">1 · The tension</h2>
+
+<p>The Meta-Flow-Map steered SDE (paper Eq. 38) is <strong>exact</strong>: with the soft value
+$V_t(x)=\log\mathbb{E}_{p_0}[\exp r(X_1)\mid X_t{=}x]$,
+$$dX^\* = \big[b_t + \tfrac{\sigma_t^2}{2}\nabla\log p_t + \sigma_t^2\nabla V_t\big]dt + \sigma_t\,dB$$
+samples exactly $p_1^\*\propto p_1\exp(r)$. With $r=-\lVert F(v)-d\rVert^2/(2\sigma^2)=\log\mathcal
+N(d\mid F(v),\sigma^2 I)$, that is the exact Bayesian posterior $p(v\mid d)$ — and the steering
+magnitude $\sigma_t^2\nabla V_t$ is <em>derived</em>, not free. σ here is a physical quantity: the
+measurement-noise std. In principle, calibrate σ and you sample the right posterior. In practice, no
+value of σ is simultaneously <em>physically calibrated</em> and <em>usable</em>:</p>
+
+<div class="callout risk">
+<table>
+<thead><tr><th>regime</th><th>what σ means</th><th>behavior (FlatVel-A, n=32, 320/8 prior)</th></tr></thead>
+<tbody>
+<tr><td><code>renorm=True</code></td><td>σ irrelevant — estimated drift rescaled to $\text{gs}\cdot\lVert b_t\rVert$</td>
+  <td>stable, but it <strong>leaves the exact SDE</strong>: rescaling $\sigma_t^2\nabla V_t$ means
+  you no longer sample $p_1\exp(r)$. An empirical stabilizer (MFM appendix), not the theory.</td></tr>
+<tr><td><code>renorm=False</code>, σ ≈ 1 (physical)</td><td>≈ calibrated per-sample noise std — the
+  <em>theoretically correct</em> target</td>
+  <td><strong>blows up</strong> — the finite-K logsumexp estimate of $\nabla V_t$ goes near-one-hot
+  and high-variance (§5), compounded by the un-normalized sum over $N{=}350{,}350$.</td></tr>
+<tr><td><code>renorm=False</code>, σ ≈ 1000</td><td>a large step-size temperature, not a noise model</td>
+  <td><strong>inert</strong> — MAE 0.352 ≈ unguided 0.35; barely steers (σ300 → 0.320).</td></tr>
+</tbody>
+</table>
+<strong>The problem:</strong> the exact, renorm-free steer at a calibrated σ is what we want — but
+the <em>estimator</em> of $\nabla V_t$ is too high-variance to run there, and the only σ that is
+stable without renorm (≈1000) is too weak to steer. renorm buys stability by abandoning exactness.
+This note is about stabilizing the estimator <em>without</em> that trade.
+</div>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="origin">2 · Where the MSE misfit comes from</h2>
+
+<p>The least-squares data misfit is not a "loss" someone designed; it is a <strong>negative
+log-likelihood</strong>. Model the data residual as additive noise,</p>
+<div class="eq">$$d_{\text{obs}} = F(m_\star) + \eta, \qquad \eta\sim\mathcal N(0, C_D),$$</div>
+<p>and the likelihood is $p(d\mid m)\propto\exp\!\big(-\tfrac12 (F(m)-d)^\top C_D^{-1}(F(m)-d)\big)$,
+so its negative log is the <strong>Mahalanobis misfit</strong></p>
+<div class="eq">$$S(m)=\tfrac12\,(F(m)-d)^\top C_D^{-1}(F(m)-d).$$</div>
+<p>Plain mean-squared error is the <em>special case</em> $C_D=\sigma^2 I$:</p>
+<div class="eq">$$S(m)=\frac{1}{2\sigma^2}\,\lVert F(m)-d\rVert_2^2.$$</div>
+
+<p>This lineage is concrete. <a href="#r-gauss">Gauss (1809)</a> tied least squares to the normal
+error law; <a href="#r-tv">Tarantola &amp; Valette (1982)</a> recast it as maximum-likelihood
+estimation <em>under Gaussian data uncertainties</em>; <a href="#r-tara84">Tarantola (1984)</a>
+applied that generalized least-squares criterion to seismic waveforms via the adjoint-state
+gradient — the paper now credited as the origin of FWI; and
+<a href="#r-tara05"><em>Inverse Problem Theory</em> (1987/2005)</a> contains the precise statement
+that the $C_D^{-1}$-weighted misfit reduces to MSE exactly when $C_D=\sigma^2 I$.
+<a href="#r-taufik26">Taufik &amp; Alkhalifah (2026)</a> state the same reduction verbatim for the
+diffusion-FWI setting.</p>
+
+<div class="callout">
+<strong>The assumptions, stated baldly.</strong> Writing the misfit as $\tfrac{1}{2\sigma^2}\lVert
+F(v)-d\rVert^2$ — exactly our reward — asserts that the residual $F(v)-d$ is, across all
+$N=5\times70\times1001=350{,}350$ shot-gather samples:
+<ul>
+<li><strong>zero-mean</strong> (no systematic modeling bias),</li>
+<li><strong>Gaussian</strong>,</li>
+<li><strong>independent</strong> across every time sample, receiver, and source ($C_D$ diagonal),</li>
+<li><strong>identically scaled</strong> — one variance $\sigma^2$ for all 350k entries (stationary).</li>
+</ul>
+σ is, by this construction, the per-measurement noise standard deviation. Nothing more, nothing
+less. Every departure of σ from that meaning (see §3) is a departure from the model.
+</div>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="stepknob">3 · σ has always been a step knob</h2>
+
+<p>Here is the reassuring part: treating σ as a tunable scale rather than a measured noise level is
+not our sin — it is <em>how FWI has always worked</em>. The standard review
+(<a href="#r-vo">Virieux &amp; Operto, 2009</a>) writes the objective as
+$C(m)=\tfrac12\,\Delta d^\dagger\Delta d$ — that is, $C_D=I$, the covariance simply dropped. A data
+covariance reappears only as a <em>design weight</em> $W_d$ (e.g. an offset gain), never as a
+calibrated noise std. Any overall scalar out front is absorbed by the <strong>line-search step
+length</strong>, and where a model prior is added, the data-vs-prior trade-off weight ε plays the
+role of $\sigma^2$ and is tuned by the L-curve (<a href="#r-hansen">Hansen, 1998</a>), not measured.</p>
+
+<p>So in deterministic FWI, only the <em>relative</em> weighting moves the minimizer; the absolute
+misfit scale is a step-size choice. Our σ is the same knob, inherited.</p>
+
+<div class="callout idea">
+<strong>The √N bridge — why σ≈100 is the only renorm-free value that does anything.</strong>
+Our reward sums residuals over $N=350{,}350$ samples without averaging. The same reward written in
+<em>sum</em> form ($r=-S/2\sigma_s^2$, $S=\sum_i r_i^2$) and <em>mean</em> form
+($r=-M/2\sigma_m^2$, $M=S/N$) are identical iff
+$$\sigma_s=\sqrt{N}\,\sigma_m,\qquad \sqrt{N}\approx 592.$$
+A physically plausible <em>per-sample</em> scale is $\sigma_m\sim 0.17$ (the data has std ≈ 1.5,
+abs-max ≈ 43, so sub-unity per-sample noise is reasonable). Plug in: $\sigma_s\approx
+592\times0.17\approx 100$. The working "σ = 100" is not a noise level — it is
+$\sqrt{N}$ times a sane per-sample scale. <strong>σ=100 is secretly performing the
+mean-normalization through the temperature</strong>, which is precisely why it is the one
+renorm-free value that steers without exploding (σ≈1) or going inert (σ≈1000). The un-normalized
+sum is the hidden factor $N$ that distorts everything.
+</div>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="convenience">4 · L2 is a convenience, not a truth</h2>
+
+<p>Before we work hard to "do the likelihood correctly," it is worth being honest that the
+Gaussian-i.i.d. model is itself a convenience for waveform data. Real seismic residuals are
+<strong>correlated</strong> across adjacent traces, <strong>non-stationary</strong>, and dominated
+not by random noise but by <strong>coherent modeling error</strong> (wrong starting model, missing
+low frequencies, approximate physics). L2 also compares wiggles sample-by-sample with no notion of
+time-shift, which makes the misfit <strong>non-convex</strong> and prone to cycle-skipping
+(<a href="#r-bunks">Bunks et al., 1995</a>). That pathology is the entire reason the field built
+transport-aware misfits — optimal transport / Wasserstein (<a href="#r-eq">Engquist &amp; Froese,
+2014</a>), envelope, AWI (<a href="#r-awi">Warner &amp; Guasch, 2016</a>).</p>
+
+<div class="callout gap">
+<span class="q">discuss</span><strong>What we inherit.</strong> By steering with $-\lVert
+F(v)-d\rVert^2$ we adopt the Gaussian convenience and its non-convexity. In our favour: we operate
+on simulated, noiseless, inverse-crime data, so the Gaussian model is "true" by construction and
+cycle-skipping is mild at our band. Against us: that same setting is exactly where a calibrated σ is
+least informative (the residual at the true model is ~0), which is part of why the principled and
+heuristic scalings are hard to tell apart empirically. <em>Open question: do we ever want to swap
+the L2 reward for a transport-aware one, or is the prior doing that job?</em>
+</div>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="steer">5 · Why the exact, renorm-free steer explodes</h2>
+
+<p>It is tempting to say "the literal $\sigma^{-2}$ magnitude is just wrong." For DPS that is roughly
+true; for MFM-G it is <strong>not</strong>, and the distinction is the whole point.</p>
+
+<h3>5.1 · DPS is biased; MFM-G is unbiased but high-variance</h3>
+<p><strong>DPS</strong> replaces the intractable likelihood with a <em>point</em> estimate — the
+Tweedie posterior <em>mean</em> $\hat v=\mathbb E[v\mid x_t]$ plugged into $F$. Because $F$ is
+nonlinear, $F(\mathbb E[v])\neq\mathbb E[F(v)]$ (a Jensen gap), so the $\sigma^{-2}$ weight derived
+for the true posterior no longer multiplies the right object. DPS's own fix — normalize the gradient
+and tune a step — concedes this: it keeps the direction, discards the magnitude. <strong>MFM-G is
+categorically different:</strong> $\nabla V_t=\nabla\log\tfrac1K\sum_i\exp r(\hat X_1^i)$ over
+<em>genuine</em> posterior draws $\hat X_1^i=X(0,1,\epsilon^i\mid t_{\text{cond}},x_{\text{cond}})$ is
+a <em>consistent</em> estimator of the exact value gradient (as $K\to\infty$). There is no Jensen /
+point-estimate bias of the DPS kind to discard. So the magnitude is <em>correct in the limit</em> —
+the failure is finite-$K$ estimation (§5.2), not a wrong target.</p>
+
+<h3>5.2 · The logsumexp estimate collapses to one-hot at small σ</h3>
+<p>$\nabla V_t$ is a softmax-weighted average of per-draw reward gradients, weights
+$w_i\propto\exp(r_i)$, $r_i=-S_i/2\sigma^2$. As σ shrinks, the spread of $r_i$ across the $K$ draws
+grows like $1/\sigma^2$, the softmax collapses onto whichever single draw fit best, and
+$\nabla V_t\approx\nabla r(\hat X_1^{i^\*})$ — a huge, high-variance estimate that depends on which
+of our <strong>K=4</strong> random draws won. (Strictly: the finite-$K$ logsumexp is a
+<em>biased</em> estimator of $\log\mathbb E[\exp r]$ — consistent only as $K\to\infty$ — so at K=4
+there is both bias and variance; the variance is what makes it explode.) This is the explosion: an
+<em>estimator</em> failure, not a wrong weight.</p>
+
+<h3>5.3 · The un-normalized sum drives the collapse early</h3>
+<p>$S=\sum_{i=1}^{N}\text{res}_i^2$ over $N{=}350{,}350$ samples makes the across-draw spread of
+$r_i$ a factor $\sim N$ larger, so the softmax goes one-hot at a far <em>milder</em> σ than a
+per-sample reward would. The §3 √N story, reread: its real damage is to the estimator's variance,
+not to a magnitude. Mean-normalizing ($S/N$) is therefore variance control, not magnitude control.</p>
+
+<h3>5.4 · Stiffness is a separate, estimator-free failure</h3>
+<p>Even with the exact $\nabla V_t$ (infinite $K$), a tiny σ makes the true posterior extremely
+concentrated, so the exact drift is genuinely large and a finite Euler–Maruyama step cannot track
+it. Discretization diverges independently of estimation — a stiffness problem cured by smaller steps
+or σ-annealing, not by more samples. <strong>This is MFM's own stated reason for renorm</strong>
+(F.3.6): with large MFM-G drifts they "would require a much finer time discretisation… to avoid
+excessive discretisation error," so they rescale instead, accepting a bias that is "only in the
+magnitude of the drift and not the direction." So renorm is a deliberate stiffness workaround, not
+an unprincipled hack — though it does not distinguish §5.2 variance spikes from genuine §5.4
+stiffness; it caps both.</p>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="survey">6 · How everyone controls the magnitude</h2>
+
+<p>No inference-time method runs the literal, calibrated $\sigma^{-2}$ magnitude. But the
+<em>reason</em> differs, and MFM is not in the same boat as the rest — a distinction the first draft
+of this note got wrong.</p>
+
+<p><strong>DPS, RED-DiffEq, diffefwi have no exact-magnitude to begin with.</strong> Their
+likelihood is a biased point approximation (§5.1), so normalizing the gradient and tuning a step is
+the <em>method</em>, not a departure from it. <strong>MFM is the exception:</strong> its value-gradient
+SDE is exact (§1), so it <em>does</em> have a derived magnitude — and <code>renorm_gradient</code> is
+an <em>optional</em> stabilizer (F.3.6) that <strong>biases that magnitude</strong> to keep the SDE
+trackable at a coarse discretization. MFM frames it as a discretization fix and is explicit the bias
+is "only in the magnitude… not the direction." The three normalize because they must; MFM
+renormalizes to tame large drifts — whether from §5.4 stiffness or §5.2 estimator spikes, it caps both.</p>
+
+<div class="callout">
+<strong>Two renorm variants — and we only tried the aggressive one.</strong> F.3.6 offers
+<em>rescaling</em> (pin steering to $\lambda\lVert b_t\rVert$ <em>always</em>) and <em>clipping</em>
+(cap at $\lambda\lVert b_t\rVert$, leave the exact magnitude untouched below it). MFM used rescaling
+with $\lambda{=}1$ for ImageNet, and our <code>renorm=True</code> inherits exactly that default — so
+we have been running their published method, not a homemade one. <strong>Clipping is the untried,
+better-fitting option for us:</strong> it preserves the exact $\sigma_t^2\nabla V_t$ whenever it is
+not exploding and intervenes only on the spikes — "exact-when-safe," which hands σ back its role as
+the real knob.
+</div>
+
+<table>
+<thead><tr><th>method</th><th>what it does to the gradient magnitude</th><th>family</th></tr></thead>
+<tbody>
+<tr><td><a href="#r-dps">DPS</a> (Chung 2023)</td>
+  <td>step size $\zeta_i=\zeta/\lVert y-A(\hat x_0)\rVert$ — normalize by the residual norm, tune a
+  scalar ζ. "yields highly stable results."</td><td>normalize + tune</td></tr>
+<tr><td><a href="#r-pigdm">ΠGDM</a> (Song 2023)</td>
+  <td>weight is a <em>time-dependent denoising-uncertainty</em> $r_t^2=\sigma_t^2/(1+\sigma_t^2)$,
+  giving $r_t^2 HH^\top+\sigma_y^2 I$ — not the raw σ.</td><td><strong>principled outlier</strong></td></tr>
+<tr><td><a href="#r-reddiffeq">RED-DiffEq</a> (2026)</td>
+  <td>drops the theoretical time-weight $w(t)$ for a constant λ — "empirically improves stability
+  and convergence." (Its 0.1–0.5 std is <em>data</em> noise, not the guidance σ.)</td><td>normalize + tune</td></tr>
+<tr><td><a href="#r-diffefwi">diffefwi</a> (Taufik 2024)</td>
+  <td><code>grad_norm=True</code>: divide the FWI gradient by its running max → an O(1) direction,
+  then clip/rescale.</td><td>normalize + tune</td></tr>
+<tr><td><a href="#r-mfm">MFM</a> (2026)</td>
+  <td><em>exact</em> drift $\sigma_t^2\nabla V_t$ (no normalization needed in theory);
+  <code>renorm_gradient</code> optionally rescales it to $\text{gs}\cdot\lVert b_t\rVert$ to tame the
+  finite-sample estimate. Their image rewards are O(1) learned models, so they rarely calibrate σ.</td>
+  <td><strong>exact + optional renorm</strong></td></tr>
+</tbody>
+</table>
+
+<p>The "why" for the first three: (i) the biased point-estimate breaks the Bayesian scaling anyway
+(§5.1), and (ii) a normalized step is a stable single-scalar knob. For MFM the magnitude is correct
+in expectation, so renorm treats a symptom — large drift — that has two distinct causes (stiffness,
+§5.4; estimator variance, §5.2). Clipping treats it more surgically than rescaling by leaving the
+in-range magnitude alone.</p>
+
+<div class="callout idea">
+<span class="tag">key</span><strong>ΠGDM points at the variance-aware middle ground.</strong>
+It replaces a constant σ with a <em>time-varying</em> denoising uncertainty $r_t^2=\sigma_t^2/(1+\sigma_t^2)$
+— small steps when the posterior is broad and the estimate noisy, full data weight when it sharpens.
+For MFM-G this is suggestive rather than a drop-in: our $r_t^2$ is not assumed but <em>measurable</em>
+from the spread of the posterior draws we already compute (§7).</p>
+</div>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="proposal">7 · Constructive proposal &amp; experiments</h2>
+
+<p>The reframing from §5 changes the goal. We are not looking for a better <em>magnitude</em> to
+replace renorm — the magnitude is already correct in expectation. We want to <strong>run the exact
+estimator at a calibrated σ by reducing its variance and stiffness</strong>, so that renorm becomes
+unnecessary rather than load-bearing. The three failure modes (§5.2–5.4) each have a fix that keeps
+the SDE exact.</p>
+
+<div class="callout idea">
+<strong>Keep the exact reward; fix the estimator.</strong> Keep
+$r(v)=-\tfrac{1}{2\sigma_m^2}\,\tfrac1N\lVert F(v)-d\rVert^2$ (i.e. $C_D=\sigma_m^2 I$,
+mean-normalized) — still an exact Gaussian likelihood — and attack the three mechanisms directly:
+<ol>
+<li><strong>Mean-normalize</strong> (the $1/N$) so the across-draw spread of $r_i$ drops by $N$ and
+the softmax stays off one-hot — kills §5.3, makes the useful $\sigma_m$ land at $O(1)$.</li>
+<li><strong>Variance-reduce the logsumexp</strong>: raise $K$, and subtract a per-step baseline /
+control variate inside $\log\tfrac1K\sum_i\exp(r_i-\bar r)$ so the softmax weights are well-conditioned
+— directly attacks §5.2 without touching the magnitude.</li>
+<li><strong>Anneal σ along $t$</strong> (large early, calibrated late), the stiffness cure of §5.4
+— and exactly the behavior ΠGDM's $r_t^2$ encodes. Better still, set it from the
+<em>measured</em> spread of the posterior draws we already compute, rather than assuming it.</li>
+</ol>
+<code>renorm=True</code> short-circuits all three by capping the drift to $\lVert b_t\rVert$ — cheap,
+but it stops sampling $p_1\exp(r)$. The bet is that (1)+(2)+(3) make the renorm-free, σ-calibrated
+steer actually runnable.
+</div>
+
+<div class="callout gap">
+<span class="q">discuss</span><strong>The bet, and what would falsify it.</strong> Hypothesis: a
+variance-reduced, mean-normalized, σ-annealed MFM-G runs renorm-free at a calibrated σ and recovers
+the exact posterior — beating MFM's $\text{gs}\cdot\lVert b_t\rVert$ on calibration/SSIM at matched
+data-fit. Experiments, cheapest first:
+<ul>
+<li><strong>E1 — mean-normalize alone.</strong> renorm=False, misfit $/N$, sweep $\sigma_m\in\{0.3,1,3\}$.
+Prediction: the explosion softens and the useful σ collapses from ~100 to $O(1)$. <em>Do first.</em></li>
+<li><strong>E2 — variance reduction.</strong> Hold $\sigma_m$ fixed, sweep $K\in\{4,16,64\}$ and add
+a baseline. Prediction: at small $\sigma_m$ the divergence is a <em>variance</em> effect — it
+recedes as $K$ grows. This is the direct test of the §5 thesis.</li>
+<li><strong>E3 — σ-anneal / measured $r_t^2$.</strong> Schedule σ down over $t$. Prediction:
+stiffness-driven blow-up disappears even at K=4.</li>
+<li><strong>E4 — measurement noise, σ matched.</strong> The only setting where data-fit and
+model-accuracy stop being adversaries, and the only honest test of a <em>calibrated</em> σ. Needs
+the Evaluator <code>noise_std</code> path.</li>
+</ul>
+Falsifier: if E2 shows the small-$\sigma_m$ blow-up is <em>insensitive</em> to $K$, then it is
+stiffness (§5.4), not estimator variance — and the §5 thesis is wrong about which mechanism dominates.
+</div>
+
+<div class="callout risk">
+<span class="tag">caveat</span><strong>Honest counter-position.</strong> On noiseless inverse-crime
+FlatVel-A, DPS already wins (MAE 0.243, half the solves) because data-fitting dominates and a
+biased-but-cheap Tweedie step is enough. A variance-reduced, renorm-free MFM-G steer may only show its edge once
+(a) there is real measurement noise, (b) the posterior is genuinely multi-modal, or (c) calibration
+is scored — i.e. exactly the regimes the <a href="research-plan.html">research plan</a> already bets
+on. This note does not claim renorm-free steering wins on today's benchmark; it claims it is the
+<em>principled</em> version, and tells us where to look for the win.
+</div>
+
+<!-- ===================================================== -->
+<h2 class="sec" id="refs">References</h2>
+<ol class="ref" style="font-size:13.5px;color:#c7cedb">
+<li id="r-gauss">Gauss, C. F. (1809). <em>Theoria Motus Corporum Coelestium.</em> Perthes &amp; Besser. — least squares tied to the normal error law.</li>
+<li id="r-tv">Tarantola, A. &amp; Valette, B. (1982). <em>Generalized nonlinear inverse problems solved using the least squares criterion.</em> Rev. Geophys. 20(2), 219–232. <a href="https://doi.org/10.1029/RG020i002p00219">doi</a> — least squares = ML under Gaussianity.</li>
+<li id="r-tara84">Tarantola, A. (1984). <em>Inversion of seismic reflection data in the acoustic approximation.</em> Geophysics 49(8), 1259–1266. <a href="https://doi.org/10.1190/1.1441754">doi</a> — origin of the L2 waveform misfit (FWI).</li>
+<li id="r-tara05">Tarantola, A. (2005). <em>Inverse Problem Theory and Methods for Model Parameter Estimation.</em> SIAM (1st ed. Elsevier 1987). — the $C_D^{-1}$-weighted misfit and its MSE special case.</li>
+<li id="r-vo">Virieux, J. &amp; Operto, S. (2009). <em>An overview of full-waveform inversion in exploration geophysics.</em> Geophysics 74(6), WCC1–WCC26. <a href="https://doi.org/10.1190/1.3238367">doi</a> — $C(m)=\tfrac12\Delta d^\dagger\Delta d$ ($C_D{=}I$); step length by line search.</li>
+<li id="r-hansen">Hansen, P. C. (1998). <em>Rank-Deficient and Discrete Ill-Posed Problems.</em> SIAM. — the L-curve for the data/prior trade-off weight.</li>
+<li id="r-bunks">Bunks, C. et al. (1995). <em>Multiscale seismic waveform inversion.</em> Geophysics 60(5), 1457–1473. <a href="https://doi.org/10.1190/1.1443880">doi</a> — L2 non-convexity / cycle-skipping.</li>
+<li id="r-eq">Engquist, B. &amp; Froese, B. D. (2014). <em>Application of the Wasserstein metric to seismic signals.</em> Commun. Math. Sci. 12(5), 979–988. — optimal-transport misfit.</li>
+<li id="r-awi">Warner, M. &amp; Guasch, L. (2016). <em>Adaptive waveform inversion: theory.</em> Geophysics 81(6), R429–R445. — AWI alternative misfit.</li>
+<li id="r-dps">Chung, H. et al. (2023). <em>Diffusion posterior sampling for general noisy inverse problems.</em> ICLR. <a href="https://arxiv.org/abs/2209.14687">arXiv:2209.14687</a> — residual-normalized step ζ.</li>
+<li id="r-pigdm">Song, J. et al. (2023). <em>Pseudoinverse-guided diffusion models (ΠGDM).</em> ICLR. <a href="https://openreview.net/forum?id=9_gsMA8MRKQ">openreview</a> — time-dependent uncertainty $r_t^2$.</li>
+<li id="r-reddiffeq">Shan, S. et al. (2026). <em>RED-DiffEq: regularization by denoising diffusion for FWI.</em> <a href="https://arxiv.org/abs/2509.21659">arXiv:2509.21659</a> — drops $w(t)$ for constant λ.</li>
+<li id="r-diffefwi">Taufik, M. H. et al. (2024). <em>Diffusion-regularized FWI (diffefwi).</em> JGR Machine Learning &amp; Computation. <a href="https://github.com/DeepWave-KAUST/diffefwi">code</a> — <code>grad_norm</code> normalization.</li>
+<li id="r-mfm">Potaptchik, P. et al. (2026). <em>Meta Flow Maps enable scalable reward alignment.</em> ICML. <a href="https://arxiv.org/abs/2601.14430">arXiv:2601.14430</a> — steered drift pinned to $\text{gs}\cdot\lVert b_t\rVert$ (renorm).</li>
+<li id="r-taufik26">Taufik, M. H. &amp; Alkhalifah, T. (2026). <em>(Diffusion-FWI; GJI).</em> — verbatim $C_D=\sigma^2I$ recovers i.i.d. deterministic FWI.</li>
+</ol>
+
+<div class="docnav bottom"><span class="here">Working note · 2026-06-27</span>
+<span class="end"><a href="prior-work.html">Prior work</a> <span class="sep">·</span>
+<a href="research-plan.html">Research plan</a> <span class="sep">·</span> <a href="index.html">Index</a></span></div>
+
+<p class="foot">Working note for review &amp; discussion — not yet part of the curated set. The bet
+in §7 needs E1 (mean-normalize) run before it earns a place in the research plan.</p>
+
+</main>
+</div>
+</body>
+</html>
