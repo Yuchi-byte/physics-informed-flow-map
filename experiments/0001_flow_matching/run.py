@@ -48,6 +48,7 @@ class TrainingConfig(Config):
     batch_size: int = Field(256, gt=0)
     lr: float = 1e-3
     warmup_steps: int = Field(0, ge=0)
+    num_workers: int = Field(4, ge=0)
     eval_every_epochs: int = Field(0, ge=0)
     ckpt_every_epochs: int = Field(
         0, ge=0
@@ -100,7 +101,9 @@ def main(dcfg: DictConfig) -> None:
         batch_size=cfg.training.batch_size,
         shuffle=True,
         drop_last=True,
-        num_workers=0,
+        num_workers=cfg.training.num_workers,
+        pin_memory=True,
+        persistent_workers=cfg.training.num_workers > 0,
     )
     if len(loader) == 0:
         raise SystemExit(
@@ -123,7 +126,9 @@ def main(dcfg: DictConfig) -> None:
         batch_size=cfg.training.batch_size,
         shuffle=False,
         drop_last=False,
-        num_workers=0,
+        num_workers=cfg.training.num_workers,
+        pin_memory=True,
+        persistent_workers=cfg.training.num_workers > 0,
     )
     val_loss_fn = make_loss_fn(cfg.dataset.num_classes)
 
