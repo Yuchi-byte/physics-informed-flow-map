@@ -1,20 +1,28 @@
 # Virtual workspace root: tooling + dependency coordination only. The actual
 # packages live under packages/ (see [tool.uv.workspace] members below).
 
-# Detect the installed CUDA driver at sync time and pick the matching PyTorch
-# wheels, falling back to CPU when no GPU is available.
-[tool.uv]
-torch-backend = "auto"
-
 [tool.uv.workspace]
 members = [
   "packages/physics-informed-flow-map",
   "packages/mfm-meta-flow-map-main",
 ]
 
+# PyTorch cu128 — matches RTX 5090 / driver 570 (CUDA 12.8 max).
+# Update the index name/URL here if moving to a pod with a different CUDA driver:
+#   cu121 → https://download.pytorch.org/whl/cu121
+#   cu124 → https://download.pytorch.org/whl/cu124
+#   cu128 → https://download.pytorch.org/whl/cu128
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
 [tool.uv.sources]
 mfm = { workspace = true }
 physics-informed-flow-map = { workspace = true }
+torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
 
 [dependency-groups]
 dev = [
