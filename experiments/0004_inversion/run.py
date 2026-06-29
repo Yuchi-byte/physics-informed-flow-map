@@ -334,7 +334,16 @@ def main(dcfg: DictConfig) -> None:
             else cfg.steps
         ) * n
 
-    invert_fn: Inverter = invert
+    # Fixed-seed sampling for reproducible figures: invert_and_report runs a guided then an
+    # unguided pass, so re-seed before each so both start from identical noise (the guided/unguided
+    # panels track the same prior sample). Every sampler here draws from the global RNG, so a single
+    # re-seed covers all prior families/methods; safe because there is no training loop to perturb.
+    _base_invert: Inverter = invert
+
+    def invert_fn(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+        torch.manual_seed(cfg.seed)
+        return _base_invert(d_obs, guidance_strength)
+
     out = run.ckpt_dir.parent / "inversion.png"
     summary, caption = invert_and_report(
         invert_fn,

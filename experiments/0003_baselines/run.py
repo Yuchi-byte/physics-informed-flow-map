@@ -165,6 +165,9 @@ def main(dcfg: DictConfig) -> None:
         return total / max(n, 1)
 
     def on_eval(model: nn.Module, epoch: int) -> float | None:
+        # Fixed-seed generator so every epoch's grid samples the same noise (initial + ancestral):
+        # the grids track one image's evolution as the model improves, not fresh random draws. A
+        # local generator (not torch.manual_seed) leaves the training RNG stream untouched.
         s = ddpm_sample(
             model,
             scheduler,
@@ -172,6 +175,7 @@ def main(dcfg: DictConfig) -> None:
             n_samples=cfg.sampling.n_eval_viz,
             num_steps=cfg.diffusion.num_sample_steps,
             device=device,
+            generator=torch.Generator(device=device).manual_seed(cfg.seed),
         )
         p = run.ckpt_dir.parent / f"samples_epoch{epoch}.png"
         cfg.dataset.visualize(s, p)
@@ -216,6 +220,7 @@ def main(dcfg: DictConfig) -> None:
         n_samples=cfg.sampling.n_eval_viz,
         num_steps=cfg.diffusion.num_sample_steps,
         device=device,
+        generator=torch.Generator(device=device).manual_seed(cfg.seed),  # same fixed noise as the per-epoch grids
     )
     final_png = run.ckpt_dir.parent / "samples.png"
     cfg.dataset.visualize(samples, final_png)
