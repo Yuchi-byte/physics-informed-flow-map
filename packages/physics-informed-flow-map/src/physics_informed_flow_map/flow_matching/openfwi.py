@@ -33,6 +33,9 @@ class OpenFWIVelocityDataset(Dataset):
     def __init__(self, root: Path, families: list[str], resolution: int = 64) -> None:
         self.resolution = resolution
         rows: list[np.ndarray] = []
+        # Parallel (file, row) provenance for each sample, so callers can re-load a sample at its
+        # native resolution from disk (held_out_targets uses this for the inversion target maps).
+        self.index: list[tuple[Path, int]] = []
         for family in families:
             family_dir = root / family
             files = sorted(family_dir.glob("model/*.npy")) + sorted(
@@ -48,6 +51,7 @@ class OpenFWIVelocityDataset(Dataset):
                 arr = np.load(f)  # load full file into RAM once
                 for i in range(arr.shape[0]):
                     rows.append(arr[i])
+                    self.index.append((f, i))
         # Stack into one contiguous array so workers share it via fork (copy-on-write).
         self._data = np.stack(rows, axis=0)  # (N, 1, 70, 70) float32
 
