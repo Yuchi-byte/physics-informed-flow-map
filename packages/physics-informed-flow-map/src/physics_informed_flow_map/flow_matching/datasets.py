@@ -192,6 +192,23 @@ class MNISTDatasetConfig(Config):
         _viz_trajectory_grid(frames, path)
 
 
+# Process-wide cache of the in-RAM velocity maps, so build() + build_val() (and repeated
+# config copies) load each family off the network volume exactly once. Keyed by the load
+# parameters; the dataset is read-only, so workers forked after this is populated share it COW.
+_OPENFWI_CACHE: dict[tuple[str, tuple[str, ...], int], OpenFWIVelocityDataset] = {}
+
+
+def _load_openfwi(
+    data_dir: str, families: list[str], resolution: int
+) -> OpenFWIVelocityDataset:
+    key = (data_dir, tuple(families), resolution)
+    ds = _OPENFWI_CACHE.get(key)
+    if ds is None:
+        ds = OpenFWIVelocityDataset(Path(data_dir), families, resolution)
+        _OPENFWI_CACHE[key] = ds
+    return ds
+
+
 class OpenFWIDatasetConfig(Config):
     """OpenFWI subsurface velocity maps, normalised to [-1, 1]."""
 
@@ -214,9 +231,7 @@ class OpenFWIDatasetConfig(Config):
         return None
 
     def _split(self) -> tuple[OpenFWIVelocityDataset, list[int], list[int]]:
-        full = OpenFWIVelocityDataset(
-            Path(self.data_dir), self.families, self.resolution
-        )
+        full = _load_openfwi(self.data_dir, self.families, self.resolution)
         n = len(full)
         n_val = max(1, int(self.val_fraction * n))
         perm = torch.randperm(n, generator=torch.Generator().manual_seed(0)).tolist()
