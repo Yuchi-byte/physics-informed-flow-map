@@ -83,6 +83,41 @@ def _viz_grid(samples: Tensor, path: Path, *, ncols: int = 8) -> None:
     plt.close(fig)
 
 
+def _viz_trajectory_grid(frames: Tensor, path: Path) -> None:
+    """Trajectory grid for image datasets: rows=samples, cols=time steps (t=0 → t=1)."""
+    n_frames, b = frames.shape[:2]
+    t_labels = [f"t={i / (n_frames - 1):.2f}" for i in range(n_frames)]
+    f = (frames.detach().cpu().clamp(-1, 1) + 1) / 2  # [n_frames, B, C, H, W]
+    fig, axes = plt.subplots(b, n_frames, figsize=(n_frames * 1.5, b * 1.5))
+    if b == 1:
+        axes = axes[None]
+    for col, label in enumerate(t_labels):
+        axes[0, col].set_title(label, fontsize=7)
+    for row in range(b):
+        for col in range(n_frames):
+            axes[row, col].imshow(f[col, row, 0].numpy(), cmap="gray", vmin=0, vmax=1)
+            axes[row, col].axis("off")
+    fig.tight_layout(pad=0.2)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _viz_trajectory_scatter(frames: Tensor, path: Path) -> None:
+    """Trajectory grid for 2-D scatter datasets: side-by-side scatter at each time step."""
+    n_frames = frames.shape[0]
+    t_labels = [f"t={i / (n_frames - 1):.2f}" for i in range(n_frames)]
+    f = frames.detach().cpu().numpy()  # [n_frames, B, 2]
+    fig, axes = plt.subplots(1, n_frames, figsize=(n_frames * 2.5, 2.5))
+    for col in range(n_frames):
+        axes[col].scatter(f[col, :, 0], f[col, :, 1], s=8, alpha=0.5)
+        axes[col].set_title(t_labels[col], fontsize=8)
+        axes[col].set_aspect("equal")
+        axes[col].axis("off")
+    fig.tight_layout(pad=0.2)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 class GaussiansDatasetConfig(Config):
     """2D mixture-of-Gaussians toy dataset."""
 
@@ -116,6 +151,9 @@ class GaussiansDatasetConfig(Config):
     def visualize(self, samples: Tensor, path: Path, *, ncols: int = 8) -> None:
         _viz_scatter(samples, path)  # scatter ignores ncols
 
+    def visualize_trajectory(self, frames: Tensor, path: Path) -> None:
+        _viz_trajectory_scatter(frames, path)
+
 
 class MNISTDatasetConfig(Config):
     """MNIST digits, resized to a square and normalised to [-1, 1]."""
@@ -144,6 +182,9 @@ class MNISTDatasetConfig(Config):
 
     def visualize(self, samples: Tensor, path: Path, *, ncols: int = 8) -> None:
         _viz_grid(samples, path, ncols=ncols)
+
+    def visualize_trajectory(self, frames: Tensor, path: Path) -> None:
+        _viz_trajectory_grid(frames, path)
 
 
 class OpenFWIDatasetConfig(Config):
@@ -186,6 +227,9 @@ class OpenFWIDatasetConfig(Config):
 
     def visualize(self, samples: Tensor, path: Path, *, ncols: int = 8) -> None:
         viz_velocity(samples, path, ncols=ncols)
+
+    def visualize_trajectory(self, frames: Tensor, path: Path) -> None:
+        _viz_trajectory_grid(frames, path)
 
 
 DatasetConfig = Annotated[

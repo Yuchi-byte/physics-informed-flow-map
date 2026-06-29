@@ -49,6 +49,7 @@ from physics_informed_flow_map.flow_matching.sample import (
     sample,
     sample_few_step,
     sample_posterior,
+    sample_trajectory,
 )
 from physics_informed_flow_map.flow_matching.train import make_loss_fn, train
 
@@ -106,6 +107,8 @@ class SamplingConfig(Config):
         default_factory=lambda: [0.2, 0.4, 0.6, 0.8, 0.9]
     )
     n_eval_viz: int = Field(64, gt=0)
+    n_traj_viz: int = Field(4, gt=0)   # samples shown in the trajectory grid
+    traj_every_epochs: int = Field(20, gt=0)  # save a trajectory viz every N eval epochs
 
 
 class FlowMapConfig(Config):
@@ -245,6 +248,12 @@ def main(dcfg: DictConfig) -> None:
     # Fixed held-out references for the posterior-reconstruction panel.
     ref_batch = next(iter(val_loader))[0][: cfg.sampling.posterior_refs].to(device)
 
+    # Fixed noise for reproducible per-epoch visualizations: same starting points every eval,
+    # so the grids track model improvement on identical samples rather than fresh random draws.
+    g = torch.Generator(device=device).manual_seed(cfg.seed)
+    eval_noise = torch.randn(cfg.sampling.n_eval_viz, *cfg.dataset.shape, device=device, generator=g)
+    traj_noise = eval_noise[: cfg.sampling.n_traj_viz]
+
     @torch.no_grad()
     def compute_val_loss(m: BaseModel) -> float:
         m.eval()
@@ -264,10 +273,21 @@ def main(dcfg: DictConfig) -> None:
             cfg.dataset.shape,
             sampler_steps=cfg.sampling.sampler_steps,
             device=device,
+            x_noise=eval_noise,
         )
         p = run.ckpt_dir.parent / f"samples_epoch{epoch}.png"
         cfg.dataset.visualize(s, p)
         run.log_image("samples", p, caption=f"epoch {epoch + 1} ODE")
+        if (epoch + 1) % cfg.sampling.traj_every_epochs == 0:
+            frames = sample_trajectory(
+                m,
+                traj_noise,
+                sampler_steps=cfg.sampling.sampler_steps,
+                device=device,
+            )
+            pt = run.ckpt_dir.parent / f"trajectory_epoch{epoch}.png"
+            cfg.dataset.visualize_trajectory(frames, pt)
+            run.log_image("trajectory", pt, caption=f"epoch {epoch + 1} ODE trajectory")
         sf = sample_few_step(
             m,
             cfg.sampling.n_eval_viz,

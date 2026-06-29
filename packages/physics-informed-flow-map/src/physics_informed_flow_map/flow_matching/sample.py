@@ -7,6 +7,7 @@ from typing import cast
 
 import torch
 from torch import Tensor
+from torchdiffeq import odeint
 
 from mfm.SI.samplers import consistency_sampler_fn, ode_sampler_fn
 from mfm.models.base_model import BaseModel
@@ -20,11 +21,19 @@ def sample(
     *,
     sampler_steps: int,
     device: torch.device,
+    x_noise: Tensor | None = None,
 ) -> Tensor:
-    """Sample from the flow prior via Euler ODE integration (torchdiffeq)."""
+    """Sample from the flow prior via Euler ODE integration (torchdiffeq).
+
+    Pass ``x_noise`` to fix the starting noise across calls (e.g. for reproducible
+    per-epoch visualizations that track the same samples through training).
+    """
     model.eval()
-    x_noise = torch.randn(n_samples, *shape, device=device)
-    t_cond = torch.zeros(n_samples, device=device)
+    if x_noise is None:
+        x_noise = torch.randn(n_samples, *shape, device=device)
+    else:
+        x_noise = x_noise.to(device)
+    t_cond = torch.zeros(x_noise.shape[0], device=device)
     return cast(
         Tensor,
         ode_sampler_fn(
@@ -37,6 +46,36 @@ def sample(
             v_type="standard",
         ),
     )
+
+
+@torch.no_grad()
+def sample_trajectory(
+    model: BaseModel,
+    x_noise: Tensor,
+    *,
+    sampler_steps: int,
+    device: torch.device,
+    n_frames: int = 6,
+) -> Tensor:
+    """Euler ODE integration returning ``n_frames`` evenly-spaced intermediate states.
+
+    Returns shape ``[n_frames, B, *shape]``, from t=0 (pure noise) to t=1 (generated
+    sample). Pass a fixed ``x_noise`` across epochs to track the same starting points
+    as the model improves.
+    """
+    model.eval()
+    x_noise = x_noise.to(device)
+    t_cond = torch.zeros(x_noise.shape[0], device=device)
+
+    def ode_func(t: Tensor, x: Tensor) -> Tensor:
+        tb = t.expand(x.shape[0])
+        return model.v(tb, tb, x, t_cond, x_noise)
+
+    times = torch.linspace(0, 1, sampler_steps + 1, device=device)
+    hist = odeint(ode_func, x_noise, times, method="euler", atol=1e-5, rtol=1e-5)
+    # hist: [sampler_steps+1, B, *shape] — pick n_frames evenly-spaced indices
+    indices = [round(i * sampler_steps / (n_frames - 1)) for i in range(n_frames)]
+    return hist[indices]  # [n_frames, B, *shape]
 
 
 @torch.no_grad()
