@@ -86,15 +86,23 @@ def sample_few_step(
     *,
     n_steps: int,
     device: torch.device,
+    x_noise: Tensor | None = None,
 ) -> Tensor:
     """Few-step flow-map sampling: walk ``s→u`` in ``n_steps`` jumps via ``model.X(s,u,x,v)``.
 
     Meaningful only for a trained meta flow map (``0002``); on a pure flow-matching prior the
     off-diagonal ``v(s,u)`` is unconstrained, so few-step samples will be poor.
+
+    Pass ``x_noise`` to fix the starting noise across calls. Sharing the same ``x_noise`` with
+    :func:`sample` makes the few-step grid directly comparable, cell-for-cell, to the ODE grid
+    (same starting points, different sampler) and reproducible across epochs.
     """
     model.eval()
-    x_noise = torch.randn(n_samples, *shape, device=device)
-    t_cond = torch.zeros(n_samples, device=device)
+    if x_noise is None:
+        x_noise = torch.randn(n_samples, *shape, device=device)
+    else:
+        x_noise = x_noise.to(device)
+    t_cond = torch.zeros(x_noise.shape[0], device=device)
     return cast(
         Tensor,
         consistency_sampler_fn(

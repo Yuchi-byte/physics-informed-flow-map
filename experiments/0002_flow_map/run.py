@@ -294,6 +294,7 @@ def main(dcfg: DictConfig) -> None:
             cfg.dataset.shape,
             n_steps=cfg.sampling.few_steps,
             device=device,
+            x_noise=eval_noise,  # same noise as the ODE grid → comparable cell-for-cell & across epochs
         )
         pf = run.ckpt_dir.parent / f"samples_fewstep_epoch{epoch}.png"
         cfg.dataset.visualize(sf, pf)
@@ -367,6 +368,7 @@ def main(dcfg: DictConfig) -> None:
         cfg.dataset.shape,
         sampler_steps=cfg.sampling.sampler_steps,
         device=device,
+        x_noise=eval_noise,  # same fixed noise as the per-epoch grids, for a comparable final snapshot
     )
     final_png = run.ckpt_dir.parent / "samples.png"
     cfg.dataset.visualize(samples, final_png)
@@ -378,6 +380,7 @@ def main(dcfg: DictConfig) -> None:
         cfg.dataset.shape,
         n_steps=cfg.sampling.few_steps,
         device=device,
+        x_noise=eval_noise,  # same fixed noise as the ODE final → directly comparable
     )
     few_png = run.ckpt_dir.parent / "samples_fewstep.png"
     cfg.dataset.visualize(few, few_png)
