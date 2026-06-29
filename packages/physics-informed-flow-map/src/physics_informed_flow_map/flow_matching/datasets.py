@@ -83,8 +83,13 @@ def _viz_grid(samples: Tensor, path: Path, *, ncols: int = 8) -> None:
     plt.close(fig)
 
 
-def _viz_trajectory_grid(frames: Tensor, path: Path) -> None:
-    """Trajectory grid for image datasets: rows=samples, cols=time steps (t=0 → t=1)."""
+def _viz_trajectory_grid(frames: Tensor, path: Path, *, cmap: str = "gray") -> None:
+    """Trajectory grid for image datasets: rows=samples, cols=time steps (t=0 → t=1).
+
+    Data is mapped from [-1, 1] to [0, 1], so ``cmap`` is sampled over the same
+    fractional range as ``viz_velocity`` (vmin=-1, vmax=1) — pass ``cmap="viridis"``
+    to match the velocity-map sample grids exactly.
+    """
     n_frames, b = frames.shape[:2]
     t_labels = [f"t={i / (n_frames - 1):.2f}" for i in range(n_frames)]
     f = (frames.detach().cpu().clamp(-1, 1) + 1) / 2  # [n_frames, B, C, H, W]
@@ -95,7 +100,7 @@ def _viz_trajectory_grid(frames: Tensor, path: Path) -> None:
         axes[0, col].set_title(label, fontsize=7)
     for row in range(b):
         for col in range(n_frames):
-            axes[row, col].imshow(f[col, row, 0].numpy(), cmap="gray", vmin=0, vmax=1)
+            axes[row, col].imshow(f[col, row, 0].numpy(), cmap=cmap, vmin=0, vmax=1)
             axes[row, col].axis("off")
     fig.tight_layout(pad=0.2)
     fig.savefig(path, dpi=150, bbox_inches="tight")
@@ -229,7 +234,7 @@ class OpenFWIDatasetConfig(Config):
         viz_velocity(samples, path, ncols=ncols)
 
     def visualize_trajectory(self, frames: Tensor, path: Path) -> None:
-        _viz_trajectory_grid(frames, path)
+        _viz_trajectory_grid(frames, path, cmap="viridis")
 
 
 DatasetConfig = Annotated[
