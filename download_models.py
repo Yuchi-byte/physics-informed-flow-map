@@ -2,7 +2,7 @@
 
 # to set up claude, install Claude Code in a pod with this command: curl -fsSL https://claude.ai/install.sh | bash
 # when running claude, might encounter error '--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons'. Run: IS_SANDBOX=1  claude --dangerously-skip-permissions
-# run claude using: IS_SANDBOX=1  workspace/bin/claude --dangerously-skip-permissions
+# run claude using: IS_SANDBOX=1  /workspace/bin/claude --dangerously-skip-permissions
 
 # uv sync. This creates a venv. 
 
