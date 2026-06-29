@@ -8,7 +8,7 @@ training:
   batch_size: 256
   lr: 1.0e-4
   warmup_steps: 500   # same wall-clock warmup; fewer steps/epoch at batch 256
-  eval_every_epochs: 20
+  eval_every_epochs: 5
   ckpt_every_epochs: 20
   ema:
     enabled: true

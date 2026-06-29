@@ -5,7 +5,7 @@ defaults:
 
 training:
   n_epochs: 100
-  eval_every_epochs: 10
+  eval_every_epochs: 5
   ckpt_every_epochs: 10  # local save + wandb artifact upload (also best + final)
   ema:
     enabled: true

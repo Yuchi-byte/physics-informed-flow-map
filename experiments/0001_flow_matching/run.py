@@ -4,7 +4,7 @@
     uv run python experiments/0001_flow_matching/run.py experiment=mnist
     uv run python experiments/0001_flow_matching/run.py experiment=smoke
     uv run python experiments/0001_flow_matching/run.py experiment=mnist training.n_epochs=80 training.eval_every_epochs=5
-
+    uv run python experiments/0001_flow_matching/run.py experiment=openfwi
 Logs held-out FM loss as the run summary scalar.
 """
 

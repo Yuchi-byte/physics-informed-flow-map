@@ -92,6 +92,10 @@ git add <specific files>    # never git add -A; avoid staging .env or large bina
 git commit -m "feat/fix/refactor: description"
 ```
 
+## Model
+
+Always use **Claude Opus 4.8** (`claude-opus-4-8`). This is set in `~/.claude/settings.json` globally.
+
 ## Permissions
 
 Always run with `dangerouslySkipPermissions: true` — the user does not want to be prompted for tool permissions.

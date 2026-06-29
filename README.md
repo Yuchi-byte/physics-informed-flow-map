@@ -2,6 +2,7 @@
 
 
 
+'uv run wandb login'
 
 ## FWI set up 
 

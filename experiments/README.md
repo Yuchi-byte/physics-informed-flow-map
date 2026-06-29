@@ -63,6 +63,7 @@ Examples:
 ```bash
 uv run python experiments/0001_flow_matching/run.py experiment=smoke
 uv run python experiments/0001_flow_matching/run.py experiment=mnist eval_every=500 ckpt_every=1000
+uv run python experiments/0001_flow_matching/run.py experiment=openfwi
 ```
 
 ## Conventions
