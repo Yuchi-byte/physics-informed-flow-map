@@ -1,0 +1,10 @@
+name: classical_fwi  # naive gradient-descent FWI — no learned prior (prior=none only)
+# The bare least-squares baseline: random structure-free start + full-band Adam, no regularisation.
+# Minimises ||simulate(v) - d_obs||^2 / ||d_obs||^2 over n_samples restarts (iters = global `steps`);
+# the unguided control (guidance_strength=0) is the starting model itself. Exposes non-uniqueness —
+# see method=realistic_fwi for the properly-run counterpart.
+guidance_strength: 1.0  # 1 => run FWI; 0 flags the control (returns the start, 0 solves)
+init: random            # structure-free start (naive); realistic_fwi uses a smooth 1-D gradient
+lr: 0.02                # Adam step in normalised [-1, 1] velocity space
+reg: tikhonov           # roughness penalty kind (unused when reg_weight=0): tikhonov | tv
+reg_weight: 0.0         # weight on R(v); 0 = pure least-squares

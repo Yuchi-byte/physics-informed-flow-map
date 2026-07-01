@@ -1,0 +1,16 @@
+name: realistic_fwi  # properly-run classical FWI — no learned prior (prior=none only)
+# The four standard cures for the naive baseline's failure, together:
+#   * smooth 1-D starting model (cycle-skipping-averse), not random
+#   * multiscale frequency continuation: invert low bands first, then higher (freqs_hz ascending)
+#   * Tikhonov regularisation on the model roughness
+#   * L-BFGS with a strong-Wolfe line search, not fixed-step Adam
+# Each stage runs iters_per_stage inner iterations; n_solves is the actual total forward solves
+# (line-search evaluations included). The control (guidance_strength=0) is the smooth start.
+guidance_strength: 1.0                # 1 => run FWI; 0 flags the control (start, 0 solves)
+init: smooth                          # smooth 1-D gradient start (unused switch; multiscale forces smooth)
+optimizer: lbfgs                      # lbfgs (strong-Wolfe) | adam
+freqs_hz: [4.0, 8.0, 15.0]            # multiscale cutoffs (Hz), ascending — data peaks ~15 Hz
+iters_per_stage: 40                   # inner iterations per frequency band
+lr: 1.0                               # L-BFGS step (1.0 with line search); ~0.02 if optimizer=adam
+reg: tikhonov                         # tikhonov (squared-gradient) | tv (total variation)
+reg_weight: 0.0002                    # roughness penalty weight

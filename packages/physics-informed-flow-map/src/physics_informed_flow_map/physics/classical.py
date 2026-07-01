@@ -14,9 +14,11 @@ testable without the wave solver.
 
 from __future__ import annotations
 
+import math
 from typing import Callable
 
 import torch
+import torch.nn.functional as F
 from torch import Tensor
 
 from ..flow_matching.openfwi import VMAX, VMIN
@@ -24,6 +26,7 @@ from ..flow_matching.openfwi import VMAX, VMIN
 ForwardFn = Callable[[Tensor], Tensor]  # (H, W) m/s -> data
 
 REGULARIZERS = ("tikhonov", "tv")
+INITS = ("smooth", "random")
 
 
 def _grad_xy(v: Tensor) -> tuple[Tensor, Tensor]:
@@ -71,6 +74,27 @@ def linear_gradient_init(
     return base.clamp(-1.0, 1.0)
 
 
+def random_smooth_init(
+    n: int, h: int, w: int, device: torch.device, *, coarse: int = 8
+) -> Tensor:
+    """``(n, H, W)`` structure-free starting models in ``[-1, 1]``: a random constant background
+    spanning the velocity range plus a smooth low-frequency perturbation (upsampled coarse noise).
+    Deliberately biased toward no geology — the naive FWI start that exposes non-uniqueness. Draws
+    from the global RNG so a caller's ``manual_seed`` makes the restarts reproducible."""
+    level = torch.empty(n, 1, 1, device=device).uniform_(-0.6, 0.6)
+    noise = torch.randn(n, 1, coarse, coarse, device=device)
+    smooth = F.interpolate(noise, size=(h, w), mode="bicubic", align_corners=False)[:, 0]
+    return (level + 0.4 * smooth).clamp(-1.0, 1.0)
+
+
+def _make_init(kind: str, n: int, h: int, w: int, device: torch.device) -> Tensor:
+    if kind == "smooth":
+        return linear_gradient_init(n, h, w, device)
+    if kind == "random":
+        return random_smooth_init(n, h, w, device)
+    raise ValueError(f"unknown init {kind!r} (one of {INITS})")
+
+
 def regularized_fwi(
     forward_fn: ForwardFn,
     d_obs: Tensor,
@@ -82,17 +106,20 @@ def regularized_fwi(
     reg: str = "tikhonov",
     reg_weight: float = 0.0,
     tv_eps: float = 1e-3,
+    init: str = "smooth",
     device: torch.device,
 ) -> tuple[Tensor, int]:
-    """Gradient-descent FWI from a smooth start; returns ``(v_mps (n, H, W), n_solves)``.
+    """Gradient-descent FWI; returns ``(v_mps (n, H, W), n_solves)``.
 
     Optimises normalised models with Adam against the relative data misfit
     ``||forward(v) - d_obs||^2 / ||d_obs||^2`` plus ``reg_weight * R(v)``, clamping to
-    ``[-1, 1]`` each step. ``n_solves = iters * n_samples`` (one forward solve per model per
+    ``[-1, 1]`` each step. ``init`` picks the starting model: ``smooth`` (a 1-D gradient, the
+    cycle-skipping-averse classical start) or ``random`` (structure-free, the naive baseline that
+    exposes non-uniqueness). ``n_solves = iters * n_samples`` (one forward solve per model per
     iteration — the dominant cost, matching how the generative samplers are counted).
     """
     h, w = shape
-    x = linear_gradient_init(n_samples, h, w, device).requires_grad_(True)
+    x = _make_init(init, n_samples, h, w, device).requires_grad_(True)
     opt = torch.optim.Adam([x], lr=lr)
     denom = (d_obs**2).sum().clamp_min(1e-12)
 
@@ -108,3 +135,86 @@ def regularized_fwi(
             x.clamp_(-1.0, 1.0)
 
     return _to_mps(x.detach()), iters * n_samples
+
+
+def lowpass_time(x: Tensor, fmax_hz: float, *, dt: float = 1e-3, taper: float = 1.3) -> Tensor:
+    """Differentiable low-pass along the last (time) axis via rFFT, with a raised-cosine taper
+    from ``fmax_hz`` to ``taper * fmax_hz`` (no ringing). Used for multiscale FWI: filtering both
+    the observed and modelled data to the same band lets the low frequencies (which are far less
+    prone to cycle-skipping) drive the early inversion."""
+    nt = x.shape[-1]
+    spec = torch.fft.rfft(x, dim=-1)
+    f = torch.fft.rfftfreq(nt, d=dt, device=x.device)
+    f1, f2 = fmax_hz, taper * fmax_hz
+    ramp = ((f - f1) / (f2 - f1)).clamp(0.0, 1.0)
+    win = 0.5 * (1.0 + torch.cos(math.pi * ramp))  # 1 below f1, cos taper to 0 at f2
+    return torch.fft.irfft(spec * win, n=nt, dim=-1)
+
+
+def multiscale_fwi(
+    forward_fn: ForwardFn,
+    d_obs: Tensor,
+    *,
+    shape: tuple[int, int],
+    n_samples: int,
+    freqs_hz: list[float],
+    iters_per_stage: int,
+    lr: float,
+    reg: str = "tikhonov",
+    reg_weight: float = 1e-4,
+    tv_eps: float = 1e-3,
+    dt: float = 1e-3,
+    optimizer: str = "lbfgs",
+    device: torch.device,
+) -> tuple[Tensor, int]:
+    """Realistic FWI: smooth 1-D start + multiscale frequency continuation + regularisation,
+    optimised with L-BFGS (default) or Adam. Returns ``(v_mps (n, H, W), n_solves)``.
+
+    For each cutoff in ``freqs_hz`` (ascending), low-pass both observed and modelled data to that
+    band and minimise ``||low(F(v)) - low(d_obs)||^2 / ||low(d_obs)||^2 + reg_weight * R(v)``,
+    warm-starting the next (higher) band from the current model. This is the standard cure for
+    cycle-skipping. ``n_solves`` is the *actual* total forward solves — including every L-BFGS
+    line-search evaluation — so it stays a faithful cost metric.
+    """
+    h, w = shape
+    x = _make_init("smooth", n_samples, h, w, device).requires_grad_(True)
+    n_solves = 0
+
+    def loss_at(fmax: float, d_filt: Tensor, denom: Tensor) -> Tensor:
+        nonlocal n_solves
+        v_mps = _to_mps(x)
+        pred = torch.stack([forward_fn(v_mps[b]) for b in range(n_samples)])
+        n_solves += n_samples
+        data = ((lowpass_time(pred, fmax, dt=dt) - d_filt) ** 2).sum() / denom
+        return data + reg_weight * regularization(x, reg, tv_eps=tv_eps)
+
+    for fmax in freqs_hz:
+        d_filt = lowpass_time(d_obs, fmax, dt=dt)
+        denom = (d_filt**2).sum().clamp_min(1e-12)
+        if optimizer == "lbfgs":
+            opt = torch.optim.LBFGS(
+                [x], lr=lr, max_iter=iters_per_stage, line_search_fn="strong_wolfe"
+            )
+
+            def closure() -> Tensor:
+                with torch.no_grad():
+                    x.clamp_(-1.0, 1.0)  # keep velocity in [VMIN, VMAX] at every trial point
+                opt.zero_grad()
+                loss = loss_at(fmax, d_filt, denom)
+                loss.backward()  # type: ignore[no-untyped-call]
+                return loss
+
+            opt.step(closure)  # runs up to iters_per_stage inner iterations
+        else:  # adam
+            opt = torch.optim.Adam([x], lr=lr)
+            for _ in range(iters_per_stage):
+                opt.zero_grad()
+                loss = loss_at(fmax, d_filt, denom)
+                loss.backward()  # type: ignore[no-untyped-call]
+                opt.step()
+                with torch.no_grad():
+                    x.clamp_(-1.0, 1.0)
+        with torch.no_grad():
+            x.clamp_(-1.0, 1.0)
+
+    return _to_mps(x.detach()), n_solves

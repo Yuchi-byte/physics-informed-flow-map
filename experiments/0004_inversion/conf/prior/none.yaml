@@ -1,0 +1,1 @@
+name: none  # no learned prior — the classical (hand-regularised) FWI baseline; ckpt is ignored

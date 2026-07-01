@@ -65,6 +65,7 @@ _COMPAT: dict[str, set[str]] = {
     "flow_matching": {"unguided", "flow_tilt"},
     "flow_map": {"unguided", "flow_tilt", "mfm_g", "mfm_gf"},
     "diffusion": {"unguided", "dps", "red_diffeq"},
+    "none": {"classical_fwi", "realistic_fwi"},  # no learned prior: the FWI baselines
 }
 _PRIORS = set(_COMPAT)
 _METHODS = {m for ms in _COMPAT.values() for m in ms}
@@ -118,6 +119,16 @@ class MethodConfig(Config):
     iters: int = Field(
         0, ge=0
     )  # RED-DiffEq optimisation steps; 0 => use the global `steps`
+    # Classical / realistic FWI knobs (prior=none; ignored by the other methods).
+    lr: float = Field(0.02, gt=0.0)  # step size (Adam ~0.02; L-BFGS ~1.0)
+    reg: str = "tikhonov"  # roughness penalty: tikhonov | tv
+    reg_weight: float = Field(0.0, ge=0.0)  # weight on R(v); 0 = pure least-squares
+    init: str = "smooth"  # classical_fwi start: smooth (1-D gradient) | random (structure-free)
+    optimizer: str = "adam"  # realistic_fwi optimiser: lbfgs | adam
+    iters_per_stage: int = Field(40, gt=0)  # realistic_fwi: inner iterations per frequency band
+    freqs_hz: list[float] = Field(  # realistic_fwi: multiscale cutoffs (Hz), ascending
+        default_factory=lambda: [4.0, 8.0, 15.0]
+    )
 
 
 class ModelConfig(Config):
@@ -193,7 +204,55 @@ def main(dcfg: DictConfig) -> None:
         0  # forward (PDE) solves consumed by the guided pass (matched-cost reporting)
     )
 
-    if cfg.prior.name in FLOW_PRIORS:
+    if cfg.prior.name == "none":
+        # Classical / realistic FWI: no learned prior. Optimise the velocity map directly against
+        # the data misfit at native 70x70 (the forward operator's grid — dataset.resolution is the
+        # prior's training size, irrelevant here). guidance=0 => the starting model (control).
+        from physics_informed_flow_map.inversion.bridge import NATIVE
+        from physics_informed_flow_map.physics.classical import (
+            multiscale_fwi,
+            regularized_fwi,
+        )
+        from physics_informed_flow_map.physics.forward import simulate
+
+        realistic = cfg.method.name == "realistic_fwi"
+        solves = {"n": 0}  # actual total forward solves from the guided pass (the cost metric)
+
+        def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+            run_it = guidance_strength != 0.0
+            if realistic:
+                v_mps, ns = multiscale_fwi(
+                    simulate,
+                    d_obs,
+                    shape=(NATIVE, NATIVE),
+                    n_samples=n,
+                    freqs_hz=cfg.method.freqs_hz,
+                    iters_per_stage=cfg.method.iters_per_stage if run_it else 0,
+                    lr=cfg.method.lr,
+                    reg=cfg.method.reg,
+                    reg_weight=cfg.method.reg_weight,
+                    optimizer=cfg.method.optimizer,
+                    device=dev,
+                )
+            else:
+                v_mps, ns = regularized_fwi(
+                    simulate,  # forward_fn: (H, W) m/s -> data
+                    d_obs,
+                    shape=(NATIVE, NATIVE),
+                    n_samples=n,
+                    iters=cfg.steps if run_it else 0,
+                    lr=cfg.method.lr,
+                    reg=cfg.method.reg,
+                    reg_weight=cfg.method.reg_weight,
+                    init=cfg.method.init,
+                    device=dev,
+                )
+            if run_it:
+                solves["n"] = ns  # true solve count (L-BFGS line searches included)
+            return mps_to_norm(v_mps)[:, None]  # (n, 1, 70, 70) in [-1, 1]
+
+        n_solves = 0  # set from solves["n"] after the guided pass runs
+    elif cfg.prior.name in FLOW_PRIORS:
         prior = load_flow_prior(
             cfg.dataset.shape,
             hidden=cfg.model.hidden,
@@ -357,6 +416,8 @@ def main(dcfg: DictConfig) -> None:
         out_png=out,
         out_obs_png=obs_out,
     )
+    if cfg.prior.name == "none":
+        n_solves = solves["n"]  # actual forward solves from the guided FWI pass
     summary["inv/n_solves"] = float(0 if cfg.method.name == "unguided" else n_solves)
     run.log_image("inversion", out, caption=caption)
     run.log_image("d_obs", obs_out, caption=f"observed seismic · {caption}")
