@@ -345,6 +345,7 @@ def main(dcfg: DictConfig) -> None:
         return _base_invert(d_obs, guidance_strength)
 
     out = run.ckpt_dir.parent / "inversion.png"
+    obs_out = run.ckpt_dir.parent / "d_obs.png"
     summary, caption = invert_and_report(
         invert_fn,
         dataset_cfg=cfg.dataset,
@@ -354,9 +355,11 @@ def main(dcfg: DictConfig) -> None:
         steps=cfg.steps,
         device=dev,
         out_png=out,
+        out_obs_png=obs_out,
     )
     summary["inv/n_solves"] = float(0 if cfg.method.name == "unguided" else n_solves)
     run.log_image("inversion", out, caption=caption)
+    run.log_image("d_obs", obs_out, caption=f"observed seismic · {caption}")
     run.log(**summary)  # mirror to metrics.jsonl on the network volume
     run.finish(**summary)
 

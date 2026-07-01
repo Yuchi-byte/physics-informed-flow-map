@@ -15,6 +15,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from torch import Tensor
 
@@ -48,15 +49,22 @@ def invert_and_report(
     steps: int,
     device: torch.device,
     out_png: Path,
+    out_obs_png: Path | None = None,
 ) -> tuple[dict[str, float], str]:
     """Run guided + unguided inversion on a held-out map, score it, and write the figure.
 
     Returns ``(summary_scalars, caption)`` — the caller logs the figure and the scalars to its
     own run. ``method_name == "unguided"`` forces guidance off (the no-physics control).
     Metrics are the expected MAE/RMSE/SSIM across samples on the OpenFWI ``[-1, 1]`` scale.
+
+    If ``out_obs_png`` is given, also writes the observed seismic data ``d_obs`` — the input the
+    velocity is inverted *from* — so the run folder shows what recovery was conditioned on.
     """
     gidx, v_true, d_obs = load_target(dataset_cfg, target_index, device)
     print(f"target: val map global index {gidx} (native {tuple(v_true.shape)})")
+
+    if out_obs_png is not None:
+        _plot_seismic(d_obs, gidx, out_obs_png)
 
     gs = guidance if method_name != "unguided" else 0.0
     guided = invert(d_obs, gs)
@@ -106,6 +114,31 @@ def _plot(v_true: Tensor, v_hat: Tensor, mae: float, out_png: Path) -> None:
     ax[2].set_title("error (m/s)")
     ax[2].axis("off")
     fig.colorbar(im, ax=ax[2], fraction=0.046)
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_seismic(d_obs: Tensor, gidx: int, out_png: Path) -> None:
+    """Shot gathers of the observed seismic ``d_obs`` (n_sources, n_receivers, nt) — the input the
+    velocity is inverted from. One panel per source: time (down) x receiver, shared symmetric scale."""
+    d = d_obs.detach().cpu().numpy()
+    n_src = d.shape[0]
+    vabs = float(np.percentile(np.abs(d), 99)) or 1.0
+    fig, axes = plt.subplots(1, n_src, figsize=(2.2 * n_src, 3.6), squeeze=False)
+    for s in range(n_src):
+        ax = axes[0, s]
+        # (n_receivers, nt) -> (nt, n_receivers): time on the vertical axis
+        im = ax.imshow(
+            d[s].T, aspect="auto", cmap="RdBu_r", vmin=-vabs, vmax=vabs
+        )
+        ax.set_title(f"source {s + 1}", fontsize=9)
+        ax.set_xlabel("receiver", fontsize=8)
+        ax.set_ylabel("time sample" if s == 0 else "", fontsize=8)
+        if s > 0:
+            ax.set_yticklabels([])
+    fig.suptitle(f"observed seismic d_obs · val map {gidx}", fontsize=10)
+    fig.colorbar(im, ax=axes[0, -1], fraction=0.046, label="amplitude")
     fig.tight_layout()
     fig.savefig(out_png, dpi=140, bbox_inches="tight")
     plt.close(fig)
