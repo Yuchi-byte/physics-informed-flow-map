@@ -50,6 +50,7 @@ def invert_and_report(
     device: torch.device,
     out_png: Path,
     out_obs_png: Path | None = None,
+    cost: Callable[[], float] | None = None,
 ) -> tuple[dict[str, float], str]:
     """Run guided + unguided inversion on a held-out map, score it, and write the figure.
 
@@ -59,6 +60,9 @@ def invert_and_report(
 
     If ``out_obs_png`` is given, also writes the observed seismic data ``d_obs`` — the input the
     velocity is inverted *from* — so the run folder shows what recovery was conditioned on.
+
+    ``cost`` (called after the guided pass) supplies the total forward-solve count for the figure
+    banner, so the inference cost is visible next to the quality metrics.
     """
     gidx, v_true, d_obs = load_target(dataset_cfg, target_index, device)
     print(f"target: val map global index {gidx} (native {tuple(v_true.shape)})")
@@ -89,7 +93,14 @@ def invert_and_report(
         f"  data misfit  guided={float(dm_g.mean()):.3e}  unguided={float(dm_u.mean()):.3e}  ratio={ratio:.3f}"
     )
 
-    _plot(v_true, vg[0], float(mae[0]), out_png)  # sample 0: a representative draw
+    n_solves = int(cost()) if cost is not None else None
+    banner = (
+        f"{method_name} · val map {gidx} · MAE {float(mae.mean()):.3f} · "
+        f"RMSE {float(rmse.mean()):.3f} · SSIM {ssim_mean:.3f}"
+    )
+    if n_solves is not None:
+        banner += f" · solves {n_solves}"
+    _plot(v_true, vg[0], float(mae[0]), out_png, banner)  # sample 0: a representative draw
     summary = {
         "inv/mae_mean": float(mae.mean()),
         "inv/rmse_mean": float(rmse.mean()),
@@ -100,7 +111,7 @@ def invert_and_report(
     return summary, f"{method_name} · val map {gidx}"
 
 
-def _plot(v_true: Tensor, v_hat: Tensor, mae: float, out_png: Path) -> None:
+def _plot(v_true: Tensor, v_hat: Tensor, mae: float, out_png: Path, banner: str) -> None:
     vt = v_true.cpu().numpy()
     vh = v_hat.detach().cpu().numpy()
     fig, ax = plt.subplots(1, 3, figsize=(9, 3.2))
@@ -114,6 +125,7 @@ def _plot(v_true: Tensor, v_hat: Tensor, mae: float, out_png: Path) -> None:
     ax[2].set_title("error (m/s)")
     ax[2].axis("off")
     fig.colorbar(im, ax=ax[2], fraction=0.046)
+    fig.suptitle(banner, fontsize=10)  # quality metrics + total solves, all in one place
     fig.tight_layout()
     fig.savefig(out_png, dpi=140, bbox_inches="tight")
     plt.close(fig)

@@ -203,6 +203,7 @@ def main(dcfg: DictConfig) -> None:
     n_solves = (
         0  # forward (PDE) solves consumed by the guided pass (matched-cost reporting)
     )
+    solves = {"n": 0}  # actual guided-pass solve count (FWI fills this; used for the figure banner)
 
     if cfg.prior.name == "none":
         # Classical / realistic FWI: no learned prior. Optimise the velocity map directly against
@@ -216,7 +217,6 @@ def main(dcfg: DictConfig) -> None:
         from physics_informed_flow_map.physics.forward import simulate
 
         realistic = cfg.method.name == "realistic_fwi"
-        solves = {"n": 0}  # actual total forward solves from the guided pass (the cost metric)
 
         def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
             run_it = guidance_strength != 0.0
@@ -405,6 +405,14 @@ def main(dcfg: DictConfig) -> None:
 
     out = run.ckpt_dir.parent / "inversion.png"
     obs_out = run.ckpt_dir.parent / "d_obs.png"
+
+    def solve_count() -> float:
+        # Total forward solves of the guided pass, resolved after it runs (FWI fills solves["n"];
+        # the other methods know it up front). unguided does no physics -> 0.
+        if cfg.method.name == "unguided":
+            return 0.0
+        return float(solves["n"]) if cfg.prior.name == "none" else float(n_solves)
+
     summary, caption = invert_and_report(
         invert_fn,
         dataset_cfg=cfg.dataset,
@@ -415,6 +423,7 @@ def main(dcfg: DictConfig) -> None:
         device=dev,
         out_png=out,
         out_obs_png=obs_out,
+        cost=solve_count,
     )
     if cfg.prior.name == "none":
         n_solves = solves["n"]  # actual forward solves from the guided FWI pass
