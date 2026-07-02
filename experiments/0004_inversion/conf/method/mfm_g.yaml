@@ -1,13 +1,17 @@
 name: mfm_g  # Meta Flow Maps gradient-based (IWAE) steering — paper Eq. 22 / prior-work.html 5.5
 drift_estimator: iwae  # backprop the data log-likelihood through the one-step posterior draws
 mc_samples: 4  # posterior draws v(0,1,eps|t_cond=t,x_cond=x_t) per step; wave solves/step scale with this
-# Likelihood temperature in r = -||F(v)-d||^2 / (2 sigma^2): sets how sharply the IWAE
-# log-mean-exp weights concentrate on the best draw. Scaled to the noiseless seismic-residual
-# magnitude (d_obs is (5,70,1001)); ~1000 keeps the weights from collapsing onto a single draw.
-sigma: 1000.0
+# Likelihood temperature in r = -||F(v)-d||^2 / (2 sigma^2): sets both the IWAE weight
+# concentration and (with renorm=false) the steering strength. With noiseless d_obs (inverse
+# crime) there is no principled value — the paper's GMM inverse problem uses the TRUE
+# measurement noise. Swept 2026-07-02 on map 6044: σ100 best (MAE 0.195/SSIM 0.431, misfit
+# driven to 7.7% ≈ flow_tilt's), σ1000 barely steers (misfit_ratio 0.73); σ300 in between.
+sigma: 100.0
 guidance_strength: 1.0  # MFM-G steering scale (0 => unguided base drift, the control)
-# Paper Eq. 38 steers with exactly sigma_t^2 * grad V_t — NO renormalisation. renorm=true instead
-# pins the steering to ||base_drift|| every step, killing the gradient's natural self-attenuation
-# (grad V_t -> 0 as data is fit) and over-fitting. False is faithful to the paper.
+# Theory (paper Eq. 38) steers with exactly sigma_t^2 * grad V_t, no renormalisation — but the
+# paper's ImageNet PRACTICE (F.3.6, Eq. 136) rescales the steering drift to ||base_drift||·λ, λ=1,
+# i.e. renorm=true. For FWI that pinning kills the gradient's self-attenuation and over-fits the
+# noiseless data hard (MAE 0.46 vs 0.20 on map 6044, and the same at eval scale — see JOURNAL
+# 2026-07-02 / results_steer_tune): keep false here.
 renorm: false
-sde: true  # SDE (Euler-Maruyama) sampler, as in the paper; false => ODE (Euler)
+sde: true  # SDE (Euler-Maruyama); the paper's GMM uses both, its ImageNet steering uses ODE (250 Euler steps)
