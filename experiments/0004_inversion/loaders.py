@@ -28,7 +28,7 @@ def _train_hint(prior: str) -> str:
     fw = {
         "flow_matching": "0001_flow_matching",
         "flow_map": "0002_flow_map",
-        "diffusion": "0003_baselines",
+        "diffusion": "0003_diffusion",
     }[prior]
     return (
         f"Train a prior first (uv run python experiments/{fw}/run.py experiment=openfwi) "

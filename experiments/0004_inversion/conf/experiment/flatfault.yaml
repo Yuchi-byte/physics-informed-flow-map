@@ -6,7 +6,7 @@
 n_samples: 4
 steps: 100
 ckpt: ""  # FlatFault_A 320/8 flow-map, e.g. runs/0002_flow_map/<ts>/checkpoints/step_119_ema.pt
-diff_ckpt: ""  # FlatFault_A 320/8 DiT diffusion, e.g. runs/0003_baselines/<ts>/checkpoints/step_119_ema.pt
+diff_ckpt: ""  # FlatFault_A 320/8 DiT diffusion, e.g. runs/0003_diffusion/<ts>/checkpoints/step_119_ema.pt
 model: { hidden: 320, depth: 8 }
 
 evaluation:

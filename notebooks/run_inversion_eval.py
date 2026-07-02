@@ -45,10 +45,10 @@ FLOWMAP_CKPT = os.environ.get(
     "FLOWMAP_CKPT", "runs/0002_flow_map/2026-06-26T20-57-58Z/checkpoints/step_99_ema.pt"
 )
 DIFF_UNET_CKPT = os.environ.get(
-    "DIFF_UNET_CKPT", "runs/0003_baselines/2026-06-26T11-22-31Z/checkpoints/step_99_ema.pt"
+    "DIFF_UNET_CKPT", "runs/0003_diffusion/2026-06-26T11-22-31Z/checkpoints/step_99_ema.pt"
 )
 DIFF_DIT_CKPT = os.environ.get(
-    "DIFF_DIT_CKPT", "runs/0003_baselines/2026-06-27T00-21-12Z/checkpoints/step_99_ema.pt"
+    "DIFF_DIT_CKPT", "runs/0003_diffusion/2026-06-27T00-21-12Z/checkpoints/step_99_ema.pt"
 )
 
 

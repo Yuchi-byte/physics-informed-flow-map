@@ -6,7 +6,7 @@
     uv run python experiments/0004_inversion/run.py --multirun prior=flow_map method=mfm_g,flow_tilt,unguided ckpt=<...>
 
 Loads a prior trained by one of the training frameworks (``0001_flow_matching``, ``0002_flow_map``,
-``0003_baselines`` — do not retrain here), simulates seismic data ``d`` from a held-out
+``0003_diffusion`` — do not retrain here), simulates seismic data ``d`` from a held-out
 (validation-split) OpenFWI map with the Deepwave forward operator, then steers the prior toward
 ``d`` to recover the velocity. The ``prior`` group picks the prior family/loader and the ``method``
 group picks the inference-time scheme:

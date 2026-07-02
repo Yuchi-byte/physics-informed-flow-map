@@ -1,8 +1,8 @@
 """Train an unconditional diffusion prior (the camp-A baseline) on swappable image datasets.
 
-    uv run python experiments/0003_baselines/run.py experiment=smoke
-    uv run python experiments/0003_baselines/run.py experiment=openfwi
-    uv run python experiments/0003_baselines/run.py experiment=openfwi_full
+    uv run python experiments/0003_diffusion/run.py experiment=smoke
+    uv run python experiments/0003_diffusion/run.py experiment=openfwi
+    uv run python experiments/0003_diffusion/run.py experiment=openfwi_full
 
 Mirrors the 0001 flow-matching framework (same Hydra config layout, same harness, same
 held-out datasets + val-loss eval), swapping the flow prior for a diffusers DDPM prior.
@@ -34,7 +34,7 @@ from physics_informed_flow_map.flow_matching.datasets import (
     MNISTDatasetConfig,
 )
 
-EXPERIMENT = "0003_baselines"
+EXPERIMENT = "0003_diffusion"
 
 
 class EmaConfig(Config):

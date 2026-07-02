@@ -34,7 +34,7 @@ FM = "runs/0001_flow_matching/2026-06-26T23-40-26Z/checkpoints/step_99_ema.pt"
 FLOWMAP_T = os.environ.get(
     "FLOWMAP_CKPT", "runs/0002_flow_map/2026-06-27T01-44-09Z/checkpoints/step_99_ema.pt"
 )
-DIFF_DIT = "runs/0003_baselines/2026-06-27T00-21-12Z/checkpoints/step_99_ema.pt"
+DIFF_DIT = "runs/0003_diffusion/2026-06-27T00-21-12Z/checkpoints/step_99_ema.pt"
 
 
 def _root() -> Path:

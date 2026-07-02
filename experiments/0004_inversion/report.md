@@ -5,7 +5,7 @@ Status: open
 ## Hypothesis
 
 A prior trained offline by one of the training frameworks (`0001_flow_matching`,
-`0002_flow_map`, `0003_baselines`) can be steered at inference by the wave equation to
+`0002_flow_map`, `0003_diffusion`) can be steered at inference by the wave equation to
 recover a held-out OpenFWI velocity map, and the inference scheme — flow tilting (DPS
 Tweedie), Meta-Flow-Map steering (the flow map's own posterior), or diffusion DPS — is the
 lever worth comparing. All physics stays at inference; no prior is retrained here.
