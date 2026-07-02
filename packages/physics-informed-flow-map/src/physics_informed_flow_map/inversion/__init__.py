@@ -6,6 +6,7 @@ from .base import InversionModule, InversionResult
 from .bridge import held_out_targets, mps_to_norm, seismic_forward, to_mps_native
 from .evaluate import Evaluator, InversionStats, score_target, ssim
 from .flowmap_steer import FlowMapSteerModule, make_misfit_reward
+from .fmrg import FmrgEModule, fmrg_e_sample
 from .modules import (
     ClassicalFWIModule,
     DiffusionDPSModule,
@@ -26,6 +27,8 @@ __all__ = [
     "REDDiffEqModule",
     "FlowMapSteerModule",
     "make_misfit_reward",
+    "FmrgEModule",
+    "fmrg_e_sample",
     "held_out_targets",
     "mps_to_norm",
     "seismic_forward",

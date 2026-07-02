@@ -43,6 +43,7 @@ from physics_informed_flow_map.flow_matching.datasets import (
 )
 from physics_informed_flow_map.inversion import FlowMapSteerModule
 from physics_informed_flow_map.inversion.bridge import mps_to_norm, seismic_forward
+from physics_informed_flow_map.inversion.fmrg import fmrg_e_sample
 from physics_informed_flow_map.inversion.single_target import (
     Inverter,
     invert_and_report,
@@ -63,7 +64,7 @@ EXPERIMENT = "0004_inversion"
 # prior family -> the inference-time methods it supports (the validated compatibility matrix).
 _COMPAT: dict[str, set[str]] = {
     "flow_matching": {"unguided", "flow_tilt"},
-    "flow_map": {"unguided", "flow_tilt", "mfm_g", "mfm_gf"},
+    "flow_map": {"unguided", "flow_tilt", "mfm_g", "mfm_gf", "fmrg_e"},
     "diffusion": {"unguided", "dps", "red_diffeq"},
     "none": {"classical_fwi", "realistic_fwi"},  # no learned prior: the FWI baselines
 }
@@ -119,6 +120,8 @@ class MethodConfig(Config):
     iters: int = Field(
         0, ge=0
     )  # RED-DiffEq optimisation steps; 0 => use the global `steps`
+    # FMRG-E knobs (flow_map prior only; ignored by the other methods).
+    n_opt: int = Field(1, gt=0)  # inner gradient steps in x1-space per outer Euler step
     # Classical / realistic FWI knobs (prior=none; ignored by the other methods).
     lr: float = Field(0.02, gt=0.0)  # step size (Adam ~0.02; L-BFGS ~1.0)
     reg: str = "tikhonov"  # roughness penalty: tikhonov | tv
@@ -289,6 +292,39 @@ def main(dcfg: DictConfig) -> None:
             n_solves = (
                 cfg.steps * cfg.method.mc_samples * n
             )  # mc posterior solves per step
+        elif cfg.method.name == "fmrg_e":
+            # FMRG-E: n_opt inner gradient steps in x1-space per outer Euler step.
+            # Uses marginal velocity v(t,t,xt,0,0) — explicit zeros so intent is clear.
+            x0 = torch.randn(n, channels, size, size, device=dev)
+            t_cond = torch.zeros(n, device=dev)
+            x_cond = torch.zeros(n, channels, size, size, device=dev)
+
+            def velocity_fn(x: torch.Tensor, t: float) -> torch.Tensor:
+                tb = torch.full((x.shape[0],), t, device=dev)
+                return cast(torch.Tensor, prior.v(tb, tb, x, t_cond, x_cond))
+
+            def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
+                step_cb = None
+                if guidance_strength != 0.0 and cfg.n_frames > 0:
+                    step_cb = run.make_step_saver(
+                        f"fmrg_e_g{guidance_strength:.2g}_n{cfg.method.n_opt}",
+                        lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
+                        total_steps=cfg.steps,
+                        n_frames=cfg.n_frames,
+                    )
+                return fmrg_e_sample(
+                    velocity_fn,
+                    x0,
+                    seismic_forward,
+                    d_obs,
+                    sampler_steps=cfg.steps,
+                    guidance_strength=guidance_strength,
+                    n_opt=cfg.method.n_opt,
+                    normalize_grad=cfg.method.normalize_grad,
+                    on_step=step_cb,
+                )
+
+            n_solves = cfg.steps * cfg.method.n_opt * n  # n_opt wave solves per step per sample
         else:
             # DPS Tweedie baseline (flow_tilt) / unguided control: tilt from a fixed noise context
             # x0 (reused guided/unguided), using v(t,t,x|noise) at t_cond=0.
