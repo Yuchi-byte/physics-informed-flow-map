@@ -14,7 +14,7 @@ all reproduce the same ``d_obs`` almost perfectly — the fundamental ill-posedn
 problem. This is exactly the failure a learned prior (experiments 0001/0002) is meant to fix.
 
 Run from the repo root (uses the GPU if present):
-    uv run python data_visualisation/classical_fwi_inversion.py
+    uv run python FWI_problem_exploration/classical_fwi_inversion.py
 """
 import os
 

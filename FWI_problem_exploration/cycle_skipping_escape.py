@@ -23,7 +23,7 @@ All three see the same d_obs, same starting model, same optimiser. The figure co
 recovered maps, MAE to truth, and the far-offset trace before/after.
 
 Run from the repo root (uses the GPU if present):
-    uv run python data_visualisation/cycle_skipping_escape.py
+    uv run python FWI_problem_exploration/cycle_skipping_escape.py
 """
 import os
 

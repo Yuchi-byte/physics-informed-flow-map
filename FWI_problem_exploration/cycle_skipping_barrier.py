@@ -28,7 +28,7 @@ script interrogates that trapped point directly:
      while shift-aware ambiguity (envelope/OT/AWI) can.
 
 Run from the repo root (uses the GPU if present):
-    uv run python data_visualisation/cycle_skipping_barrier.py
+    uv run python FWI_problem_exploration/cycle_skipping_barrier.py
 """
 import os
 

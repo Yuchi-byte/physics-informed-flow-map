@@ -11,7 +11,7 @@ seismic_spectra.png shows the same data in the frequency domain:
   C. f-k spectrum (2D FFT over time x receiver) — apparent velocities / moveout in f-k space
 
 Run from the repo root:
-    uv run python data_visualisation/viz_seismic_displays.py
+    uv run python FWI_problem_exploration/viz_seismic_displays.py
 """
 import os
 import numpy as np

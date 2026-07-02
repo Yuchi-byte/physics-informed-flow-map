@@ -25,7 +25,7 @@ target_index 0 -> global 6044). Three questions, three figures:
      aware metric (OT, AWI, envelope) is the principled version of "ambiguous fitting".
 
 Run from the repo root (uses the GPU if present):
-    uv run python data_visualisation/cycle_skipping_landscape.py
+    uv run python FWI_problem_exploration/cycle_skipping_landscape.py
 """
 import os
 

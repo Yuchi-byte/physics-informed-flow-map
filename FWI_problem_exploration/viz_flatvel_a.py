@@ -1,7 +1,7 @@
 """Visualise one FlatVel_A sample: all 5 seismic source gathers + velocity map.
 
 Run from the repo root:
-    uv run python data_visualisation/viz_flatvel_a.py
+    uv run python FWI_problem_exploration/viz_flatvel_a.py
 """
 import os
 import numpy as np
