@@ -11,6 +11,7 @@ from .modules import (
     ClassicalFWIModule,
     DiffusionDPSModule,
     FlowTiltModule,
+    RealisticFWIModule,
     REDDiffEqModule,
 )
 
@@ -24,6 +25,7 @@ __all__ = [
     "FlowTiltModule",
     "DiffusionDPSModule",
     "ClassicalFWIModule",
+    "RealisticFWIModule",
     "REDDiffEqModule",
     "FlowMapSteerModule",
     "make_misfit_reward",

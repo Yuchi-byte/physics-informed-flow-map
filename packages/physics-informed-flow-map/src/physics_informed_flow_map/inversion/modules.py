@@ -13,7 +13,7 @@ from mfm.models.base_model import BaseModel
 from torch import Tensor, nn
 
 from ..baselines import dps_sample, red_diffeq_sample
-from ..physics.classical import regularized_fwi
+from ..physics.classical import multiscale_fwi, regularized_fwi
 from ..physics.forward import simulate
 from ..physics.tilt import guided_sample
 from .base import InversionResult
@@ -79,6 +79,7 @@ class ClassicalFWIModule:
         lr: float,
         n_samples: int,
         device: torch.device,
+        init: str = "smooth",
         native: int = NATIVE,
     ) -> None:
         self.name = f"classical_{reg}·w{reg_weight:g}"
@@ -88,6 +89,7 @@ class ClassicalFWIModule:
         self.lr = lr
         self.n_samples = n_samples
         self.device = device
+        self.init = init
         self.native = native
 
     def invert(self, d_obs: Tensor) -> InversionResult:
@@ -100,6 +102,52 @@ class ClassicalFWIModule:
             lr=self.lr,
             reg=self.reg,
             reg_weight=self.reg_weight,
+            init=self.init,
+            device=self.device,
+        )
+        return InversionResult(v_mps, n_solves=n_solves)
+
+
+class RealisticFWIModule:
+    """Properly-run classical FWI (no learned prior) — smooth 1-D start, multiscale frequency
+    continuation, regularisation, L-BFGS with line search; steered by the same wave equation."""
+
+    def __init__(
+        self,
+        *,
+        freqs_hz: list[float],
+        iters_per_stage: int,
+        lr: float,
+        reg: str,
+        reg_weight: float,
+        optimizer: str,
+        n_samples: int,
+        device: torch.device,
+        native: int = NATIVE,
+    ) -> None:
+        self.name = f"realistic_{optimizer}·w{reg_weight:g}"
+        self.freqs_hz = freqs_hz
+        self.iters_per_stage = iters_per_stage
+        self.lr = lr
+        self.reg = reg
+        self.reg_weight = reg_weight
+        self.optimizer = optimizer
+        self.n_samples = n_samples
+        self.device = device
+        self.native = native
+
+    def invert(self, d_obs: Tensor) -> InversionResult:
+        v_mps, n_solves = multiscale_fwi(
+            simulate,
+            d_obs,
+            shape=(self.native, self.native),
+            n_samples=self.n_samples,
+            freqs_hz=self.freqs_hz,
+            iters_per_stage=self.iters_per_stage,
+            lr=self.lr,
+            reg=self.reg,
+            reg_weight=self.reg_weight,
+            optimizer=self.optimizer,
             device=self.device,
         )
         return InversionResult(v_mps, n_solves=n_solves)

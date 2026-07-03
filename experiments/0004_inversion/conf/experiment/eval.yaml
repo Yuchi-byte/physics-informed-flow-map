@@ -29,3 +29,9 @@ evaluation:
       prior: { name: diffusion, denoiser_kind: unet }
       ckpt: ""
       method: { name: dps, guidance_strength: 0.3 }
+    - label: classical·tv
+      prior: { name: none }
+      method: { name: classical_fwi, init: smooth, reg: tv, reg_weight: 0.001 }
+    - label: realistic·lbfgs
+      prior: { name: none }
+      method: { name: realistic_fwi, lr: 1.0, reg_weight: 0.0002 }

@@ -25,11 +25,13 @@ from omegaconf import DictConfig
 
 from physics_informed_flow_map.experiment import start_run
 from physics_informed_flow_map.inversion import (
+    ClassicalFWIModule,
     DiffusionDPSModule,
     Evaluator,
     FlowMapSteerModule,
     FlowTiltModule,
     InversionModule,
+    RealisticFWIModule,
     REDDiffEqModule,
 )
 
@@ -65,7 +67,32 @@ def build_module(
     shape = (1, resolution, resolution)
     g = entry.method.guidance_strength
 
-    if entry.prior.name in FLOW_PRIORS:
+    if entry.prior.name == "none":
+        # Prior-free FWI baselines: optimise the velocity map directly against the data misfit
+        # at the forward operator's native grid. g=0 => the starting model (0 solves), matching
+        # run.py's control semantics.
+        if entry.method.name == "realistic_fwi":
+            module: InversionModule = RealisticFWIModule(
+                freqs_hz=entry.method.freqs_hz,
+                iters_per_stage=entry.method.iters_per_stage if g != 0.0 else 0,
+                lr=entry.method.lr,
+                reg=entry.method.reg,
+                reg_weight=entry.method.reg_weight,
+                optimizer=entry.method.optimizer,
+                n_samples=n_samples,
+                device=device,
+            )
+        else:  # classical_fwi
+            module = ClassicalFWIModule(
+                reg=entry.method.reg,
+                reg_weight=entry.method.reg_weight,
+                iters=steps if g != 0.0 else 0,
+                lr=entry.method.lr,
+                n_samples=n_samples,
+                device=device,
+                init=entry.method.init,
+            )
+    elif entry.prior.name in FLOW_PRIORS:
         prior = load_flow_prior(
             shape,
             hidden=entry.model.hidden,
@@ -77,7 +104,7 @@ def build_module(
             prior=entry.prior.name,
         )
         if entry.method.name in _MFM_METHODS:
-            module: InversionModule = FlowMapSteerModule(
+            module = FlowMapSteerModule(
                 prior,
                 drift_estimator=entry.method.drift_estimator if g != 0.0 else "base",
                 mc_samples=entry.method.mc_samples,
