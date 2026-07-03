@@ -15,6 +15,8 @@
 # download mfm-xl2.pt 
 # uv run hf download adh1s/mfm --include "mfm-xl2.pt" --local-dir ckpts
 
+
+
 # download the models before running the sample_steered.py script. This will ensure that the models are cached and ready to use when the script is run. So the script doesn't take too long to run. 
 from imscore.hps.model import HPSv2
 from imscore.imreward.model import ImageReward

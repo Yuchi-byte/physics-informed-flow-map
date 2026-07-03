@@ -22,6 +22,13 @@ supplies how to load each prior and how to invert. ``eval.py`` is the multi-map 
 
 Caveat: ``d_obs`` comes from the same noiseless forward operator used inside the guidance term
 (an "inverse crime"), so recovery is optimistic.
+
+for fmrg: 
+To run a real inversion:
+uv run python experiments/0004_inversion/run.py prior=flow_map method=fmrg_e ckpt=<path> steps=200
+
+To sweep n_opt or guidance_strength:
+uv run python experiments/0004_inversion/run.py prior=flow_map method=fmrg_e ckpt=<path> method.n_opt=5 method.guidance_strength=0.5
 """
 
 from __future__ import annotations
