@@ -26,6 +26,7 @@ from torch import nn
 from physics_informed_flow_map.baselines import (
     build_denoiser,
     ddpm_sample,
+    ddpm_sample_trajectory,
     train_diffusion_prior,
 )
 from physics_informed_flow_map.experiment import Config, start_run
@@ -77,6 +78,8 @@ TrainingConfig.model_rebuild()
 
 class SamplingConfig(Config):
     n_eval_viz: int = Field(64, gt=0)  # samples drawn for each viz (per-epoch + final)
+    n_traj_viz: int = Field(4, gt=0)   # samples shown in the trajectory grid
+    traj_every_epochs: int = Field(20, gt=0)  # save a trajectory viz every N eval epochs
 
 
 class DiffusionBaselineConfig(Config):
@@ -180,6 +183,26 @@ def main(dcfg: DictConfig) -> None:
         p = run.ckpt_dir.parent / f"samples_epoch{epoch}.png"
         cfg.dataset.visualize(s, p)
         run.log_image("samples", p, caption=f"epoch {epoch + 1}")
+        if (epoch + 1) % cfg.sampling.traj_every_epochs == 0:
+            states, x0hats = ddpm_sample_trajectory(
+                model,
+                scheduler,
+                shape,
+                n_samples=cfg.sampling.n_traj_viz,
+                num_steps=cfg.diffusion.num_sample_steps,
+                device=device,
+                generator=torch.Generator(device=device).manual_seed(cfg.seed),
+            )
+            # Two rows per sample: the noisy running state x_t, then the Tweedie clean
+            # estimate x0hat at the same step. [n_frames, B, 2, ...] -> [n_frames, 2B, ...]
+            frames = torch.stack([states, x0hats], dim=2).flatten(1, 2)
+            pt = run.ckpt_dir.parent / f"trajectory_epoch{epoch}.png"
+            cfg.dataset.visualize_trajectory(frames, pt)
+            run.log_image(
+                "trajectory",
+                pt,
+                caption=f"epoch {epoch + 1} reverse-DDPM trajectory (row pairs: x_t, x0hat)",
+            )
         return compute_val_loss(model)
 
     on_checkpoint = run.checkpoint_callback(
