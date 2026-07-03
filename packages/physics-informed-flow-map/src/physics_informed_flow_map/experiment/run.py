@@ -148,7 +148,13 @@ class Run:
         ``periodic`` (every ``ckpt_every_epochs`` epochs). An EMA model, when present, is
         saved/uploaded alongside under ``<artifact_name>-ema``. Shared by every framework
         so the cadence/alias logic stays in one place.
+
+        Local checkpoints rotate: each save deletes the superseded periodic pair (and, on
+        a new best, the superseded best pair), so disk holds at most the latest periodic,
+        the latest best, and the final pair. The full version history lives in the wandb
+        artifacts.
         """
+        rotate: dict[str, list[Path]] = {"periodic": [], "best": []}
 
         def on_checkpoint(
             model: torch.nn.Module,
@@ -170,6 +176,7 @@ class Run:
             )
             if aliases:
                 self.log_artifact(path, name=artifact_name, aliases=aliases)
+            paths = [path]
             if ema_model is not None:
                 ema_path = self.save_checkpoint(
                     ema_model,
@@ -183,6 +190,17 @@ class Run:
                     self.log_artifact(
                         ema_path, name=f"{artifact_name}-ema", aliases=aliases
                     )
+                paths.append(ema_path)
+
+            # Rotate only after the new save landed; a best/final save at the same epoch
+            # reuses the periodic save's filename, so never unlink a just-written path.
+            stale = rotate["periodic"] + (rotate["best"] if is_best else [])
+            for old in stale:
+                if old not in paths:
+                    old.unlink(missing_ok=True)
+            rotate["periodic"] = [] if (is_best or is_final) else paths
+            if is_best:
+                rotate["best"] = paths
 
         return on_checkpoint
 
