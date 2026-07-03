@@ -106,10 +106,11 @@ class MethodConfig(Config):
     # 0 => unguided (the control invert_and_report runs for the misfit ratio).
     guidance_strength: float = 1.0
     normalize_grad: bool = True  # flow_tilt/dps only: unit-normalise the DPS gradient
-    # MFM-G / MFM-GF knobs (ignored by the other methods):
-    drift_estimator: str = (
-        "iwae"  # iwae = MFM-G (gradient); sne = MFM-GF (gradient-free)
-    )
+    # How the drift toward the data is estimated. "tweedie" documents the single-point Tweedie
+    # estimate hard-wired into flow_tilt/dps (those code paths never read this field); only
+    # mfm_g/mfm_gf consume it, and must override it with an estimator mfm.utils.steering
+    # accepts: iwae = MFM-G (gradient), sne = MFM-GF (gradient-free), dps = Tweedie baseline.
+    drift_estimator: str = "tweedie"
     mc_samples: int = Field(
         4, gt=0
     )  # posterior draws/step; wave solves/step scale with it
@@ -139,6 +140,21 @@ class MethodConfig(Config):
     freqs_hz: list[float] = Field(  # realistic_fwi: multiscale cutoffs (Hz), ascending
         default_factory=lambda: [4.0, 8.0, 15.0]
     )
+
+    @model_validator(mode="after")
+    def _check_drift_estimator(self) -> "MethodConfig":
+        # mfm.utils.steering raises on unknown estimators only deep inside sampling; catch a
+        # forgotten override (e.g. the documentation-only "tweedie" default) at config time.
+        if self.name in _MFM_METHODS and self.drift_estimator not in {
+            "dps",
+            "iwae",
+            "sne",
+        }:
+            raise ValueError(
+                f"method '{self.name}' needs drift_estimator dps | iwae | sne, "
+                f"got '{self.drift_estimator}'"
+            )
+        return self
 
 
 class ModelConfig(Config):
