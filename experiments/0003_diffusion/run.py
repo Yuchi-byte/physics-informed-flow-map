@@ -34,6 +34,7 @@ from physics_informed_flow_map.flow_matching.datasets import (
     DatasetConfig,
     MNISTDatasetConfig,
 )
+from physics_informed_flow_map.flow_matching.models import count_parameters
 
 EXPERIMENT = "0003_diffusion"
 
@@ -126,6 +127,13 @@ def main(dcfg: DictConfig) -> None:
         patch_size=cfg.model.patch_size,
         num_train_timesteps=cfg.diffusion.num_train_timesteps,
     ).to(device)
+    n_params, n_trainable = count_parameters(denoiser)
+    print(
+        f"[{EXPERIMENT}] model params: {n_params:,} total ({n_trainable:,} trainable)"
+    )
+    run.update_config(
+        **{"model/num_params": n_params, "model/num_trainable_params": n_trainable}
+    )
     scheduler = DDPMScheduler(num_train_timesteps=cfg.diffusion.num_train_timesteps)  # type: ignore[no-untyped-call]  # diffusers __init__ is untyped
     num_timesteps = cfg.diffusion.num_train_timesteps
 
