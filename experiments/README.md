@@ -75,6 +75,11 @@ uv run python experiments/0001_flow_matching/run.py experiment=openfwi
 - Record findings in `report.md` (cites run directories) and mirror the one-line
   verdict to `JOURNAL.md`. Don't journal in package docs.
 
+## Unconditional drift
+ODE vs SDE for the unconditional drift: Flow-matching / SI training is simulation-free: the loss regresses v_θ against the analytic interpolant velocity at random t — no trajectory is ever integrated during training. ODE-vs-SDE is purely a sampling-time choice over the same learned velocity field.
+- ODE: integrate dx/dt = v(t,t,x) — the deterministic probability-flow transport (get_unconditional_drift_ode).
+- SDE: Euler–Maruyama with drift 2v − x/t and noise scale σ_t² = 2(1/t − 1) (get_unconditional_drift_sde). For the linear interpolant, the score is recoverable from the velocity, so this SDE shares the ODE's marginals — same distribution, stochastic paths.
+
 ## Inversion methods (`0004_inversion`): prior × steering
 
 Every inverter in `0004` is one **prior** (what structure we assume) crossed with one
