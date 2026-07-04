@@ -21,6 +21,7 @@ from torch import Tensor
 
 from ..flow_matching.datasets import OpenFWIDatasetConfig
 from ..physics.forward import simulate
+from ..physics.misfit import MisfitFn
 from .bridge import held_out_targets, mps_to_norm, seismic_forward, to_mps_native
 from .evaluate import ssim
 
@@ -51,6 +52,7 @@ def invert_and_report(
     out_png: Path,
     out_obs_png: Path | None = None,
     cost: Callable[[], float] | None = None,
+    misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
 ) -> tuple[dict[str, float], str]:
     """Run guided + unguided inversion on a held-out map, score it, and write the figure.
 
@@ -63,6 +65,11 @@ def invert_and_report(
 
     ``cost`` (called after the guided pass) supplies the total forward-solve count for the figure
     banner, so the inference cost is visible next to the quality metrics.
+
+    ``misfit_factory`` (a non-L2 guidance misfit built from ``d_obs``, see ``physics.misfit``)
+    only *adds* ``inv/guidance_misfit_{guided,unguided}`` to the summary — the scored metrics
+    (MAE/RMSE/SSIM and the L2 misfit ratio) never change with the guidance misfit, so runs stay
+    comparable across ``method.misfit`` settings.
     """
     gidx, v_true, d_obs = load_target(dataset_cfg, target_index, device)
     print(f"target: val map global index {gidx} (native {tuple(v_true.shape)})")
@@ -80,8 +87,11 @@ def invert_and_report(
     mae = (vh - vt).abs().mean(dim=(1, 2))  # (n,) per-sample, normalised
     rmse = ((vh - vt) ** 2).mean(dim=(1, 2)).sqrt()
     ssim_mean = sum(ssim(vh[i], vt) for i in range(n)) / n
-    dm_g = ((seismic_forward(guided) - d_obs) ** 2).sum(dim=(1, 2, 3))
-    dm_u = ((seismic_forward(unguided) - d_obs) ** 2).sum(dim=(1, 2, 3))
+    with torch.no_grad():
+        pred_g = seismic_forward(guided)
+        pred_u = pred_g if gs == 0.0 else seismic_forward(unguided)
+    dm_g = ((pred_g - d_obs) ** 2).sum(dim=(1, 2, 3))
+    dm_u = ((pred_u - d_obs) ** 2).sum(dim=(1, 2, 3))
     ratio = float(dm_g.mean() / dm_u.mean())
 
     print(f"method={method_name}  guidance={gs:g}  steps={steps}  n={n}")
@@ -108,6 +118,11 @@ def invert_and_report(
         "inv/misfit_ratio": ratio,
         "inv/target_index": gidx,
     }
+    if misfit_factory is not None:
+        with torch.no_grad():
+            gm = misfit_factory(d_obs)
+            summary["inv/guidance_misfit_guided"] = float(gm(pred_g).mean())
+            summary["inv/guidance_misfit_unguided"] = float(gm(pred_u).mean())
     return summary, f"{method_name} · val map {gidx}"
 
 

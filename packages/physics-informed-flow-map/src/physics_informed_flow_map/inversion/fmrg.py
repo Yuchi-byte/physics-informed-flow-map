@@ -33,6 +33,7 @@ import torch
 from mfm.models.base_model import BaseModel
 from torch import Tensor
 
+from ..physics.misfit import MisfitFn
 from .base import InversionResult
 from .bridge import seismic_forward, to_mps_native
 
@@ -47,6 +48,7 @@ def fmrg_e_sample(
     guidance_strength: float,
     n_opt: int = 1,
     normalize_grad: bool = False,
+    misfit_fn: MisfitFn | None = None,
     on_step: Callable[..., None] | None = None,
 ) -> Tensor:
     """FMRG-E Euler sampling of a flow prior toward an observation d_obs.
@@ -64,6 +66,9 @@ def fmrg_e_sample(
         n_opt: inner gradient steps per outer step. 1 = single-step (DPS + wt).
         normalize_grad: rescale each sample's inner gradient to the velocity norm before
             applying guidance_strength (so the step size is geometry-independent).
+        misfit_fn: guidance data-misfit ``pred -> (B,)`` (see ``physics.misfit``);
+            ``None`` keeps the historical pointwise L2 against ``d_obs``. The
+            ``data_fidelity`` diagnostic stays L2 either way so runs remain comparable.
         on_step: optional callback (step, x1_opt, data_fidelity=..., correction_norm=...)
             called every step for trajectory logging and visualisation.
 
@@ -72,6 +77,11 @@ def fmrg_e_sample(
     """
     x = x0
     dt = 1.0 / sampler_steps
+
+    def data_loss(pred: Tensor) -> Tensor:
+        if misfit_fn is not None:
+            return misfit_fn(pred).sum()
+        return ((pred - d_obs) ** 2).sum()
 
     for i in range(sampler_steps):
         t_cur = i * dt
@@ -85,7 +95,7 @@ def fmrg_e_sample(
             x1_opt = x1_hat.clone().requires_grad_(True)
 
             for _ in range(n_opt):
-                loss = ((forward_fn(x1_opt) - d_obs) ** 2).sum()
+                loss = data_loss(forward_fn(x1_opt))
                 (grad,) = torch.autograd.grad(loss, x1_opt)
                 if normalize_grad:
                     v_norm = v.flatten(1).norm(dim=1).clamp_min(1e-12)
@@ -137,6 +147,7 @@ class FmrgEModule:
         device: torch.device,
         resolution: int = 64,
         normalize_grad: bool = False,
+        misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
     ) -> None:
         self.name = f"fmrg_e·g{guidance:g}·n{n_opt}"
         self.prior = prior
@@ -147,6 +158,8 @@ class FmrgEModule:
         self.device = device
         self.resolution = resolution
         self.normalize_grad = normalize_grad
+        # d_obs arrives per-invert, so the misfit (which precomputes from it) is built lazily.
+        self.misfit_factory = misfit_factory
 
     def invert(self, d_obs: Tensor) -> InversionResult:
         b = self.n_samples
@@ -167,6 +180,7 @@ class FmrgEModule:
             guidance_strength=self.guidance,
             n_opt=self.n_opt,
             normalize_grad=self.normalize_grad,
+            misfit_fn=self.misfit_factory(d_obs) if self.misfit_factory else None,
         )
         return InversionResult(
             to_mps_native(samples),

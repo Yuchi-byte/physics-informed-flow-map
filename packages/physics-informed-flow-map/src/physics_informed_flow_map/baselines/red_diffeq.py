@@ -22,6 +22,7 @@ from diffusers import DDPMScheduler
 from torch import Tensor, nn
 
 from ..physics.classical import linear_gradient_init
+from ..physics.misfit import MisfitFn
 
 
 def red_diffeq_sample(
@@ -38,6 +39,7 @@ def red_diffeq_sample(
     t_denoise: int,
     device: torch.device,
     normalize_grad: bool = True,
+    misfit_fn: MisfitFn | None = None,
     on_step: Callable[..., None] | None = None,
 ) -> Tensor:
     """RED-DiffEq optimization; returns ``(n_samples, *shape)`` normalized models in ``[-1, 1]``.
@@ -62,6 +64,9 @@ def red_diffeq_sample(
         iters: optimization steps. ``t_denoise``: the fixed DDPM noise level for the RED denoiser.
         eta_data / eta_reg: data and prior step sizes. device: device to optimize on.
         normalize_grad: unit-normalize each sample's data gradient before stepping.
+        misfit_fn: guidance data-misfit ``pred -> (B,)`` (see ``physics.misfit``);
+            ``None`` keeps the historical pointwise L2 against ``d_obs``. The
+            ``data_fidelity`` diagnostic stays L2 either way so runs remain comparable.
 
     Returns:
         ``(n_samples, *shape)`` normalized models in ``[-1, 1]``.
@@ -74,7 +79,12 @@ def red_diffeq_sample(
 
     for i in range(iters):
         x_g = x.detach().requires_grad_(True)
-        loss = ((forward_fn(x_g) - d_obs) ** 2).sum()
+        pred = forward_fn(x_g)
+        loss = (
+            misfit_fn(pred).sum()
+            if misfit_fn is not None
+            else ((pred - d_obs) ** 2).sum()
+        )
         (grad,) = torch.autograd.grad(loss, x_g)
         if normalize_grad:
             norm = grad.flatten(1).norm(dim=1).clamp_min(1e-12)

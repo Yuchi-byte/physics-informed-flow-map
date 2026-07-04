@@ -55,6 +55,7 @@ from physics_informed_flow_map.inversion.single_target import (
     Inverter,
     invert_and_report,
 )
+from physics_informed_flow_map.physics.misfit import MISFITS, make_misfit
 from physics_informed_flow_map.physics.tilt import guided_sample
 
 import sys
@@ -106,6 +107,11 @@ class MethodConfig(Config):
     # 0 => unguided (the control invert_and_report runs for the misfit ratio).
     guidance_strength: float = 1.0
     normalize_grad: bool = True  # flow_tilt/dps only: unit-normalise the DPS gradient
+    # Guidance data-misfit: l2 (pointwise, the Gaussian log-likelihood) | ot (Peng et al.
+    # 2026 weighted+normalized trace-wise Wasserstein-2 potential — anti-cycle-skipping,
+    # amplitude-balanced; see physics.misfit). Evaluation metrics stay L2 regardless.
+    misfit: str = "l2"
+    ot_k: float = Field(100.0, ge=0.0)  # ot only: bounded amplitude-weighting strength
     # How the drift toward the data is estimated. "tweedie" documents the single-point Tweedie
     # estimate hard-wired into flow_tilt/dps (those code paths never read this field); only
     # mfm_g/mfm_gf consume it, and must override it with an estimator mfm.utils.steering
@@ -153,6 +159,15 @@ class MethodConfig(Config):
             raise ValueError(
                 f"method '{self.name}' needs drift_estimator dps | iwae | sne, "
                 f"got '{self.drift_estimator}'"
+            )
+        if self.misfit not in MISFITS:
+            raise ValueError(
+                f"unknown misfit '{self.misfit}' ({' | '.join(MISFITS)})"
+            )
+        if self.misfit != "l2" and self.name in {"classical_fwi", "realistic_fwi"}:
+            raise ValueError(
+                f"misfit '{self.misfit}' is not threaded through the prior-free FWI "
+                "baselines yet — they hard-code the (frequency-filtered) L2 objective"
             )
         return self
 
@@ -222,7 +237,18 @@ def main(dcfg: DictConfig) -> None:
 
     run_dir = Path(HydraConfig.get().runtime.output_dir)
     name = f"invert-{cfg.prior.name}-{cfg.method.name}"
+    if cfg.method.misfit != "l2":
+        name += f"-{cfg.method.misfit}"
     run = start_run(EXPERIMENT, run_dir, cfg.dump(), name=name)
+
+    # Guidance data-misfit, built lazily from d_obs (the OT potential precomputes its
+    # weights/CDFs from the observation). None keeps the samplers' hard-wired L2 path
+    # byte-identical for existing runs.
+    misfit_factory = (
+        None
+        if cfg.method.misfit == "l2"
+        else lambda d: make_misfit(cfg.method.misfit, d, ot_k=cfg.method.ot_k)
+    )
 
     channels, size, _ = cfg.dataset.shape
     n = cfg.n_samples
@@ -309,6 +335,7 @@ def main(dcfg: DictConfig) -> None:
                     renorm=cfg.method.renorm,
                     sde=cfg.method.sde,
                     resolution=size,
+                    misfit_factory=misfit_factory,
                 )
                 return mps_to_norm(module.invert(d_obs).v_hat)[:, None]
 
@@ -344,6 +371,7 @@ def main(dcfg: DictConfig) -> None:
                     guidance_strength=guidance_strength,
                     n_opt=cfg.method.n_opt,
                     normalize_grad=cfg.method.normalize_grad,
+                    misfit_fn=misfit_factory(d_obs) if misfit_factory else None,
                     on_step=step_cb,
                 )
 
@@ -375,6 +403,7 @@ def main(dcfg: DictConfig) -> None:
                     sampler_steps=cfg.steps,
                     guidance_strength=guidance_strength,
                     normalize_grad=cfg.method.normalize_grad,
+                    misfit_fn=misfit_factory(d_obs) if misfit_factory else None,
                     on_step=step_cb,
                 )
 
@@ -419,6 +448,7 @@ def main(dcfg: DictConfig) -> None:
                     t_denoise=cfg.method.t_denoise,
                     device=dev,
                     normalize_grad=cfg.method.normalize_grad,
+                    misfit_fn=misfit_factory(d_obs) if misfit_factory else None,
                     on_step=step_cb,
                 )
         else:  # dps / unguided
@@ -443,6 +473,7 @@ def main(dcfg: DictConfig) -> None:
                     guidance_strength=guidance_strength,
                     device=dev,
                     normalize_grad=cfg.method.normalize_grad,
+                    misfit_fn=misfit_factory(d_obs) if misfit_factory else None,
                     on_step=step_cb,
                 )
 
@@ -483,6 +514,7 @@ def main(dcfg: DictConfig) -> None:
         out_png=out,
         out_obs_png=obs_out,
         cost=solve_count,
+        misfit_factory=misfit_factory,
     )
     if cfg.prior.name == "none":
         n_solves = solves["n"]  # actual forward solves from the guided FWI pass

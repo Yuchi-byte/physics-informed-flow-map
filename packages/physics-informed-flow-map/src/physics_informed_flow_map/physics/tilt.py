@@ -14,6 +14,8 @@ from typing import Callable
 import torch
 from torch import Tensor
 
+from .misfit import MisfitFn
+
 
 def guided_sample(
     velocity_fn: Callable[[Tensor, float], Tensor],
@@ -24,6 +26,7 @@ def guided_sample(
     sampler_steps: int,
     guidance_strength: float,
     normalize_grad: bool = False,
+    misfit_fn: MisfitFn | None = None,
     on_step: Callable[..., None] | None = None,
 ) -> Tensor:
     """Guided Euler sampling of a flow prior toward an observation ``d_obs``.
@@ -48,6 +51,9 @@ def guided_sample(
             applying ``guidance_strength`` (so the step size is independent of the wildly
             scale-dependent raw gradient magnitude). ``guidance_strength`` is then a
             state-space step size per Euler step.
+        misfit_fn: guidance data-misfit ``pred -> (B,)`` (see ``physics.misfit``);
+            ``None`` keeps the historical pointwise L2 against ``d_obs``. The
+            ``data_fidelity`` diagnostic stays L2 either way so runs remain comparable.
         on_step: optional callback ``(step, x1_hat, data_fidelity=..., grad_norm=...)``
             called every step for trajectory logging and visualisation.
 
@@ -56,6 +62,12 @@ def guided_sample(
     """
     x = x0
     dt = 1.0 / sampler_steps
+
+    def data_loss(pred: Tensor) -> Tensor:
+        if misfit_fn is not None:
+            return misfit_fn(pred).sum()
+        return ((pred - d_obs) ** 2).sum()
+
     for i in range(sampler_steps):
         t = i * dt
         with torch.no_grad():
@@ -64,7 +76,7 @@ def guided_sample(
         if guidance_strength != 0.0:
             x_g = x.detach().requires_grad_(True)
             x1_hat = x_g + (1.0 - t) * v
-            loss = ((forward_fn(x1_hat) - d_obs) ** 2).sum()
+            loss = data_loss(forward_fn(x1_hat))
             (grad,) = torch.autograd.grad(loss, x_g)
             if normalize_grad:
                 norm = grad.flatten(1).norm(dim=1).clamp_min(1e-12)

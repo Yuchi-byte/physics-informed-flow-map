@@ -24,6 +24,7 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 
 from physics_informed_flow_map.experiment import start_run
+from physics_informed_flow_map.physics.misfit import make_misfit
 from physics_informed_flow_map.inversion import (
     ClassicalFWIModule,
     DiffusionDPSModule,
@@ -66,6 +67,14 @@ def build_module(
     check_compatible(entry.prior.name, entry.method.name)
     shape = (1, resolution, resolution)
     g = entry.method.guidance_strength
+    # Guidance data-misfit knob (method.misfit: l2 | ot), built lazily from each target's
+    # d_obs; None keeps the samplers' hard-wired L2 path. The prior-free FWI baselines
+    # reject non-l2 at config time (MethodConfig validator).
+    misfit_factory = (
+        None
+        if entry.method.misfit == "l2"
+        else lambda d: make_misfit(entry.method.misfit, d, ot_k=entry.method.ot_k)
+    )
 
     if entry.prior.name == "none":
         # Prior-free FWI baselines: optimise the velocity map directly against the data misfit
@@ -116,6 +125,7 @@ def build_module(
                 renorm=entry.method.renorm,
                 sde=entry.method.sde,
                 resolution=resolution,
+                misfit_factory=misfit_factory,
             )
         else:
             module = FlowTiltModule(
@@ -126,6 +136,7 @@ def build_module(
                 device=device,
                 resolution=resolution,
                 normalize_grad=entry.method.normalize_grad,
+                misfit_factory=misfit_factory,
             )
     else:  # diffusion prior
         denoiser, scheduler = load_diffusion_prior(
@@ -151,6 +162,7 @@ def build_module(
                 device=device,
                 resolution=resolution,
                 normalize_grad=entry.method.normalize_grad,
+                misfit_factory=misfit_factory,
             )
         else:  # dps / unguided
             module = DiffusionDPSModule(
@@ -162,6 +174,7 @@ def build_module(
                 device=device,
                 resolution=resolution,
                 normalize_grad=entry.method.normalize_grad,
+                misfit_factory=misfit_factory,
             )
     module.name = entry.label
     return module

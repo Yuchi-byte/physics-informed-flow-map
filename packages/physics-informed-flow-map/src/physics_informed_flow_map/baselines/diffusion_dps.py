@@ -16,6 +16,8 @@ import torch
 from diffusers import DDPMScheduler
 from torch import Tensor, nn
 
+from ..physics.misfit import MisfitFn
+
 
 def dps_sample(
     denoiser: nn.Module,
@@ -29,6 +31,7 @@ def dps_sample(
     guidance_strength: float,
     device: torch.device,
     normalize_grad: bool = True,
+    misfit_fn: MisfitFn | None = None,
     on_step: Callable[..., None] | None = None,
 ) -> Tensor:
     """Canonical DPS over a ``diffusers`` reverse process. Returns ``(n_samples, *shape)`` at ``t=0``.
@@ -51,6 +54,9 @@ def dps_sample(
         device: device to sample on.
         normalize_grad: if True, scale each sample's correction to unit norm before applying
             ``guidance_strength`` (the gradient-normalisation lesson from the flow PoC).
+        misfit_fn: guidance data-misfit ``pred -> (B,)`` (see ``physics.misfit``);
+            ``None`` keeps the historical pointwise L2 against ``d_obs``. The
+            ``data_fidelity`` diagnostic stays L2 either way so runs remain comparable.
         on_step: optional callback ``(step_idx, x0hat, data_fidelity=...)`` for trajectory logging.
 
     Returns:
@@ -65,7 +71,12 @@ def dps_sample(
         x0hat = step.pred_original_sample
 
         if guidance_strength != 0.0:
-            loss = ((forward_fn(x0hat) - d_obs) ** 2).sum()
+            pred = forward_fn(x0hat)
+            loss = (
+                misfit_fn(pred).sum()
+                if misfit_fn is not None
+                else ((pred - d_obs) ** 2).sum()
+            )
             (grad,) = torch.autograd.grad(loss, x)
             if normalize_grad:
                 norm = grad.flatten(1).norm(dim=1).clamp_min(1e-12)

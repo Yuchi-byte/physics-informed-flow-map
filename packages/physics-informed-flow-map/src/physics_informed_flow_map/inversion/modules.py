@@ -5,7 +5,7 @@ caller loads the checkpoint) plus its guidance scheme and hyperparameters.
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Callable, cast
 
 import torch
 from diffusers import DDPMScheduler
@@ -15,6 +15,7 @@ from torch import Tensor, nn
 from ..baselines import dps_sample, red_diffeq_sample
 from ..physics.classical import multiscale_fwi, regularized_fwi
 from ..physics.forward import simulate
+from ..physics.misfit import MisfitFn
 from ..physics.tilt import guided_sample
 from .base import InversionResult
 from .bridge import seismic_forward, to_mps_native
@@ -35,6 +36,7 @@ class FlowTiltModule:
         device: torch.device,
         resolution: int = 64,
         normalize_grad: bool = True,
+        misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
     ) -> None:
         self.name = f"flow_tilt·g{guidance:g}"
         self.prior = prior
@@ -44,6 +46,8 @@ class FlowTiltModule:
         self.device = device
         self.resolution = resolution
         self.normalize_grad = normalize_grad
+        # d_obs arrives per-invert, so the misfit (which precomputes from it) is built lazily.
+        self.misfit_factory = misfit_factory
 
     def invert(self, d_obs: Tensor) -> InversionResult:
         b = self.n_samples
@@ -62,6 +66,7 @@ class FlowTiltModule:
             sampler_steps=self.steps,
             guidance_strength=self.guidance,
             normalize_grad=self.normalize_grad,
+            misfit_fn=self.misfit_factory(d_obs) if self.misfit_factory else None,
         )
         return InversionResult(to_mps_native(samples), n_solves=self.steps * b)
 
@@ -167,6 +172,7 @@ class DiffusionDPSModule:
         device: torch.device,
         resolution: int = 64,
         normalize_grad: bool = True,
+        misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
     ) -> None:
         self.name = f"diffusion_dps·g{guidance:g}"
         self.denoiser = denoiser
@@ -177,6 +183,8 @@ class DiffusionDPSModule:
         self.device = device
         self.resolution = resolution
         self.normalize_grad = normalize_grad
+        # d_obs arrives per-invert, so the misfit (which precomputes from it) is built lazily.
+        self.misfit_factory = misfit_factory
 
     def invert(self, d_obs: Tensor) -> InversionResult:
         samples = dps_sample(
@@ -190,6 +198,7 @@ class DiffusionDPSModule:
             guidance_strength=self.guidance,
             device=self.device,
             normalize_grad=self.normalize_grad,
+            misfit_fn=self.misfit_factory(d_obs) if self.misfit_factory else None,
         )
         return InversionResult(
             to_mps_native(samples), n_solves=self.steps * self.n_samples
@@ -213,6 +222,7 @@ class REDDiffEqModule:
         device: torch.device,
         resolution: int = 64,
         normalize_grad: bool = True,
+        misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
     ) -> None:
         self.name = f"red_diffeq·d{eta_data:g}·r{eta_reg:g}"
         self.denoiser = denoiser
@@ -225,6 +235,8 @@ class REDDiffEqModule:
         self.device = device
         self.resolution = resolution
         self.normalize_grad = normalize_grad
+        # d_obs arrives per-invert, so the misfit (which precomputes from it) is built lazily.
+        self.misfit_factory = misfit_factory
 
     def invert(self, d_obs: Tensor) -> InversionResult:
         samples = red_diffeq_sample(
@@ -240,6 +252,7 @@ class REDDiffEqModule:
             t_denoise=self.t_denoise,
             device=self.device,
             normalize_grad=self.normalize_grad,
+            misfit_fn=self.misfit_factory(d_obs) if self.misfit_factory else None,
         )
         return InversionResult(
             to_mps_native(samples), n_solves=self.iters * self.n_samples

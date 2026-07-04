@@ -27,19 +27,28 @@ from mfm.utils.steering import (
 from torch import Tensor
 
 from ..physics.forward import simulate
+from ..physics.misfit import MisfitFn, l2_misfit
 from .base import InversionResult
 from .bridge import to_mps_native
 
 
-def make_misfit_reward(d_obs: Tensor, sigma: float) -> Callable[[Tensor], Tensor]:
-    """Reward ``x1 (m/s) -> -||F(x1) - d_obs||^2 / (2 sigma^2)`` for a ``(N, H, W)`` batch.
+def make_misfit_reward(
+    d_obs: Tensor, sigma: float, misfit_fn: MisfitFn | None = None
+) -> Callable[[Tensor], Tensor]:
+    """Reward ``x1 (m/s) -> -misfit(F(x1)) / (2 sigma^2)`` for a ``(N, H, W)`` batch.
 
     ``sigma`` is the likelihood temperature: smaller ties the reward harder to the data (and
-    collapses the importance weights onto the single best sample sooner)."""
+    collapses the importance weights onto the single best sample sooner). ``misfit_fn``
+    (see ``physics.misfit``) defaults to the pointwise L2 ``||F(x1) - d_obs||^2`` — the exact
+    Gaussian log-likelihood; a non-L2 misfit makes this a generalized (Gibbs) posterior
+    reward, and note the numerical scale changes (the OT potential is O(1) where the L2
+    misfit is huge, so ``sigma`` needs retuning)."""
+    if misfit_fn is None:
+        misfit_fn = l2_misfit(d_obs)
 
     def reward_fn(x1_mps: Tensor) -> Tensor:
         pred = torch.stack([simulate(x1_mps[i]) for i in range(x1_mps.shape[0])])
-        return -((pred - d_obs) ** 2).flatten(1).sum(1) / (2.0 * sigma**2)
+        return -misfit_fn(pred) / (2.0 * sigma**2)
 
     return reward_fn
 
@@ -65,8 +74,11 @@ class FlowMapSteerModule:
         renorm: bool = True,
         sde: bool = True,
         resolution: int = 64,
+        misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
     ) -> None:
         self.name = f"flowmap_steer_{drift_estimator}·mc{mc_samples}"
+        # d_obs arrives per-invert, so the misfit (which precomputes from it) is built lazily.
+        self.misfit_factory = misfit_factory
         self.prior = prior
         self.drift_estimator = drift_estimator
         self.mc_samples = mc_samples
@@ -83,9 +95,10 @@ class FlowMapSteerModule:
         self.resolution = resolution
 
     def invert(self, d_obs: Tensor) -> InversionResult:
+        misfit_fn = self.misfit_factory(d_obs) if self.misfit_factory else None
         drift_fn = get_conditional_drift_fn(
             self.prior,
-            make_misfit_reward(d_obs, self.sigma),
+            make_misfit_reward(d_obs, self.sigma, misfit_fn),
             to_mps_native,  # inverse_scaler: normalized [-1,1] -> m/s (and resize to native)
             type="sde" if self.sde else "ode",
             drift_estimator=self.drift_estimator,
