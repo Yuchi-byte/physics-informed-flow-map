@@ -127,11 +127,30 @@ class Run:
         torch.save({"model": model.state_dict(), "step": step, **meta}, path)
         return path
 
+    # Artifact versions still holding one of these aliases survive pruning; everything
+    # else is a superseded periodic upload whose aliases moved to a newer version.
+    _KEEP_ALIASES = frozenset({"best", "final", "latest"})
+
     def log_artifact(self, path: Path, *, name: str, aliases: list[str]) -> None:
-        """Upload a checkpoint file as a wandb model artifact under ``aliases``."""
+        """Upload a checkpoint file as a wandb model artifact under ``aliases``.
+
+        After the upload commits, superseded versions of the collection (no ``best`` /
+        ``final`` / ``latest`` alias left) are deleted from wandb, mirroring the local
+        checkpoint rotation so cloud storage stays flat instead of accumulating every
+        periodic upload."""
         artifact = wandb.Artifact(name, type="model")
         artifact.add_file(str(path))
         self.run.log_artifact(artifact, aliases=aliases)
+        try:
+            artifact.wait()  # block until committed so the prune sees the moved aliases
+            collection = wandb.Api().artifact_collection(
+                "model", f"{self.run.entity}/{self.run.project}/{name}"
+            )
+            for version in collection.artifacts():
+                if not (set(version.aliases) & self._KEEP_ALIASES):
+                    version.delete(delete_aliases=True)
+        except Exception as exc:  # offline mode / transient API errors must not kill training
+            print(f"[wandb] skipped pruning superseded '{name}' versions: {exc}")
 
     def checkpoint_callback(
         self,
@@ -151,8 +170,9 @@ class Run:
 
         Local checkpoints rotate: each save deletes the superseded periodic pair (and, on
         a new best, the superseded best pair), so disk holds at most the latest periodic,
-        the latest best, and the final pair. The full version history lives in the wandb
-        artifacts.
+        the latest best, and the final pair. Wandb rotates the same way (see
+        :meth:`log_artifact`): only versions still aliased ``best``/``final``/``latest``
+        are kept, so neither side accumulates the full upload history.
         """
         rotate: dict[str, list[Path]] = {"periodic": [], "best": []}
 
