@@ -8,3 +8,5 @@ guidance_strength: 1.0  # steering scale (0 => unguided base drift, the control)
 # Paper Eq. 38 steers with exactly sigma_t^2 * grad V_t — NO renormalisation (see mfm_g.yaml).
 renorm: false
 sde: true  # SDE (Euler-Maruyama) sampler; false => ODE (Euler)
+misfit: l2  # guidance data-misfit: l2 | ot (Peng et al. OT potential; eval metrics stay L2)
+ot_k: 100.0  # ot only: bounded amplitude-weighting strength

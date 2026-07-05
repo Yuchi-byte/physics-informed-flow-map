@@ -15,3 +15,5 @@ guidance_strength: 1.0  # MFM-G steering scale (0 => unguided base drift, the co
 # 2026-07-02 / results_steer_tune): keep false here.
 renorm: false
 sde: true  # SDE (Euler-Maruyama); the paper's GMM uses both, its ImageNet steering uses ODE (250 Euler steps)
+misfit: l2  # guidance data-misfit: l2 | ot (Peng et al. OT potential; eval metrics stay L2)
+ot_k: 100.0  # ot only: bounded amplitude-weighting strength

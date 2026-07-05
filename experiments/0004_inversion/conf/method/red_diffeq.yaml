@@ -7,3 +7,5 @@ eta_reg: 0.05  # RED prior-residual step
 t_denoise: 100  # fixed DDPM noise level the Tweedie denoiser runs at
 normalize_grad: true  # unit-normalise the data gradient
 guidance_strength: 1.0  # unused by RED-DiffEq (eta_data/eta_reg are the knobs); 0 still flags the control
+misfit: l2  # guidance data-misfit: l2 | ot (Peng et al. OT potential; eval metrics stay L2)
+ot_k: 100.0  # ot only: bounded amplitude-weighting strength

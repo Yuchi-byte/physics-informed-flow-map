@@ -1,3 +1,5 @@
 name: flow_tilt  # DPS-style wave-equation tilting of a flow / flow-map prior (Tweedie mean)
 guidance_strength: 1.0
 normalize_grad: true
+misfit: l2  # guidance data-misfit: l2 | ot (Peng et al. OT potential; eval metrics stay L2)
+ot_k: 100.0  # ot only: bounded amplitude-weighting strength

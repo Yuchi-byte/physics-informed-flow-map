@@ -4,3 +4,5 @@ name: fmrg_e  # FMRG-E: Flow Map Reward Guidance (Euclidean) — Huang et al. 20
 guidance_strength: 1.0
 normalize_grad: false  # rescale inner gradient to velocity norm before applying alpha
 n_opt: 1  # inner gradient steps per outer Euler step; 1 = single-step (DPS + FMRG weight)
+misfit: l2  # guidance data-misfit: l2 | ot (Peng et al. OT potential; eval metrics stay L2)
+ot_k: 100.0  # ot only: bounded amplitude-weighting strength
