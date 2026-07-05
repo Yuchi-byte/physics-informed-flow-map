@@ -134,3 +134,34 @@ Method roster (config `name:` → what it is):
 ```bash
 uv run python experiments/new.py "short title of the idea"
 ```
+
+## Model guidance 
+In mfm, model guidance using classifier-free guidance (CFG) is turned on. This happens during training, not inference time, therefore it has nothing to do with reward/physics steering. In our experiment, CFG is turned off as openFWI doesn't have the concept of 'classes' like that in ImageNet, so it's irrelevant. 
+
+## off-diagonal distillation
+Here I explain how this training is done.
+Line 482 in mfm/losses/loss.py is essentially doing the following math. Take the middle equation in equation (11) in the mfm paper and substitute the residual form X_{s,u}(x) = x + (u-s)·v_{s,u}(x). 
+  Now look at the code:
+
+  tangents = (1, 0, vss)          # differentiate w.r.t. s (=1), not u (=0), along direction vss in x
+  vsu, jvp = torch.func.jvp(vsu_fn, (s, u, Is), tangents)
+
+  The JVP computes:
+
+  jvp = ∂v/∂s · 1  +  ∂v/∂u · 0  +  ∇_x v · vss
+      = ∂_s v_{s,u}  +  v_{s,s} · ∇_x v_{s,u}
+
+  So the target becomes:
+
+  distillation_teacher = vss + (u-s) * jvp
+                       = v_{s,s} + (u-s) · [∂_s v_{s,u} + v_{s,s} · ∇_x v_{s,u}]
+
+Note that vss is that from the teacher (through extract_posterior_velocity) and the jvp is done through the student. 
+
+## distillation 
+Both diagonal (distill_fm_loss) and off-diagonal loss (distillation_loss) uses the teacher's velocity, that is extracted from the extract_posterior_velocity() function. This function IS GLASS reparameterisation. It first computes t_start, the reparameterised time (line 121-125). It then computes x_star, which is the linear sufficient statistic S in equation (25) in the mfm paper and it is the point at which we need to query the teacher. It then finds v_star by querying the teacher 'teacher_model.v(t_star, t_star,x_star, 0, 0s). This is the only place the teacher is called. 
+In the next few lines, term 2 is the second term in equation (25), and term 1 is the other two term combined (the xt_cond term is the third term, and Is term is the first term in the equation). Overall, the function returns the conditional teacher velocity even though the teacher we have is unconditional. This conditional teacher velocity then becomes the target velocity used in both diagonal and off diagonal distillation.  
+
+
+## conditioning -- the 'meta-ness' 
+When t_cond is zero, the values of xt_cond is completely irrelevant: it can be set to noise, zeros, or anything, and nothing will be affected. This is designed in the DiT model. Firstly, x_cond_embedder and t_cond_embedder both have initial weights and biases that are zero. So a from-scratch model never learns to use x_cond. To learn x_cond, mfm copies x_embedder into x_cond_embedder inside 'init_from_dmf'. In my experiments, those activation codes are handled in the function activate_x_cond_conditioning(). The preserve_t_cond_0 is off in mfm's code, probably so that the network can learn its own gating schedule rather than hardcoding xt_cond to be zero when t_cond = 0. 
