@@ -211,6 +211,7 @@ class Run:
         *,
         total_steps: int,
         n_frames: int = 3,
+        traj_viz_fn: Callable[[torch.Tensor, Path], None] | None = None,
     ) -> Callable[..., None]:
         """Return an ``on_step(step, x_est, **scalars)`` callback for sampler trajectory logging.
 
@@ -224,6 +225,11 @@ class Run:
             viz_fn: ``(x_est_tensor, out_path)`` — callable that saves a PNG to ``out_path``.
             total_steps: total number of sampler steps (needed to space frames evenly).
             n_frames: how many snapshots to save (default 3: start, mid, end).
+            traj_viz_fn: optional ``(frames, out_path)`` composite renderer taking the
+                snapshots stacked on dim 0 (``[n_frames, ...]``), e.g. a dataset's
+                ``visualize_trajectory`` grid. When given, snapshots are also kept on
+                CPU and rendered once, at the final checkpoint, to
+                ``trajectory/{key}/trajectory.png`` (W&B key ``traj/{key}/grid``).
         """
         traj_dir = self.log_dir / "trajectory" / key
         traj_dir.mkdir(parents=True, exist_ok=True)
@@ -233,6 +239,8 @@ class Run:
             checkpoints = {
                 round(i * (total_steps - 1) / (n_frames - 1)) for i in range(n_frames)
             }
+        last_checkpoint = max(checkpoints)
+        frames: dict[int, torch.Tensor] = {}
 
         def on_step(step: int, x_est: Any, **scalars: float) -> None:
             if scalars:
@@ -241,6 +249,18 @@ class Run:
                 path = traj_dir / f"step_{step:04d}.png"
                 viz_fn(x_est, path)
                 self.log_image(f"traj/{key}", path, caption=f"step {step}/{total_steps}")
+                if traj_viz_fn is not None:
+                    frames[step] = x_est.detach().to("cpu", copy=True)
+                    if step == last_checkpoint:
+                        grid = traj_dir / "trajectory.png"
+                        traj_viz_fn(
+                            torch.stack([frames[s] for s in sorted(frames)]), grid
+                        )
+                        self.log_image(
+                            f"traj/{key}/grid",
+                            grid,
+                            caption=f"{len(frames)} frames over {total_steps} steps",
+                        )
 
         return on_step
 

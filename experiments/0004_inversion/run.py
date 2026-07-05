@@ -250,6 +250,14 @@ def main(dcfg: DictConfig) -> None:
         else lambda d: make_misfit(cfg.method.misfit, d, ot_k=cfg.method.ot_k)
     )
 
+    # Composite trajectory grid (rows = samples, cols = t=0 → t=1) — the same renderer
+    # 0001/0002 log as "trajectory". make_step_saver stacks the snapshots on dim 0, so
+    # frames arrive [n_frames, n, C, H, W] (or without C from the native-grid FWI path).
+    def viz_traj(frames: torch.Tensor, path: Path) -> None:
+        cfg.dataset.visualize_trajectory(
+            frames if frames.ndim == 5 else frames[:, :, None], path
+        )
+
     channels, size, _ = cfg.dataset.shape
     n = cfg.n_samples
     n_solves = (
@@ -286,6 +294,7 @@ def main(dcfg: DictConfig) -> None:
                     lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
                     total_steps=total,
                     n_frames=cfg.n_frames,
+                    traj_viz_fn=viz_traj,
                 )
             if realistic:
                 v_mps, ns = multiscale_fwi(
@@ -347,6 +356,7 @@ def main(dcfg: DictConfig) -> None:
                         lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
+                        traj_viz_fn=viz_traj,
                     )
                 module = FlowMapSteerModule(
                     prior,
@@ -387,6 +397,7 @@ def main(dcfg: DictConfig) -> None:
                         lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
+                        traj_viz_fn=viz_traj,
                     )
                 return fmrg_e_sample(
                     velocity_fn,
@@ -420,6 +431,7 @@ def main(dcfg: DictConfig) -> None:
                         lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
+                        traj_viz_fn=viz_traj,
                     )
                 return guided_sample(
                     velocity_fn,
@@ -460,6 +472,7 @@ def main(dcfg: DictConfig) -> None:
                         lambda x, p: viz_velocity(x, p),
                         total_steps=cfg.method.iters or cfg.steps,
                         n_frames=cfg.n_frames,
+                        traj_viz_fn=viz_traj,
                     )
                 return red_diffeq_sample(
                     denoiser,
@@ -487,6 +500,7 @@ def main(dcfg: DictConfig) -> None:
                         lambda x, p: viz_velocity(x, p),
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
+                        traj_viz_fn=viz_traj,
                     )
                 return dps_sample(
                     denoiser,
