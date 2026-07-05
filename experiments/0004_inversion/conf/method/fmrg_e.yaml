@@ -1,8 +1,12 @@
 name: fmrg_e  # FMRG-E: Flow Map Reward Guidance (Euclidean) — Huang et al. 2026 (ICML)
 # Inner gradient step size alpha in x1-space. At n_opt=1 this plays the same role as
 # guidance_strength in flow_tilt but with the FMRG time-dependent weight wt=(1-t)*t_next.
-guidance_strength: 1.0
-normalize_grad: false  # rescale inner gradient to velocity norm before applying alpha
+# Swept 2026-07-03 on map 6044 (JOURNAL fmrg_e first run): SHARP CLIFF — g=0.3/norm=T is
+# the only good config (MAE 0.137); g=1.0 breaks (MAE 0.676), and norm=F at g=1.0
+# diverges outright (MAE 0.884, guidance INCREASES the data error — the raw seismic
+# gradient is enormous). The old defaults (1.0/false) were that divergent config.
+guidance_strength: 0.3
+normalize_grad: true  # rescale inner gradient to velocity norm before applying alpha
 n_opt: 1  # inner gradient steps per outer Euler step; 1 = single-step (DPS + FMRG weight)
 misfit: l2  # guidance data-misfit: l2 | ot (Peng et al. OT potential; eval metrics stay L2)
 ot_k: 100.0  # ot only: bounded amplitude-weighting strength
