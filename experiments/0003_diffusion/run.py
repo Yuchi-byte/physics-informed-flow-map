@@ -113,7 +113,9 @@ def main(dcfg: DictConfig) -> None:
     torch.manual_seed(cfg.seed)
 
     run_dir = Path(HydraConfig.get().runtime.output_dir)
-    run = start_run(EXPERIMENT, run_dir, cfg.dump())
+    # name= denoiser kind + run-dir basename (dataset + timestamp): the kind is the key
+    # 0003 variant and the basename maps the wandb run 1:1 to its /workspace/runs folder.
+    run = start_run(EXPERIMENT, run_dir, cfg.dump(), name=f"{cfg.model.kind}_{run_dir.name}")
 
     channels, size, _ = cfg.dataset.shape
     shape = cfg.dataset.shape

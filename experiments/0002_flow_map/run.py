@@ -185,7 +185,9 @@ def main(dcfg: DictConfig) -> None:
     torch.manual_seed(cfg.seed)
 
     run_dir = Path(HydraConfig.get().runtime.output_dir)
-    run = start_run(EXPERIMENT, run_dir, cfg.dump())
+    # name= the run-dir basename (dataset + mode + timestamp) so the wandb run maps 1:1 to
+    # its /workspace/runs folder instead of a random codename.
+    run = start_run(EXPERIMENT, run_dir, cfg.dump(), name=run_dir.name)
 
     dataset = cfg.dataset.build()
     loader = torch.utils.data.DataLoader(
