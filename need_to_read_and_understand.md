@@ -1,4 +1,17 @@
 
+1. The 4 rows are NOT the mc_samples — and yes, visualizing the mc draws would be worth it
+
+The grid's 4 row-pairs are the n_samples=4 posterior trajectories (one per noise seed). mc_samples=4 is something else entirely: at every step, for each trajectory, mfm_g pushes 4 fresh noises through the one-step conditional map v(0,1,ε | t_cond=t, x_cond=x_t) to Monte-Carlo-estimate the reward-tilted drift (the IWAE estimator). Those 16 draws per step are consumed internally and currently never visualized — the "prediction" row shows the single Tweedie estimate instead.
+
+Visualizing them is genuinely a good idea, and not just for pretty pictures: the journal's top-ranked hypothesis for why mfm_g trails flow_tilt is that the one-step posterior p(x1|x_t) is inaccurate or insensitive to x_cond — and a per-checkpoint grid of the mc draws (say for sample 0: rows = 4 draws, cols = t) is exactly the "posterior-fidelity check" the 2026-07-02 pickup entry lists as next-action (a). The steering helper already returns the draws (x1_samples, shape [B, mc, C, H, W]), so it's a small extension of the same hook. Say the word and I'll add it.
+
+2. How the final image relates to the 4 seeds
+
+There is no single "final inverted image" — the method's output is the set of 4 maps. Each seed is an independent draw from the (guidance-tilted) posterior p(v | d_obs): same observed data, same prior, different starting noise, 4 full guided trajectories, 4 velocity maps that all fit the data. What you see downstream: the inversion.png figure shows sample 0 as a representative draw (arbitrary, not selected), while the metrics (mae_mean etc.) are averages across all 4. The disagreement between the 4 final columns in the trajectory grid — mostly the middle layers — is the posterior uncertainty, i.e. exactly the part of the model the seismic data doesn't pin down. In a deployment you'd either pick the min-misfit sample (ground-truth-free) or report the posterior mean ± spread; the journal found that this selection step, not prior quality, is the current bottleneck — which is why we keep all 4 rather than collapsing them.
+
+3. Is FMRG unstable? Yes — in a specific, diagnosable way
+
+It's not that any config perturbation breaks it; it's that guidance strength has a cliff: g=0.3 works (MAE 0.137), g=1.0 breaks (0.676), and g=1.0 without gradient normalization diverges outright (0.884 — guidance increases the data error, because the raw seismic gradient is enormous). Two structural reasons: FMRG's time weight wt=(1-t)·t_next concentrates guidance late, so a too-large step arrives when the map is nearly formed and wrecks it; and its inner gradient lives in x1-space without the manifold-projecting chain rule flow_tilt gets, so overshoot goes off-manifold with nothing pulling it back. flow_tilt is far more forgiving (worked at g=1 across every prior today). The practical bug on our side: fmrg_e.yaml shipped with the proven-divergent defaults (g=1.0, normalize=false), so any un-overridden fmrg run produced garbage. Fixed — defaults are now the swept-best g=0.3/normalize=true (da3a78d).
 
 ## flow matching and mfm training method overview 
 
