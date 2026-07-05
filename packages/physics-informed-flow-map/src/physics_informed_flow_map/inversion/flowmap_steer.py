@@ -6,11 +6,12 @@ estimate of the reward-tilted drift, where the *flow map* draws genuine samples 
 by pushing fresh noise through the conditional map ``v(0, 1, noise | t_cond=t, x_cond=xt)`` — no
 Tweedie mean. The reward for FWI is the data log-likelihood ``-||F(x1) - d_obs||^2 / (2 sigma^2)``.
 
-This reuses mfm's steering helpers verbatim (``get_conditional_drift_fn`` + the Euler / Euler-
-Maruyama samplers); the only FWI-specific glue is the reward and the norm->m/s ``inverse_scaler``.
-``drift_estimator`` selects the estimator: ``dps`` (Tweedie baseline), ``iwae`` (importance-
-weighted, backprops the reward), or ``sne`` (self-normalized, no backprop). ``mc_samples`` is the
-number of ``xt -> x1`` draws per step.
+This reuses mfm's steering drift verbatim (``get_conditional_drift_fn``); the Euler / Euler-
+Maruyama stepping loop is inlined here (numerically identical to mfm's samplers, same RNG draw
+order) so an ``on_step`` hook can observe each step. The only FWI-specific glue is the reward and
+the norm->m/s ``inverse_scaler``. ``drift_estimator`` selects the estimator: ``dps`` (Tweedie
+baseline), ``iwae`` (importance-weighted, backprops the reward), or ``sne`` (self-normalized, no
+backprop). ``mc_samples`` is the number of ``xt -> x1`` draws per step.
 """
 
 from __future__ import annotations
@@ -20,16 +21,17 @@ from typing import Callable
 import torch
 from mfm.models.base_model import BaseModel
 from mfm.utils.steering import (
-    euler_maruyama_sampler,
-    euler_sampler,
+    broadcast_to_shape,
     get_conditional_drift_fn,
+    sigma_t_sq,
 )
 from torch import Tensor
+from tqdm import tqdm
 
 from ..physics.forward import simulate
 from ..physics.misfit import MisfitFn, l2_misfit
 from .base import InversionResult
-from .bridge import to_mps_native
+from .bridge import mps_to_norm, to_mps_native
 
 
 def make_misfit_reward(
@@ -75,6 +77,7 @@ class FlowMapSteerModule:
         sde: bool = True,
         resolution: int = 64,
         misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
+        on_step: Callable[..., None] | None = None,
     ) -> None:
         self.name = f"flowmap_steer_{drift_estimator}·mc{mc_samples}"
         # d_obs arrives per-invert, so the misfit (which precomputes from it) is built lazily.
@@ -93,6 +96,11 @@ class FlowMapSteerModule:
         self.renorm = renorm
         self.sde = sde
         self.resolution = resolution
+        # on_step(step, x_est_norm, data_fidelity=..., drift_norm=..., steering_norm=...) —
+        # x_est_norm is the per-step Tweedie estimate in [-1, 1] at native resolution. The
+        # data_fidelity diagnostic stays raw L2 (comparable across misfits/methods) and costs
+        # one extra wave solve per posterior sample per step, only when the hook is set.
+        self.on_step = on_step
 
     def invert(self, d_obs: Tensor) -> InversionResult:
         misfit_fn = self.misfit_factory(d_obs) if self.misfit_factory else None
@@ -109,11 +117,52 @@ class FlowMapSteerModule:
         x0 = torch.randn(
             self.n_samples, 1, self.resolution, self.resolution, device=self.device
         )
-        sampler = euler_maruyama_sampler if self.sde else euler_sampler
-        x1 = sampler(x0, drift_fn, t_start=0.01, n_steps=self.n_steps)
+        x1 = self._sample(x0, drift_fn, d_obs)
         # Wave solves: mc_samples reward sims per step per posterior sample (base drift is a
         # network eval, not a solve). dps uses one Tweedie sim per step.
         per = 1 if self.drift_estimator == "dps" else self.mc_samples
         return InversionResult(
             to_mps_native(x1), n_solves=self.n_steps * per * self.n_samples
         )
+
+    def _sample(
+        self,
+        x0: Tensor,
+        drift_fn: Callable[..., tuple],
+        d_obs: Tensor,
+        t_start: float = 0.01,
+    ) -> Tensor:
+        """Euler (ODE) / Euler-Maruyama (SDE) stepping, identical to mfm's samplers (same
+        ``linspace`` grid and, for the SDE, the same one-``randn_like``-per-step draw order,
+        so trajectories match the originals bitwise), plus the :attr:`on_step` hook."""
+        n = x0.shape[0]
+        x = x0
+        t_steps = torch.linspace(t_start, 1.0, self.n_steps + 1, device=x.device)
+
+        desc = "SDE sampling" if self.sde else "ODE sampling"
+        for i in tqdm(range(self.n_steps), desc=desc):
+            t_cur = t_steps[i]
+            dt = t_steps[i + 1] - t_cur
+            t_batched = torch.full((n,), t_cur, device=x.device)
+            drift, ret = drift_fn(x, t_batched)
+
+            if self.on_step is not None:
+                est_mps = ret["tweedie_estimate"]  # (n, H, W) m/s, native resolution
+                pred = torch.stack([simulate(est_mps[b]) for b in range(n)])
+                self.on_step(
+                    i,
+                    mps_to_norm(est_mps),
+                    data_fidelity=float(((pred - d_obs) ** 2).mean()),
+                    drift_norm=float(ret["uncond_drift"].flatten(1).norm(dim=1).mean()),
+                    steering_norm=float(
+                        ret["steering_drift_scaled"].flatten(1).norm(dim=1).mean()
+                    ),
+                )
+
+            x = x + drift * dt
+            if self.sde:
+                diffusion = broadcast_to_shape(
+                    torch.sqrt(sigma_t_sq(t_batched)), x.shape
+                )
+                x = x + diffusion * torch.sqrt(dt) * torch.randn_like(x)
+        return x

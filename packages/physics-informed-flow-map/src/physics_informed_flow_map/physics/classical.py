@@ -108,6 +108,7 @@ def regularized_fwi(
     tv_eps: float = 1e-3,
     init: str = "smooth",
     device: torch.device,
+    on_step: Callable[..., None] | None = None,
 ) -> tuple[Tensor, int]:
     """Gradient-descent FWI; returns ``(v_mps (n, H, W), n_solves)``.
 
@@ -117,19 +118,31 @@ def regularized_fwi(
     cycle-skipping-averse classical start) or ``random`` (structure-free, the naive baseline that
     exposes non-uniqueness). ``n_solves = iters * n_samples`` (one forward solve per model per
     iteration — the dominant cost, matching how the generative samplers are counted).
+    ``on_step(step, x_norm, data_fidelity=..., loss=..., grad_norm=...)`` is called once per
+    iteration with the pre-update model in ``[-1, 1]``; ``data_fidelity`` is the raw mean
+    squared misfit (the cross-method diagnostic), ``loss`` the optimised objective.
     """
     h, w = shape
     x = _make_init(init, n_samples, h, w, device).requires_grad_(True)
     opt = torch.optim.Adam([x], lr=lr)
     denom = (d_obs**2).sum().clamp_min(1e-12)
 
-    for _ in range(iters):
+    for i in range(iters):
         opt.zero_grad()
         v_mps = _to_mps(x)
         pred = torch.stack([forward_fn(v_mps[b]) for b in range(n_samples)])
         data = ((pred - d_obs) ** 2).sum() / denom
         loss = data + reg_weight * regularization(x, reg, tv_eps=tv_eps)
         loss.backward()  # type: ignore[no-untyped-call]
+        if on_step is not None:
+            assert x.grad is not None
+            on_step(
+                i,
+                x.detach(),
+                data_fidelity=float(((pred.detach() - d_obs) ** 2).mean()),
+                loss=float(loss.detach()),
+                grad_norm=float(x.grad.flatten(1).norm(dim=1).mean()),
+            )
         opt.step()
         with torch.no_grad():
             x.clamp_(-1.0, 1.0)
@@ -166,6 +179,7 @@ def multiscale_fwi(
     dt: float = 1e-3,
     optimizer: str = "lbfgs",
     device: torch.device,
+    on_step: Callable[..., None] | None = None,
 ) -> tuple[Tensor, int]:
     """Realistic FWI: smooth 1-D start + multiscale frequency continuation + regularisation,
     optimised with L-BFGS (default) or Adam. Returns ``(v_mps (n, H, W), n_solves)``.
@@ -175,18 +189,33 @@ def multiscale_fwi(
     warm-starting the next (higher) band from the current model. This is the standard cure for
     cycle-skipping. ``n_solves`` is the *actual* total forward solves — including every L-BFGS
     line-search evaluation — so it stays a faithful cost metric.
+    ``on_step(step, x_norm, data_fidelity=..., loss=..., fmax_hz=...)`` is called once per
+    objective evaluation (so with L-BFGS, line-search trial points are logged too and ``step``
+    can exceed ``len(freqs_hz) * iters_per_stage``); ``data_fidelity`` is the raw *unfiltered*
+    mean squared misfit so it stays comparable across stages and methods.
     """
     h, w = shape
     x = _make_init("smooth", n_samples, h, w, device).requires_grad_(True)
     n_solves = 0
+    n_evals = 0
 
     def loss_at(fmax: float, d_filt: Tensor, denom: Tensor) -> Tensor:
-        nonlocal n_solves
+        nonlocal n_solves, n_evals
         v_mps = _to_mps(x)
         pred = torch.stack([forward_fn(v_mps[b]) for b in range(n_samples)])
         n_solves += n_samples
         data = ((lowpass_time(pred, fmax, dt=dt) - d_filt) ** 2).sum() / denom
-        return data + reg_weight * regularization(x, reg, tv_eps=tv_eps)
+        loss = data + reg_weight * regularization(x, reg, tv_eps=tv_eps)
+        if on_step is not None:
+            on_step(
+                n_evals,
+                x.detach(),
+                data_fidelity=float(((pred.detach() - d_obs) ** 2).mean()),
+                loss=float(loss.detach()),
+                fmax_hz=fmax,
+            )
+        n_evals += 1
+        return loss
 
     for fmax in freqs_hz:
         d_filt = lowpass_time(d_obs, fmax, dt=dt)

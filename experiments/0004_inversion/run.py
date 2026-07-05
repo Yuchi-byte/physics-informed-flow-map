@@ -272,6 +272,21 @@ def main(dcfg: DictConfig) -> None:
 
         def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
             run_it = guidance_strength != 0.0
+            step_cb = None
+            if run_it and cfg.n_frames > 0:
+                # multiscale/L-BFGS logs per objective evaluation, so line searches can
+                # overrun this total; the frame schedule still hits every planned index.
+                total = (
+                    len(cfg.method.freqs_hz) * cfg.method.iters_per_stage
+                    if realistic
+                    else cfg.steps
+                )
+                step_cb = run.make_step_saver(
+                    f"{cfg.method.name}_g{guidance_strength:.2g}",
+                    lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
+                    total_steps=total,
+                    n_frames=cfg.n_frames,
+                )
             if realistic:
                 v_mps, ns = multiscale_fwi(
                     simulate,
@@ -285,6 +300,7 @@ def main(dcfg: DictConfig) -> None:
                     reg_weight=cfg.method.reg_weight,
                     optimizer=cfg.method.optimizer,
                     device=dev,
+                    on_step=step_cb,
                 )
             else:
                 v_mps, ns = regularized_fwi(
@@ -298,6 +314,7 @@ def main(dcfg: DictConfig) -> None:
                     reg_weight=cfg.method.reg_weight,
                     init=cfg.method.init,
                     device=dev,
+                    on_step=step_cb,
                 )
             if run_it:
                 solves["n"] = ns  # true solve count (L-BFGS line searches included)
@@ -323,6 +340,14 @@ def main(dcfg: DictConfig) -> None:
                 estimator = (
                     cfg.method.drift_estimator if guidance_strength != 0.0 else "base"
                 )
+                step_cb = None
+                if guidance_strength != 0.0 and cfg.n_frames > 0:
+                    step_cb = run.make_step_saver(
+                        f"{cfg.method.name}_g{guidance_strength:.2g}_mc{cfg.method.mc_samples}",
+                        lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
+                        total_steps=cfg.steps,
+                        n_frames=cfg.n_frames,
+                    )
                 module = FlowMapSteerModule(
                     prior,
                     drift_estimator=estimator,
@@ -336,6 +361,7 @@ def main(dcfg: DictConfig) -> None:
                     sde=cfg.method.sde,
                     resolution=size,
                     misfit_factory=misfit_factory,
+                    on_step=step_cb,
                 )
                 return mps_to_norm(module.invert(d_obs).v_hat)[:, None]
 
