@@ -149,9 +149,11 @@ class FlowMapSteerModule:
             if self.on_step is not None:
                 est_mps = ret["tweedie_estimate"]  # (n, H, W) m/s, native resolution
                 pred = torch.stack([simulate(est_mps[b]) for b in range(n)])
-                # Noisy sampler state, matching the estimate's (n, H, W) layout; only
-                # viewable alongside it when the model runs at the native resolution.
-                xt = x[:, 0] if x.shape[-2:] == est_mps.shape[-2:] else None
+                # Noisy sampler state for the trajectory viz, resized (model resolution
+                # -> native) to sit alongside the (n, H, W) Tweedie-estimate rows.
+                xt = torch.nn.functional.interpolate(
+                    x.detach(), size=est_mps.shape[-2:], mode="bilinear"
+                )[:, 0]
                 self.on_step(
                     i,
                     mps_to_norm(est_mps),
