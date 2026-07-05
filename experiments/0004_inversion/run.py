@@ -204,7 +204,7 @@ class InversionConfig(Config):
     target_index: int = Field(0, ge=0)  # index into the seed-0 validation split
     n_samples: int = Field(4, gt=0)
     steps: int = Field(200, gt=0)  # sampler / reverse steps
-    n_frames: int = Field(3, ge=0)  # trajectory snapshots per inversion run (0 = off)
+    n_frames: int = Field(6, ge=0)  # trajectory snapshots per inversion run (0 = off)
     model: ModelConfig = ModelConfig()
     dataset: DatasetConfig = OpenFWIDatasetConfig()
     prior: PriorConfig = PriorConfig()
