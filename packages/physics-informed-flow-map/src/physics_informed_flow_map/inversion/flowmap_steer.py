@@ -149,9 +149,13 @@ class FlowMapSteerModule:
             if self.on_step is not None:
                 est_mps = ret["tweedie_estimate"]  # (n, H, W) m/s, native resolution
                 pred = torch.stack([simulate(est_mps[b]) for b in range(n)])
+                # Noisy sampler state, matching the estimate's (n, H, W) layout; only
+                # viewable alongside it when the model runs at the native resolution.
+                xt = x[:, 0] if x.shape[-2:] == est_mps.shape[-2:] else None
                 self.on_step(
                     i,
                     mps_to_norm(est_mps),
+                    xt=xt,
                     data_fidelity=float(((pred - d_obs) ** 2).mean()),
                     drift_norm=float(ret["uncond_drift"].flatten(1).norm(dim=1).mean()),
                     steering_norm=float(

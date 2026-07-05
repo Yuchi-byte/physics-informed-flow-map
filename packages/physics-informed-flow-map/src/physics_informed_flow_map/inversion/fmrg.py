@@ -69,7 +69,7 @@ def fmrg_e_sample(
         misfit_fn: guidance data-misfit ``pred -> (B,)`` (see ``physics.misfit``);
             ``None`` keeps the historical pointwise L2 against ``d_obs``. The
             ``data_fidelity`` diagnostic stays L2 either way so runs remain comparable.
-        on_step: optional callback (step, x1_opt, data_fidelity=..., correction_norm=...)
+        on_step: optional callback (step, x1_opt, xt=..., data_fidelity=..., correction_norm=...)
             called every step for trajectory logging and visualisation.
 
     Returns:
@@ -118,6 +118,7 @@ def fmrg_e_sample(
             correction_norm = float(correction.flatten(1).norm(dim=1).mean())
             on_step(
                 i, x1_opt.detach(),
+                xt=x.detach(),
                 data_fidelity=data_fidelity,
                 correction_norm=correction_norm,
             )

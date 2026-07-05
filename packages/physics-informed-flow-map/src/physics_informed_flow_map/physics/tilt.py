@@ -54,8 +54,9 @@ def guided_sample(
         misfit_fn: guidance data-misfit ``pred -> (B,)`` (see ``physics.misfit``);
             ``None`` keeps the historical pointwise L2 against ``d_obs``. The
             ``data_fidelity`` diagnostic stays L2 either way so runs remain comparable.
-        on_step: optional callback ``(step, x1_hat, data_fidelity=..., grad_norm=...)``
-            called every step for trajectory logging and visualisation.
+        on_step: optional callback ``(step, x1_hat, xt=..., data_fidelity=..., grad_norm=...)``
+            called every step for trajectory logging and visualisation (``xt`` is the
+            noisy interpolant state the Tweedie estimate was taken from).
 
     Returns:
         Samples at ``t=1``, shape ``(B, *sample_shape)``.
@@ -88,7 +89,13 @@ def guided_sample(
         if on_step is not None:
             data_fidelity = float(((forward_fn(x1_hat.detach()) - d_obs) ** 2).mean())
             grad_norm = float(grad.flatten(1).norm(dim=1).mean())
-            on_step(i, x1_hat.detach(), data_fidelity=data_fidelity, grad_norm=grad_norm)
+            on_step(
+                i,
+                x1_hat.detach(),
+                xt=x.detach(),
+                data_fidelity=data_fidelity,
+                grad_norm=grad_norm,
+            )
 
         with torch.no_grad():
             x = x + dt * v - guidance_strength * grad

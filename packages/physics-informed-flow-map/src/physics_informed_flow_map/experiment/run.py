@@ -207,31 +207,31 @@ class Run:
     def make_step_saver(
         self,
         key: str,
-        viz_fn: Callable[[Any, Path], None],
+        traj_viz_fn: Callable[[torch.Tensor, Path], None],
         *,
         total_steps: int,
         n_frames: int = 3,
-        traj_viz_fn: Callable[[torch.Tensor, Path], None] | None = None,
     ) -> Callable[..., None]:
-        """Return an ``on_step(step, x_est, **scalars)`` callback for sampler trajectory logging.
+        """Return an ``on_step(step, x_est, xt=None, **scalars)`` callback for sampler
+        trajectory logging.
 
-        Saves ``n_frames`` evenly-spaced snapshots across the sampler trajectory, both to disk
-        (``log_dir/trajectory/{key}/step_{i:04d}.png``) and to W&B via :meth:`log_image`.
-        Any ``**scalars`` (data_fidelity, grad_norm, …) are written to ``steps.jsonl`` on
-        every call regardless of the frame schedule.
+        Collects ``n_frames`` evenly-spaced snapshots across the sampler trajectory and,
+        at the final checkpoint, renders ONE composite grid via ``traj_viz_fn`` to
+        ``trajectory/{key}.png`` (W&B key ``traj/{key}``). Any ``**scalars``
+        (data_fidelity, grad_norm, …) are written to ``steps.jsonl`` on every call
+        regardless of the frame schedule.
 
         Args:
-            key: sub-directory name / W&B image key, e.g. ``"dps_guided"``.
-            viz_fn: ``(x_est_tensor, out_path)`` — callable that saves a PNG to ``out_path``.
+            key: PNG stem / W&B image key, e.g. ``"dps_g0.5"``.
+            traj_viz_fn: ``(frames, out_path)`` composite renderer taking the snapshots
+                stacked on dim 0 (``[n_frames, B, ...]``), e.g. a dataset's
+                ``visualize_trajectory`` grid. When the sampler also passes its noisy
+                intermediate state ``xt``, rows come in ``(x_t, estimate)`` pairs per
+                sample — 0003's reverse-DDPM trajectory layout.
             total_steps: total number of sampler steps (needed to space frames evenly).
-            n_frames: how many snapshots to save (default 3: start, mid, end).
-            traj_viz_fn: optional ``(frames, out_path)`` composite renderer taking the
-                snapshots stacked on dim 0 (``[n_frames, ...]``), e.g. a dataset's
-                ``visualize_trajectory`` grid. When given, snapshots are also kept on
-                CPU and rendered once, at the final checkpoint, to
-                ``trajectory/{key}/trajectory.png`` (W&B key ``traj/{key}/grid``).
+            n_frames: how many snapshots to collect (default 3: start, mid, end).
         """
-        traj_dir = self.log_dir / "trajectory" / key
+        traj_dir = self.log_dir / "trajectory"
         traj_dir.mkdir(parents=True, exist_ok=True)
         if n_frames <= 1:
             checkpoints: set[int] = {0}
@@ -240,27 +240,30 @@ class Run:
                 round(i * (total_steps - 1) / (n_frames - 1)) for i in range(n_frames)
             }
         last_checkpoint = max(checkpoints)
-        frames: dict[int, torch.Tensor] = {}
+        est_frames: dict[int, torch.Tensor] = {}
+        xt_frames: dict[int, torch.Tensor] = {}
 
-        def on_step(step: int, x_est: Any, **scalars: float) -> None:
+        def on_step(
+            step: int, x_est: Any, xt: torch.Tensor | None = None, **scalars: float
+        ) -> None:
             if scalars:
                 self.log_step(phase=key, step=step, **scalars)
-            if step in checkpoints:
-                path = traj_dir / f"step_{step:04d}.png"
-                viz_fn(x_est, path)
-                self.log_image(f"traj/{key}", path, caption=f"step {step}/{total_steps}")
-                if traj_viz_fn is not None:
-                    frames[step] = x_est.detach().to("cpu", copy=True)
-                    if step == last_checkpoint:
-                        grid = traj_dir / "trajectory.png"
-                        traj_viz_fn(
-                            torch.stack([frames[s] for s in sorted(frames)]), grid
-                        )
-                        self.log_image(
-                            f"traj/{key}/grid",
-                            grid,
-                            caption=f"{len(frames)} frames over {total_steps} steps",
-                        )
+            if step not in checkpoints:
+                return
+            est_frames[step] = x_est.detach().to("cpu", copy=True)
+            if xt is not None:
+                xt_frames[step] = xt.detach().to("cpu", copy=True)
+            if step == last_checkpoint:
+                frames = torch.stack([est_frames[s] for s in sorted(est_frames)])
+                caption = f"{len(est_frames)} frames over {total_steps} steps"
+                if xt_frames:
+                    noisy = torch.stack([xt_frames[s] for s in sorted(xt_frames)])
+                    # Interleave into (x_t, estimate) row pairs per sample (0003's layout).
+                    frames = torch.stack([noisy, frames], dim=2).flatten(1, 2)
+                    caption += " (row pairs: x_t, estimate)"
+                path = traj_dir / f"{key}.png"
+                traj_viz_fn(frames, path)
+                self.log_image(f"traj/{key}", path, caption=caption)
 
         return on_step
 

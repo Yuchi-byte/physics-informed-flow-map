@@ -43,7 +43,6 @@ from omegaconf import DictConfig
 from pydantic import Field, model_validator
 
 from physics_informed_flow_map.experiment import Config, start_run
-from physics_informed_flow_map.flow_matching.openfwi import viz_velocity
 from physics_informed_flow_map.flow_matching.datasets import (
     DatasetConfig,
     OpenFWIDatasetConfig,
@@ -251,8 +250,10 @@ def main(dcfg: DictConfig) -> None:
     )
 
     # Composite trajectory grid (rows = samples, cols = t=0 → t=1) — the same renderer
-    # 0001/0002 log as "trajectory". make_step_saver stacks the snapshots on dim 0, so
-    # frames arrive [n_frames, n, C, H, W] (or without C from the native-grid FWI path).
+    # 0001/0002 log as "trajectory". make_step_saver stacks the snapshots on dim 0 and,
+    # for samplers that report their noisy state, interleaves (x_t, estimate) row pairs
+    # (0003's layout); frames arrive [n_frames, B, C, H, W] (or without C from the
+    # native-grid FWI path).
     def viz_traj(frames: torch.Tensor, path: Path) -> None:
         cfg.dataset.visualize_trajectory(
             frames if frames.ndim == 5 else frames[:, :, None], path
@@ -291,10 +292,9 @@ def main(dcfg: DictConfig) -> None:
                 )
                 step_cb = run.make_step_saver(
                     f"{cfg.method.name}_g{guidance_strength:.2g}",
-                    lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
+                    viz_traj,
                     total_steps=total,
                     n_frames=cfg.n_frames,
-                    traj_viz_fn=viz_traj,
                 )
             if realistic:
                 v_mps, ns = multiscale_fwi(
@@ -353,10 +353,9 @@ def main(dcfg: DictConfig) -> None:
                 if guidance_strength != 0.0 and cfg.n_frames > 0:
                     step_cb = run.make_step_saver(
                         f"{cfg.method.name}_g{guidance_strength:.2g}_mc{cfg.method.mc_samples}",
-                        lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
+                        viz_traj,
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
-                        traj_viz_fn=viz_traj,
                     )
                 module = FlowMapSteerModule(
                     prior,
@@ -394,10 +393,9 @@ def main(dcfg: DictConfig) -> None:
                 if guidance_strength != 0.0 and cfg.n_frames > 0:
                     step_cb = run.make_step_saver(
                         f"fmrg_e_g{guidance_strength:.2g}_n{cfg.method.n_opt}",
-                        lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
+                        viz_traj,
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
-                        traj_viz_fn=viz_traj,
                     )
                 return fmrg_e_sample(
                     velocity_fn,
@@ -428,10 +426,9 @@ def main(dcfg: DictConfig) -> None:
                 if guidance_strength != 0.0 and cfg.n_frames > 0:
                     step_cb = run.make_step_saver(
                         f"flow_tilt_g{guidance_strength:.2g}",
-                        lambda x, p: viz_velocity(x[:, None] if x.ndim == 3 else x, p),
+                        viz_traj,
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
-                        traj_viz_fn=viz_traj,
                     )
                 return guided_sample(
                     velocity_fn,
@@ -469,10 +466,9 @@ def main(dcfg: DictConfig) -> None:
                 if guidance_strength != 0.0 and cfg.n_frames > 0:
                     step_cb = run.make_step_saver(
                         f"red_diffeq_g{guidance_strength:.2g}",
-                        lambda x, p: viz_velocity(x, p),
+                        viz_traj,
                         total_steps=cfg.method.iters or cfg.steps,
                         n_frames=cfg.n_frames,
-                        traj_viz_fn=viz_traj,
                     )
                 return red_diffeq_sample(
                     denoiser,
@@ -497,10 +493,9 @@ def main(dcfg: DictConfig) -> None:
                 if guidance_strength != 0.0 and cfg.n_frames > 0:
                     step_cb = run.make_step_saver(
                         f"dps_g{guidance_strength:.2g}",
-                        lambda x, p: viz_velocity(x, p),
+                        viz_traj,
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
-                        traj_viz_fn=viz_traj,
                     )
                 return dps_sample(
                     denoiser,

@@ -57,7 +57,8 @@ def dps_sample(
         misfit_fn: guidance data-misfit ``pred -> (B,)`` (see ``physics.misfit``);
             ``None`` keeps the historical pointwise L2 against ``d_obs``. The
             ``data_fidelity`` diagnostic stays L2 either way so runs remain comparable.
-        on_step: optional callback ``(step_idx, x0hat, data_fidelity=...)`` for trajectory logging.
+        on_step: optional callback ``(step_idx, x0hat, xt=..., data_fidelity=...)`` for
+            trajectory logging (``xt`` is the reverse-process noisy state after the step).
 
     Returns:
         Samples at ``t=0``, shape ``(n_samples, *shape)``.
@@ -88,5 +89,5 @@ def dps_sample(
 
         if on_step is not None:
             data_fidelity = float(((forward_fn(x0hat.detach()) - d_obs) ** 2).mean())
-            on_step(step_idx, x0hat.detach(), data_fidelity=data_fidelity)
+            on_step(step_idx, x0hat.detach(), xt=x, data_fidelity=data_fidelity)
     return x
