@@ -281,15 +281,22 @@ def main(dcfg: DictConfig) -> None:
         cfg.dataset.visualize(s, p)
         run.log_image("samples", p, caption=f"epoch {epoch + 1} ODE")
         if (epoch + 1) % cfg.sampling.traj_every_epochs == 0:
-            frames = sample_trajectory(
+            states, x1hats = sample_trajectory(
                 m,
                 traj_noise,
                 sampler_steps=cfg.sampling.sampler_steps,
                 device=device,
             )
+            # Two rows per sample: the transported ODE state x_t, then the one-step clean
+            # estimate x1hat at the same time. [n_frames, B, 2, ...] -> [n_frames, 2B, ...]
+            frames = torch.stack([states, x1hats], dim=2).flatten(1, 2)
             pt = run.ckpt_dir.parent / f"trajectory_epoch{epoch}.png"
             cfg.dataset.visualize_trajectory(frames, pt)
-            run.log_image("trajectory", pt, caption=f"epoch {epoch + 1} ODE trajectory")
+            run.log_image(
+                "trajectory",
+                pt,
+                caption=f"epoch {epoch + 1} ODE trajectory (row pairs: x_t, x1hat)",
+            )
         sf = sample_few_step(
             m,
             cfg.sampling.n_eval_viz,

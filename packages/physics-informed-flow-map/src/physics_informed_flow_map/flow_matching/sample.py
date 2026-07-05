@@ -56,12 +56,15 @@ def sample_trajectory(
     sampler_steps: int,
     device: torch.device,
     n_frames: int = 6,
-) -> Tensor:
-    """Euler ODE integration returning ``n_frames`` evenly-spaced intermediate states.
+) -> tuple[Tensor, Tensor]:
+    """Euler ODE integration returning ``n_frames`` evenly-spaced intermediate snapshots.
 
-    Returns shape ``[n_frames, B, *shape]``, from t=0 (pure noise) to t=1 (generated
-    sample). Pass a fixed ``x_noise`` across epochs to track the same starting points
-    as the model improves.
+    Returns a pair ``(states, x1hats)``, each of shape ``[n_frames, B, *shape]``, from t=0
+    (pure noise) to t=1 (generated sample): the transported ODE state ``x_t``, and the
+    one-step clean estimate ``x1hat = x_t + (1-t) * v(t, t, x_t)`` (Euler extrapolation to
+    the data endpoint — the flow analogue of the DDPM Tweedie ``x0hat`` in
+    :func:`baselines.ddpm_sample_trajectory`; at t=1 it equals the state). Pass a fixed
+    ``x_noise`` across epochs to track the same starting points as the model improves.
     """
     model.eval()
     x_noise = x_noise.to(device)
@@ -75,7 +78,9 @@ def sample_trajectory(
     hist = odeint(ode_func, x_noise, times, method="euler", atol=1e-5, rtol=1e-5)
     # hist: [sampler_steps+1, B, *shape] — pick n_frames evenly-spaced indices
     indices = [round(i * sampler_steps / (n_frames - 1)) for i in range(n_frames)]
-    return hist[indices]  # [n_frames, B, *shape]
+    states = hist[indices]  # [n_frames, B, *shape]
+    x1hats = [hist[i] + (1.0 - times[i]) * ode_func(times[i], hist[i]) for i in indices]
+    return states, torch.stack(x1hats)
 
 
 @torch.no_grad()
