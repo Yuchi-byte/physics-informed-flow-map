@@ -57,7 +57,10 @@ trained_models/
 
 # Data
 csv/
-data/
+data/*
+# ... except the curated inversion benchmark (small, provenance-critical)
+!data/inversion_bench/
+data/inversion_bench/seismic/
 
 # Weights & Biases
 wandb/

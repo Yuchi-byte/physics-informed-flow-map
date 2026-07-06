@@ -1,0 +1,19 @@
+{
+  "legacy_global_index": 6044,
+  "family": "FlatVel_A",
+  "file": "model20.npy",
+  "row": 44,
+  "in_val_split": true,
+  "val_rank": 0,
+  "vmin_mps": 2078.0,
+  "vmax_mps": 3845.0,
+  "vmean_mps": 2679.55712890625,
+  "split_config": {
+    "families": [
+      "FlatVel_A"
+    ],
+    "val_fraction": 0.1,
+    "seed": 0,
+    "scheme": "global randperm (legacy)"
+  }
+}
