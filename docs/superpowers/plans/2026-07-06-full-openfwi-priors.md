@@ -97,8 +97,8 @@ Gate for the long runs — replaces the §6 extrapolations with measurements. Ta
       H100/PRO 6000, up to ~24 h on the current PRO 4500).
 - [ ] Review: loss curves, per-family val losses converged and comparable; per-family grids show
       family-appropriate structure (faults in Fault rows, textures in Style rows).
-- [ ] JOURNAL entry + best/final/EMA backed up per spec §6.1 (volume + HF; final EMA to wandb
-      only if quota allows).
+- [ ] JOURNAL entry; best/final/EMA stay on the network volume, **final EMA uploaded as a wandb
+      artifact** (spec §6.1).
 
 ### Task 6: Train 0003 diffusion prior (parallel with Task 5, second pod)
 
@@ -129,20 +129,21 @@ Gate for the long runs — replaces the §6 extrapolations with measurements. Ta
       selected rows (~30–40 GB), extract `seismic/<id>.npy` (5×1000×70, ~280 MB total), delete
       transients.
 - [ ] `InversionBenchmark` loader (manifest-driven, no bulk-data dependency) + `target=<id>`
-      support in 0004; velocity + previews + manifest committed to git; seismic → volume + HF
-      backup.
+      support in 0004; velocity + previews + manifest committed to git; seismic → volume + wandb
+      artifact.
 - [ ] Tests: manifest↔file consistency; loader returns native m/s maps matching
       `held_out_targets` output for the same provenance while bulk data still exists.
 
 ### Task 9: Prior zoo + verification gates + deletion
 
-- [ ] `docs/prior-zoo.md`: one row per definitive prior (run, volume path, HF ref, config,
-      per-family metrics, thumbnail); 0004 configs point at these refs.
-- [ ] Gate 1: each checkpoint reloads **from its HF backup** on a clean path and samples 64 maps.
+- [ ] `docs/prior-zoo.md`: one row per definitive prior (run, volume path, wandb artifact ref,
+      config, per-family metrics, thumbnail); 0004 configs point at these refs.
+- [ ] Gate 1: each EMA checkpoint reloads **from its wandb artifact** on a clean path and
+      samples 64 maps.
 - [ ] Gate 2: per-family energy distance within agreed factor of the FlatVel-era baseline.
 - [ ] Gate 3: flow_tilt + mfm_g inversion of benchmark id `flatvel_a_legacy_6044` reproduces
       journal numbers within seed noise, using only checkpoint + benchmark.
-- [ ] Gate 4: benchmark assets (incl. seismic) backed up to HF.
+- [ ] Gate 4: benchmark assets (incl. seismic, ~290 MB) uploaded as a wandb artifact.
 - [ ] Delete `data/openfwi/*/data/` and `seis*` files (~160 GB reclaimed); **keep the ~8 GB of
       velocity maps** (spec §9.5). JOURNAL note recording what was deleted and how to restore it.
 

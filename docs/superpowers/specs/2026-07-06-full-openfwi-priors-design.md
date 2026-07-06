@@ -174,15 +174,19 @@ On 32 GB cards fall back to bs 128 / lr 1.4e-4 / same sample budget.
 
 Checkpoints are weights-only (`save_checkpoint` stores `model.state_dict()` — no optimizer
 state), so DiT-B ≈ 520 MB per fp32 `.pt`. Best + final + EMA × 3 priors ≈ 3.5–5 GB — **at or
-over the free wandb cap**. This does NOT justify a smaller model; change where the bytes live:
+over the free wandb cap**. This does NOT justify a smaller model; change where the bytes live
+(decided 2026-07-06):
 
-- **Primary:** the RunPod network volume (`runs/.../checkpoints/`) — persistent, effectively
-  unlimited, already the source of truth for 0004.
-- **Durable backup:** a private HuggingFace model repo (free at this scale); `hf upload` each
-  definitive best/final/EMA file. `docs/prior-zoo.md` records volume path + HF ref.
-- **wandb:** set `ckpt_every_epochs: 0` for the full runs and upload **only the final EMA file
-  per prior** (3 × 520 MB ≈ 1.6 GB) — or skip wandb artifacts entirely if the quota is already
-  crowded. The §8 reload gate then verifies against the HF copy instead of the wandb artifact.
+- **Primary (everything):** the RunPod network volume (`runs/.../checkpoints/`) — persistent,
+  effectively unlimited, already the source of truth for 0004. All best/final/EMA files stay
+  here.
+- **wandb (off-RunPod copy of what matters):** set `ckpt_every_epochs: 0` for the full runs and
+  upload **only the final EMA file per prior** (3 × 520 MB ≈ 1.6 GB) plus the benchmark artifact
+  (~290 MB, §7) — ~1.9 GB total, comfortably under the 5 GB free cap.
+- No HuggingFace mirror. Residual risk (volume mishap loses non-EMA checkpoints) is acceptable:
+  the EMA files — the only ones 0004 loads — live on wandb, velocity maps are kept (§9.5), and
+  any prior is regenerable in ~a GPU-day. `docs/prior-zoo.md` records volume path + wandb
+  artifact ref per prior.
 
 ## 7. Inversion benchmark set (post-training, pre-deletion)
 
@@ -200,7 +204,7 @@ inversion phase.
 - `seismic/<id>.npy` (recommended) — the **original OpenFWI-simulated seismic**
   (5×1000×70) for each target. This is the only asset that becomes hard to get after deletion and
   it unlocks non-inverse-crime experiments (their simulator ≠ our Deepwave operator) — a caveat
-  the journal already flags on every result to date. ~280 MB: volume + HF backup, not git.
+  the journal already flags on every result to date. ~280 MB: volume + wandb artifact, not git.
   Requires transiently downloading only the specific `data/seis` files containing selected rows
   (~40–60 files ≈ 30–40 GB, then deleted).
 
@@ -226,13 +230,13 @@ prior" has exactly one answer.
 
 ## 8. Verification gates before deletion
 
-1. Each definitive checkpoint reloads **from its off-volume backup** (HF repo or wandb artifact,
-   per §6.1 — not the local file) and generates a 64-sample grid without error.
+1. Each definitive EMA checkpoint reloads **from its wandb artifact** (the off-RunPod copy, §6.1
+   — not the local file) and generates a 64-sample grid without error.
 2. Per-family energy distance vs held-out val within an agreed factor of the FlatVel_A-era
    baseline (0.127 vs 0.090 floor was the 0001 precedent).
 3. One end-to-end inversion (flow_tilt + mfm_g on map 6044 via the new benchmark loader) matches
    journal numbers within seed noise — proves the checkpoint + benchmark pair is self-sufficient.
-4. Benchmark assets (incl. seismic) backed up off-volume (HF; wandb only if quota allows).
+4. Benchmark assets (incl. seismic, ~290 MB) uploaded as a wandb artifact.
 
 Then delete: all `data/` + `seis*` files. **Velocity maps (~8 GB) are kept** (§9.5) — cheap
 insurance for retraining and for expanding the benchmark without any re-download.
