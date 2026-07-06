@@ -7,6 +7,7 @@ helpers do the actual work and are delegated to.
 from __future__ import annotations
 
 import math
+import zlib
 from pathlib import Path
 from typing import Annotated, Literal, cast
 
@@ -24,6 +25,7 @@ from torch.utils.data import Dataset, Subset, TensorDataset
 from physics_informed_flow_map.experiment import Config
 from physics_informed_flow_map.flow_matching.openfwi import (
     OpenFWIVelocityDataset,
+    RandomHFlip,
     viz_velocity,
 )
 
@@ -217,6 +219,13 @@ class OpenFWIDatasetConfig(Config):
     families: list[str] = ["FlatVel_A"]
     resolution: int = 64
     val_fraction: float = 0.1
+    # "global" (legacy): one seed-0 randperm over the concatenated families — val membership
+    # depends on the whole families list. "per_family": each family split independently with a
+    # seed derived from its name, so held-out maps are stable under adding/removing families.
+    # Definitive multi-family runs use per_family; the default stays global so existing
+    # single-family runs and their held-out target indices keep meaning what they meant.
+    split_scheme: Literal["global", "per_family"] = "global"
+    hflip: bool = False  # train-split-only left-right flip augmentation
 
     @property
     def requires_download(self) -> bool:
@@ -232,14 +241,54 @@ class OpenFWIDatasetConfig(Config):
 
     def _split(self) -> tuple[OpenFWIVelocityDataset, list[int], list[int]]:
         full = _load_openfwi(self.data_dir, self.families, self.resolution)
-        n = len(full)
-        n_val = max(1, int(self.val_fraction * n))
-        perm = torch.randperm(n, generator=torch.Generator().manual_seed(0)).tolist()
-        return full, perm[n_val:], perm[:n_val]
+        if self.split_scheme == "global":
+            n = len(full)
+            n_val = max(1, int(self.val_fraction * n))
+            perm = torch.randperm(
+                n, generator=torch.Generator().manual_seed(0)
+            ).tolist()
+            return full, perm[n_val:], perm[:n_val]
+        train_idx: list[int] = []
+        val_idx: list[int] = []
+        for family, sl in zip(full.family_names, full.family_slices):
+            n_fam = sl.stop - sl.start
+            n_val = max(1, int(self.val_fraction * n_fam))
+            seed = zlib.crc32(family.encode())
+            perm = (
+                torch.randperm(n_fam, generator=torch.Generator().manual_seed(seed))
+                + sl.start
+            ).tolist()
+            val_idx.extend(perm[:n_val])
+            train_idx.extend(perm[n_val:])
+        return full, train_idx, val_idx
+
+    def fingerprint(self) -> dict[str, object]:
+        """Auditable identity of the exact train/val construction (logged to the run)."""
+        full, train_idx, val_idx = self._split()
+        per_family = {
+            family: {
+                "maps": sl.stop - sl.start,
+                "files": len({full.index[i][0].name for i in range(sl.start, sl.stop)}),
+                "split_seed": zlib.crc32(family.encode())
+                if self.split_scheme == "per_family"
+                else 0,
+            }
+            for family, sl in zip(full.family_names, full.family_slices)
+        }
+        return {
+            "families": per_family,
+            "n_train": len(train_idx),
+            "n_val": len(val_idx),
+            "val_fraction": self.val_fraction,
+            "split_scheme": self.split_scheme,
+            "hflip": self.hflip,
+            "resolution": self.resolution,
+        }
 
     def build(self) -> Dataset:
         full, train_idx, _ = self._split()
-        return Subset(full, train_idx)
+        train: Dataset = Subset(full, train_idx)
+        return RandomHFlip(train) if self.hflip else train
 
     def build_val(self) -> Dataset:
         full, _, val_idx = self._split()

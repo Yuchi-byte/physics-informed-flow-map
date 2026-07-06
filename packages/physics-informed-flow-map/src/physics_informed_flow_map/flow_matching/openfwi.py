@@ -32,11 +32,14 @@ class OpenFWIVelocityDataset(Dataset):
 
     def __init__(self, root: Path, families: list[str], resolution: int = 64) -> None:
         self.resolution = resolution
-        rows: list[np.ndarray] = []
         # Parallel (file, row) provenance for each sample, so callers can re-load a sample at its
         # native resolution from disk (held_out_targets uses this for the inversion target maps).
         self.index: list[tuple[Path, int]] = []
-        for family in families:
+        self.family_names: list[str] = list(families)
+        # First pass: headers only (mmap), to size the single contiguous allocation.
+        entries: list[tuple[int, Path, int]] = []  # (family_id, file, n_rows)
+        total = 0
+        for fid, family in enumerate(families):
             family_dir = root / family
             files = sorted(family_dir.glob("model/*.npy")) + sorted(
                 family_dir.glob("vel*.npy")
@@ -48,12 +51,28 @@ class OpenFWIVelocityDataset(Dataset):
                     f"Download from the 'ashynf/OpenFWI' HuggingFace dataset."
                 )
             for f in files:
-                arr = np.load(f)  # load full file into RAM once
-                for i in range(arr.shape[0]):
-                    rows.append(arr[i])
-                    self.index.append((f, i))
-        # Stack into one contiguous array so workers share it via fork (copy-on-write).
-        self._data = np.stack(rows, axis=0)  # (N, 1, 70, 70) float32
+                n_rows = int(np.load(f, mmap_mode="r").shape[0])
+                entries.append((fid, f, n_rows))
+                total += n_rows
+        # Second pass: fill the pre-allocated array one file at a time, so peak transient
+        # memory is dataset + one file (not 2x dataset as stack-of-rows would be). Workers
+        # forked after construction share it copy-on-write.
+        self._data = np.empty((total, 1, NATIVE, NATIVE), dtype=np.float32)
+        self.family_ids = np.empty(total, dtype=np.int8)
+        pos = 0
+        for fid, f, n_rows in entries:
+            arr = np.load(f)  # (N, 1, 70, 70) or (N, 70, 70)
+            self._data[pos : pos + n_rows] = arr.reshape(n_rows, 1, NATIVE, NATIVE)
+            self.family_ids[pos : pos + n_rows] = fid
+            self.index.extend((f, i) for i in range(n_rows))
+            pos += n_rows
+        # Families are loaded in order, so each occupies one contiguous global-index slice.
+        self.family_slices: list[slice] = []
+        start = 0
+        for fid in range(len(families)):
+            n_fam = int((self.family_ids == fid).sum())
+            self.family_slices.append(slice(start, start + n_fam))
+            start += n_fam
 
     def __len__(self) -> int:
         return len(self._data)
@@ -70,6 +89,27 @@ class OpenFWIVelocityDataset(Dataset):
                 antialias=True,
             )[0]
         return x, 0
+
+
+class RandomHFlip(Dataset):
+    """p=0.5 left-right flip augmentation for velocity maps (train split only).
+
+    A mirrored geological cross-section is a physically valid velocity model (unlike a
+    vertical flip — velocity increases with depth), and the prior is unconditional, so
+    this doubles effective data diversity for free.
+    """
+
+    def __init__(self, base: Dataset) -> None:
+        self.base = base
+
+    def __len__(self) -> int:
+        return len(self.base)  # type: ignore[arg-type]  # map-style base
+
+    def __getitem__(self, idx: int) -> tuple[Tensor, int]:
+        x, label = self.base[idx]
+        if bool(torch.rand(()) < 0.5):
+            x = torch.flip(x, dims=[-1])
+        return x, label
 
 
 def viz_velocity(samples: Tensor, path: Path, *, ncols: int = 8) -> None:
