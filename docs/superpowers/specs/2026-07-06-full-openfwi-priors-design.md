@@ -80,8 +80,11 @@ Design:
   Style exposure and is not obviously better; keep it as an opt-in config flag, to be pulled only
   if per-family metrics show a starved family.
 - **Per-family observability (the guard):** the loader tracks a per-sample family id; each eval
-  logs **per-family val loss** and a **per-family sample grid** (fixed noise, 8 samples × 10
-  families) so mode collapse or a starved family is visible at epoch granularity, not post-hoc.
+  logs **per-family val loss**, and the final eval logs a **per-family energy distance** (one
+  shared generated pool vs each family's held-out maps), so mode collapse or a starved family is
+  visible at epoch granularity, not post-hoc. (The prior is unconditional, so *generated* samples
+  carry no family label and cannot be stratified — a one-time grid of real held-out maps per
+  family is logged instead as the visual reference for the sample grids.)
 - **Horizontal-flip augmentation** (train split only, off for val): a left-right mirrored velocity
   model is a physically valid velocity model, and the prior is unconditional, so this doubles
   effective data for free. Vertical flip is *not* valid (velocity increases with depth).

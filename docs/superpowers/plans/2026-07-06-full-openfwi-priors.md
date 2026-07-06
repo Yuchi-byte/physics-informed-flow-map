@@ -144,8 +144,10 @@ Gate for the long runs — replaces the §6 extrapolations with measurements. Ta
 - [ ] Gate 3: flow_tilt + mfm_g inversion of benchmark id `flatvel_a_legacy_6044` reproduces
       journal numbers within seed noise, using only checkpoint + benchmark.
 - [ ] Gate 4: benchmark assets (incl. seismic, ~290 MB) uploaded as a wandb artifact.
-- [ ] Delete `data/openfwi/*/data/` and `seis*` files (~160 GB reclaimed); **keep the ~8 GB of
-      velocity maps** (spec §9.5). JOURNAL note recording what was deleted and how to restore it.
+- [x] Delete `data/openfwi/*/data/` and `seis*` files (~160 GB reclaimed); **keep the ~8 GB of
+      velocity maps** (spec §9.5). Done early (2026-07-06, user request): the Vel-family seismic
+      was never read by anything. Task 8's benchmark seismic extraction transiently re-downloads
+      just the specific files containing selected rows, as designed.
 
 ---
 
