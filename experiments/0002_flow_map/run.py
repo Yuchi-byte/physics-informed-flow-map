@@ -371,30 +371,6 @@ def main(dcfg: DictConfig) -> None:
     final_loss = sum(last) / len(last)
     eval_model = ema_model if ema_model is not None else model
 
-    samples = sample(
-        eval_model,
-        cfg.sampling.n_eval_viz,
-        cfg.dataset.shape,
-        sampler_steps=cfg.sampling.sampler_steps,
-        device=device,
-        x_noise=eval_noise,  # same fixed noise as the per-epoch grids, for a comparable final snapshot
-    )
-    final_png = run.ckpt_dir.parent / "samples.png"
-    cfg.dataset.visualize(samples, final_png)
-    run.log_image("samples_final", final_png)
-
-    few = sample_few_step(
-        eval_model,
-        cfg.sampling.n_eval_viz,
-        cfg.dataset.shape,
-        n_steps=cfg.sampling.few_steps,
-        device=device,
-        x_noise=eval_noise,  # same fixed noise as the ODE final → directly comparable
-    )
-    few_png = run.ckpt_dir.parent / "samples_fewstep.png"
-    cfg.dataset.visualize(few, few_png)
-    run.log_image("samples_fewstep_final", few_png)
-
     final_val_loss = compute_val_loss(eval_model)
     run.finish(
         **{

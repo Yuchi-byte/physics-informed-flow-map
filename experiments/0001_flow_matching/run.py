@@ -61,7 +61,7 @@ TrainingConfig.model_rebuild()
 
 class SamplingConfig(Config):
     sampler_steps: int = Field(100, gt=0)
-    n_eval_viz: int = Field(64, gt=0)  # samples drawn for each viz (per-epoch + final)
+    n_eval_viz: int = Field(64, gt=0)  # samples drawn for each per-epoch viz
     n_traj_viz: int = Field(4, gt=0)   # samples shown in the trajectory grid
     traj_every_epochs: int = Field(20, gt=0)  # save a trajectory viz every N eval epochs
 
@@ -215,17 +215,6 @@ def main(dcfg: DictConfig) -> None:
     last = [h["total"] for h in history if h["epoch"] == last_epoch]
     final_loss = sum(last) / len(last)
     eval_model = ema_model if ema_model is not None else model
-
-    samples = sample(
-        eval_model,
-        cfg.sampling.n_eval_viz,
-        cfg.dataset.shape,
-        sampler_steps=cfg.sampling.sampler_steps,
-        device=device,
-    )
-    final_png = run.ckpt_dir.parent / "samples.png"
-    cfg.dataset.visualize(samples, final_png)
-    run.log_image("samples_final", final_png)
 
     final_val_loss = compute_val_loss(eval_model)
     run.finish(
