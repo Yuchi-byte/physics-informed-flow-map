@@ -33,6 +33,13 @@ from physics_informed_flow_map.experiment import Config, start_run
 from physics_informed_flow_map.flow_matching.datasets import (
     DatasetConfig,
     MNISTDatasetConfig,
+    OpenFWIDatasetConfig,
+)
+from physics_informed_flow_map.flow_matching.family_eval import (
+    N_ENERGY_SAMPLES,
+    family_reference_grid,
+    per_family_energy_distance,
+    per_family_val_loss,
 )
 from physics_informed_flow_map.flow_matching.models import count_parameters
 
@@ -163,20 +170,45 @@ def main(dcfg: DictConfig) -> None:
         persistent_workers=cfg.training.num_workers > 0,
     )
 
+    # OpenFWI: per-family val losses + a one-time real-map reference grid (unconditional
+    # prior → samples can't be stratified by family; see family_eval module docstring).
+    val_by_family = (
+        cfg.dataset.build_val_by_family()
+        if isinstance(cfg.dataset, OpenFWIDatasetConfig)
+        else None
+    )
+    if val_by_family is not None:
+        ref_path = run.log_dir / "val_reference.png"
+        family_reference_grid(val_by_family, ref_path)
+        run.log_image(
+            "val_reference", ref_path, caption="held-out real maps per family"
+        )
+        run.update_config(dataset_fingerprint=cfg.dataset.fingerprint())
+
     @torch.no_grad()
-    def compute_val_loss(model: nn.Module) -> float:
-        """Mean predict-noise DDPM loss over the held-out split (the per-eval val metric)."""
+    def _batch_val_loss(model: nn.Module, xb: torch.Tensor) -> float:
+        xb = xb.to(device)
+        noise = torch.randn_like(xb)
+        t = torch.randint(0, num_timesteps, (xb.shape[0],), device=device)
+        x_t = scheduler.add_noise(xb, noise, t)  # type: ignore[attr-defined]  # diffusers stub omits add_noise
+        pred = model(x_t, t).sample
+        return float(F.mse_loss(pred, noise).item())
+
+    @torch.no_grad()
+    def compute_val_loss(model: nn.Module) -> tuple[float, dict[str, float]]:
+        """Mean predict-noise DDPM val loss, global + per family (empty for non-OpenFWI)."""
         model.eval()
+        if val_by_family is not None:
+            return per_family_val_loss(
+                lambda xb, lb: _batch_val_loss(model, xb),
+                val_by_family,
+                cfg.training.batch_size,
+            )
         total, n = 0.0, 0
         for xb, _ in val_loader:
-            xb = xb.to(device)
-            noise = torch.randn_like(xb)
-            t = torch.randint(0, num_timesteps, (xb.shape[0],), device=device)
-            x_t = scheduler.add_noise(xb, noise, t)  # type: ignore[attr-defined]  # diffusers stub omits add_noise
-            pred = model(x_t, t).sample
-            total += float(F.mse_loss(pred, noise).item())
+            total += _batch_val_loss(model, xb)
             n += 1
-        return total / max(n, 1)
+        return total / max(n, 1), {}
 
     def on_eval(model: nn.Module, epoch: int) -> float | None:
         # Fixed-seed generator so every epoch's grid samples the same noise (initial + ancestral):
@@ -214,7 +246,10 @@ def main(dcfg: DictConfig) -> None:
                 pt,
                 caption=f"epoch {epoch + 1} reverse-DDPM trajectory (row pairs: x_t, x0hat)",
             )
-        return compute_val_loss(model)
+        val_loss, fam_losses = compute_val_loss(model)
+        if fam_losses:
+            run.log(epoch=epoch, **{f"val/loss/{f}": v for f, v in fam_losses.items()})
+        return val_loss
 
     on_checkpoint = run.checkpoint_callback(
         artifact_name=f"{cfg.dataset.name}-diffusion",
@@ -261,13 +296,27 @@ def main(dcfg: DictConfig) -> None:
     cfg.dataset.visualize(samples, final_png)
     run.log_image("samples_final", final_png)
 
-    final_val_loss = compute_val_loss(eval_model)
-    run.finish(
-        **{
-            "val/loss": final_val_loss,
-            "train/final_loss": final_loss,
-        }
-    )
+    final_val_loss, final_fam_losses = compute_val_loss(eval_model)
+    summary: dict[str, float] = {
+        "val/loss": final_val_loss,
+        "train/final_loss": final_loss,
+    }
+    summary.update({f"val/loss/{f}": v for f, v in final_fam_losses.items()})
+    if val_by_family is not None:
+        # One shared generated pool vs each family's held-out maps: does the unconditional
+        # prior cover every family's region of velocity-map space?
+        pool = ddpm_sample(
+            eval_model,
+            scheduler,
+            shape,
+            n_samples=N_ENERGY_SAMPLES,
+            num_steps=cfg.diffusion.num_sample_steps,
+            device=device,
+            generator=torch.Generator(device=device).manual_seed(cfg.seed),
+        )
+        energies = per_family_energy_distance(pool, val_by_family)
+        summary.update({f"val/energy/{f}": v for f, v in energies.items()})
+    run.finish(**summary)
 
 
 if __name__ == "__main__":

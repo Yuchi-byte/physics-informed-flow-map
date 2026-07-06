@@ -36,6 +36,13 @@ from physics_informed_flow_map.experiment import Config, start_run
 from physics_informed_flow_map.flow_matching.datasets import (
     DatasetConfig,
     GaussiansDatasetConfig,
+    OpenFWIDatasetConfig,
+)
+from physics_informed_flow_map.flow_matching.family_eval import (
+    N_ENERGY_SAMPLES,
+    family_reference_grid,
+    per_family_energy_distance,
+    per_family_val_loss,
 )
 from physics_informed_flow_map.flow_matching.models import (
     DiTModelConfig,
@@ -249,6 +256,21 @@ def main(dcfg: DictConfig) -> None:
     )
     val_loss_fn = make_loss_fn(cfg.dataset.num_classes)  # step=0 → pure-FM diagonal
 
+    # OpenFWI: per-family val losses + a one-time real-map reference grid (unconditional
+    # prior → samples can't be stratified by family; see family_eval module docstring).
+    val_by_family = (
+        cfg.dataset.build_val_by_family()
+        if isinstance(cfg.dataset, OpenFWIDatasetConfig)
+        else None
+    )
+    if val_by_family is not None:
+        ref_path = run.log_dir / "val_reference.png"
+        family_reference_grid(val_by_family, ref_path)
+        run.log_image(
+            "val_reference", ref_path, caption="held-out real maps per family"
+        )
+        run.update_config(dataset_fingerprint=cfg.dataset.fingerprint())
+
     # Fixed held-out references for the posterior-reconstruction panel.
     ref_batch = next(iter(val_loader))[0][: cfg.sampling.posterior_refs].to(device)
 
@@ -259,16 +281,25 @@ def main(dcfg: DictConfig) -> None:
     traj_noise = eval_noise[: cfg.sampling.n_traj_viz]
 
     @torch.no_grad()
-    def compute_val_loss(m: BaseModel) -> float:
+    def _batch_val_loss(m: BaseModel, xb: torch.Tensor, lb: torch.Tensor) -> float:
+        opt_losses, _ = val_loss_fn(m, None, xb.to(device), lb.to(device), step=0)
+        return float(sum(opt_losses.values()).item())
+
+    @torch.no_grad()
+    def compute_val_loss(m: BaseModel) -> tuple[float, dict[str, float]]:
+        """Global val loss + per-family val losses (empty dict for non-OpenFWI)."""
         m.eval()
+        if val_by_family is not None:
+            return per_family_val_loss(
+                lambda xb, lb: _batch_val_loss(m, xb, lb),
+                val_by_family,
+                cfg.training.batch_size,
+            )
         total, n = 0.0, 0
         for xb, lb in val_loader:
-            xb = xb.to(device)
-            lb = lb.to(device)
-            opt_losses, _ = val_loss_fn(m, None, xb, lb, step=0)
-            total += float(sum(opt_losses.values()).item())
+            total += _batch_val_loss(m, xb, lb)
             n += 1
-        return total / max(n, 1)
+        return total / max(n, 1), {}
 
     # Junction times of the few-step sampler — where the off-diagonal consistency metric
     # compares flow-map jumps against the fine ODE (must land on the ODE's Euler grid).
@@ -342,7 +373,10 @@ def main(dcfg: DictConfig) -> None:
             pr,
             caption=f"epoch {epoch + 1}: rows=refs, cols=[ref, t={t_grid}]",
         )
-        return compute_val_loss(m)
+        val_loss, fam_losses = compute_val_loss(m)
+        if fam_losses:
+            run.log(epoch=epoch, **{f"val/loss/{f}": v for f, v in fam_losses.items()})
+        return val_loss
 
     on_checkpoint = run.checkpoint_callback(
         artifact_name=f"{cfg.dataset.name}-flowmap",
@@ -384,13 +418,26 @@ def main(dcfg: DictConfig) -> None:
     final_loss = sum(last) / len(last)
     eval_model = ema_model if ema_model is not None else model
 
-    final_val_loss = compute_val_loss(eval_model)
-    run.finish(
-        **{
-            "val/loss": final_val_loss,
-            "train/final_loss": final_loss,
-        }
-    )
+    final_val_loss, final_fam_losses = compute_val_loss(eval_model)
+    summary: dict[str, float] = {
+        "val/loss": final_val_loss,
+        "train/final_loss": final_loss,
+    }
+    summary.update({f"val/loss/{f}": v for f, v in final_fam_losses.items()})
+    if val_by_family is not None:
+        # One shared generated pool vs each family's held-out maps: does the unconditional
+        # prior cover every family's region of velocity-map space?
+        pool = sample(
+            eval_model,
+            N_ENERGY_SAMPLES,
+            cfg.dataset.shape,
+            sampler_steps=cfg.sampling.sampler_steps,
+            device=device,
+        )
+        assert isinstance(pool, torch.Tensor)  # no return_states_at -> samples only
+        energies = per_family_energy_distance(pool, val_by_family)
+        summary.update({f"val/energy/{f}": v for f, v in energies.items()})
+    run.finish(**summary)
 
 
 if __name__ == "__main__":

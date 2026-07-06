@@ -1,11 +1,14 @@
 # @package _global_
-# Full-OpenFWI velocity-map prior: all 10 families (~470k maps, ~423k after the
-# 0.1 val split -> ~6.6k steps/epoch at batch 64). 45 epochs ~= 297k steps, mid the
-# corroborated 200k-400k-step band for diffusion/flow priors on OpenFWI (KAUST
-# 2402.06277 & 2412.06959 = 200k; RED-DiffEq 2509.21659 = 400k). lr 1e-4 matches the
-# near-universal value; 2000-step warmup + no-decay schedule are upstream mfm.
+# Definitive full-OpenFWI flow-map prior: all 10 2D families (470k maps; 423k train / 47k val
+# under the per-family 0.1 split). Same bs 256 / lr 2e-4 / 90-epoch / dit_b / bf16 recipe as
+# 0001's openfwi_full (see that yaml for the step-budget rationale). The definitive run is the
+# esd_teacher regime — pass training=teacher training.teacher_ckpt=<0001 dit_b EMA ckpt>; this
+# yaml's inline training keys are composed after the training group, so they apply in both
+# regimes. Diagonal always trains on data (data_fm=True in flow_matching/train.py); the teacher
+# supplies only the off-diagonal target + warm start.
+# Design: docs/superpowers/specs/2026-07-06-full-openfwi-priors-design.md
 defaults:
-  - override /model: dit
+  - override /model: dit_b
   - override /dataset: openfwi
 
 dataset:
@@ -20,14 +23,18 @@ dataset:
     - FlatVel_B
     - Style_A
     - Style_B
+  split_scheme: per_family
+  hflip: true
 
 training:
-  n_epochs: 45
-  batch_size: 64
-  lr: 1.0e-4
+  n_epochs: 90
+  batch_size: 256
+  lr: 2.0e-4
   warmup_steps: 2000
+  num_workers: 8
+  precision: bf16
   eval_every_epochs: 5
-  ckpt_every_epochs: 15  # local save + wandb artifact upload every 15 epochs (also best + final)
+  ckpt_every_epochs: 0
   ema:
     enabled: true
 sampling:

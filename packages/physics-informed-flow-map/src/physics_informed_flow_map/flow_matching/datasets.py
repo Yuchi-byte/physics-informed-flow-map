@@ -290,6 +290,14 @@ class OpenFWIDatasetConfig(Config):
         train: Dataset = Subset(full, train_idx)
         return RandomHFlip(train) if self.hflip else train
 
+    def build_val_by_family(self) -> dict[str, Dataset]:
+        """The val split partitioned by family (for per-family eval metrics)."""
+        full, _, val_idx = self._split()
+        return {
+            family: Subset(full, [i for i in val_idx if sl.start <= i < sl.stop])
+            for family, sl in zip(full.family_names, full.family_slices)
+        }
+
     def build_val(self) -> Dataset:
         full, _, val_idx = self._split()
         return Subset(full, val_idx)
