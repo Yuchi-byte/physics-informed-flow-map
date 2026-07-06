@@ -97,8 +97,8 @@ Gate for the long runs — replaces the §6 extrapolations with measurements. Ta
       H100/PRO 6000, up to ~24 h on the current PRO 4500).
 - [ ] Review: loss curves, per-family val losses converged and comparable; per-family grids show
       family-appropriate structure (faults in Fault rows, textures in Style rows).
-- [ ] JOURNAL entry; best/final/EMA stay on the network volume, **final EMA uploaded as a wandb
-      artifact** (spec §6.1).
+- [ ] JOURNAL entry; best/final/EMA stay on the network volume, **final EMA + final raw uploaded
+      as wandb artifacts** (EMA = inference copy, raw = warm-start copy; spec §6.1).
 
 ### Task 6: Train 0003 diffusion prior (parallel with Task 5, second pod)
 

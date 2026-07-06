@@ -181,12 +181,15 @@ over the free wandb cap**. This does NOT justify a smaller model; change where t
   effectively unlimited, already the source of truth for 0004. All best/final/EMA files stay
   here.
 - **wandb (off-RunPod copy of what matters):** set `ckpt_every_epochs: 0` for the full runs and
-  upload **only the final EMA file per prior** (3 × 520 MB ≈ 1.6 GB) plus the benchmark artifact
-  (~290 MB, §7) — ~1.9 GB total, comfortably under the 5 GB free cap.
-- No HuggingFace mirror. Residual risk (volume mishap loses non-EMA checkpoints) is acceptable:
-  the EMA files — the only ones 0004 loads — live on wandb, velocity maps are kept (§9.5), and
-  any prior is regenerable in ~a GPU-day. `docs/prior-zoo.md` records volume path + wandb
-  artifact ref per prior.
+  upload **final EMA + final raw per prior** (6 × 520 MB ≈ 3.1 GB) plus the benchmark artifact
+  (~290 MB, §7) — ~3.4 GB total, under the 5 GB free cap. Final EMA is the inference checkpoint
+  (what 0004 loads); final raw is the warm-start checkpoint for any future continued training.
+  "Best" is skipped: checkpoints are weights-only (no optimizer/schedule state, so every restart
+  is a warm start anyway), val loss is a noisy model-selection signal for flow/diffusion priors,
+  and with EMA the final ≈ best in practice. Best still exists on the volume.
+- No HuggingFace mirror. Residual risk (volume mishap loses the "best" snapshots) is acceptable:
+  velocity maps are kept (§9.5) and any prior is regenerable in ~a GPU-day. `docs/prior-zoo.md`
+  records volume path + wandb artifact ref per prior.
 
 ## 7. Inversion benchmark set (post-training, pre-deletion)
 
