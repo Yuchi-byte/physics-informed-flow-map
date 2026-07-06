@@ -46,6 +46,7 @@ from physics_informed_flow_map.flow_matching.models import (
     count_parameters,
 )
 from physics_informed_flow_map.flow_matching.sample import (
+    flow_map_consistency,
     sample,
     sample_few_step,
     sample_posterior,
@@ -268,14 +269,19 @@ def main(dcfg: DictConfig) -> None:
             n += 1
         return total / max(n, 1)
 
+    # Junction times of the few-step sampler — where the off-diagonal consistency metric
+    # compares flow-map jumps against the fine ODE (must land on the ODE's Euler grid).
+    junction_ts = [k / cfg.sampling.few_steps for k in range(cfg.sampling.few_steps + 1)]
+
     def on_eval(m: BaseModel, epoch: int) -> float | None:
-        s = sample(
+        s, ode_states = sample(
             m,
             cfg.sampling.n_eval_viz,
             cfg.dataset.shape,
             sampler_steps=cfg.sampling.sampler_steps,
             device=device,
             x_noise=eval_noise,
+            return_states_at=junction_ts,
         )
         p = run.ckpt_dir.parent / f"samples_epoch{epoch}.png"
         cfg.dataset.visualize(s, p)
@@ -297,13 +303,14 @@ def main(dcfg: DictConfig) -> None:
                 pt,
                 caption=f"epoch {epoch + 1} ODE trajectory (row pairs: x_t, x1hat)",
             )
-        sf = sample_few_step(
+        sf, few_hist = sample_few_step(
             m,
             cfg.sampling.n_eval_viz,
             cfg.dataset.shape,
             n_steps=cfg.sampling.few_steps,
             device=device,
             x_noise=eval_noise,  # same noise as the ODE grid → comparable cell-for-cell & across epochs
+            return_hist=True,
         )
         pf = run.ckpt_dir.parent / f"samples_fewstep_epoch{epoch}.png"
         cfg.dataset.visualize(sf, pf)
@@ -312,6 +319,10 @@ def main(dcfg: DictConfig) -> None:
             pf,
             caption=f"epoch {epoch + 1} {cfg.sampling.few_steps}-step",
         )
+        # Off-diagonal validation: self-consistency of flow-map jumps against the fine ODE,
+        # reusing the two trajectories above (same eval_noise → directly comparable).
+        consistency = flow_map_consistency(m, eval_noise, ode_states, few_hist)
+        run.log(epoch=epoch, **{f"val/{k}": v for k, v in consistency.items()})
         # Posterior reconstruction across a sweep of conditioning levels: each row is one held-out
         # reference, columns are [ref, recon@t...]. A conditioned model sharpens toward the ref as
         # t_cond -> 1; one that ignores x_cond returns the same generic sample in every column.
