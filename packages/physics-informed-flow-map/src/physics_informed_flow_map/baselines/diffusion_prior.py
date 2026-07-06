@@ -130,6 +130,7 @@ def train_diffusion_prior(
     on_eval: Callable[..., float | None] | None = None,
     ckpt_every_epochs: int = 0,
     on_checkpoint: Callable[..., None] | None = None,
+    precision: str = "fp32",
 ) -> tuple[list[dict[str, float]], nn.Module | None]:
     """Standard predict-noise DDPM training via the shared ``train_loop``.
 
@@ -167,4 +168,5 @@ def train_diffusion_prior(
         on_eval=on_eval,
         ckpt_every_epochs=ckpt_every_epochs,
         on_checkpoint=on_checkpoint,
+        precision=precision,
     )

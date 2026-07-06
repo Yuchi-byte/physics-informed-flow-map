@@ -40,11 +40,15 @@ def train_loop(
     on_eval: Callable[..., float | None] | None = None,
     ckpt_every_epochs: int = 0,
     on_checkpoint: Callable[..., None] | None = None,
+    precision: str = "fp32",
 ) -> tuple[list[dict[str, float]], nn.Module | None]:
     """Run ``n_epochs`` of training, returning a per-step history and the EMA model (or None).
 
     Args:
         compute_loss: ``(model, batch, step) -> scalar loss``; moves ``batch`` to ``device``.
+        precision: ``"fp32"`` (default) or ``"bf16"`` — bf16 runs the loss forward under
+            autocast (weights, optimizer state and gradients stay fp32; no GradScaler
+            needed). Eval/sampling paths are the caller's and are not autocast here.
         log: receives per-epoch ``train/loss``, ``train/grad_norm``, ``train/lr``,
             ``time/epoch_s`` and, at eval epochs, ``val/loss`` +
             ``time/eval_s`` (each with ``step`` + ``epoch``). A final ``time/total_min``
@@ -58,6 +62,10 @@ def train_loop(
         on_checkpoint: ``(model, epoch, *, is_best, is_final, ema_model)`` at the ckpt cadence,
             on every new best, and once at the end (``is_final=True``).
     """
+    if precision not in ("fp32", "bf16"):
+        raise ValueError(f"precision must be 'fp32' or 'bf16', got {precision!r}")
+    autocast_bf16 = precision == "bf16"
+
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Linear warmup 0.1x -> 1x over warmup_steps, then constant (LinearLR holds end_factor
@@ -96,7 +104,10 @@ def train_loop(
         epoch_start = time.perf_counter()
         for batch in tqdm(loader, desc=f"epoch {epoch + 1}/{n_epochs}", leave=False):
             optimizer.zero_grad()
-            loss = compute_loss(model, batch, step)
+            with torch.autocast(
+                device_type=device.type, dtype=torch.bfloat16, enabled=autocast_bf16
+            ):
+                loss = compute_loss(model, batch, step)
             loss.backward()  # type: ignore[no-untyped-call]
             # clip_grad_norm_ returns the *pre-clip* total grad norm — log it.
             grad_norm = float(

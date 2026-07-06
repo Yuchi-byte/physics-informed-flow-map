@@ -1,0 +1,6 @@
+# Mid-size DiT (~28M params): fallback if dit_b trains poorly on full OpenFWI.
+kind: dit
+hidden: 512
+depth: 8
+num_heads: 8
+patch_size: 4

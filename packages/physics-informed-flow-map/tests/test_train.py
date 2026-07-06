@@ -257,3 +257,39 @@ def test_train_logs_val_loss_when_on_eval_returns_metric() -> None:
         on_eval=lambda m, epoch: 0.5,
     )
     assert any(r.get("val/loss") == 0.5 for r in records)
+
+
+def test_train_bf16_precision_runs() -> None:
+    # bf16 autocast on CPU: loss forward under autocast, fp32 weights/grads; must converge
+    # to a finite loss just like fp32.
+    torch.manual_seed(0)
+    spec = GaussiansDatasetConfig()
+    loader = _gaussian_loader(512, 128)
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=32, depth=2))
+    history, _ = train(
+        model,
+        loader,
+        n_epochs=1,
+        lr=1e-3,
+        device=torch.device("cpu"),
+        precision="bf16",
+    )
+    assert history and all(math.isfinite(h["total"]) for h in history)
+    assert next(model.parameters()).dtype == torch.float32
+
+
+def test_train_rejects_unknown_precision() -> None:
+    import pytest
+
+    spec = GaussiansDatasetConfig()
+    loader = _gaussian_loader(256, 128)
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=32, depth=2))
+    with pytest.raises(ValueError, match="precision"):
+        train(
+            model,
+            loader,
+            n_epochs=1,
+            lr=1e-3,
+            device=torch.device("cpu"),
+            precision="fp16",
+        )

@@ -111,6 +111,18 @@ def test_openfwi_config_split_is_disjoint(tmp_path: Path) -> None:
     assert set(train_ds.indices).isdisjoint(set(val_ds.indices))
 
 
+def test_float64_files_downcast(tmp_path: Path) -> None:
+    # Some real Style_A files ship as float64; the pre-allocated buffer downcasts on fill.
+    out_dir = tmp_path / "Style_A" / "model"
+    out_dir.mkdir(parents=True)
+    arr = np.linspace(VMIN, VMAX, 3 * 70 * 70, dtype=np.float64).reshape(3, 1, 70, 70)
+    np.save(out_dir / "model0.npy", arr)
+    ds = OpenFWIVelocityDataset(tmp_path, ["Style_A"])
+    x, _ = ds[0]
+    assert x.dtype == torch.float32
+    assert float(x.min()) >= -1.0 and float(x.max()) <= 1.0
+
+
 def test_channelless_files_load(tmp_path: Path) -> None:
     # Some distributions store (N, 70, 70) instead of (N, 1, 70, 70).
     _write_family(tmp_path, "FlatFault_A", "flat", n_files=1, rows=3, ndim=3)

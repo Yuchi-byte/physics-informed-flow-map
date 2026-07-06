@@ -71,6 +71,7 @@ class TrainingConfig(Config):
     ckpt_every_epochs: int = Field(
         0, ge=0
     )  # local save + wandb artifact upload cadence
+    precision: str = "fp32"  # "bf16" runs the loss forward under autocast
     ema: EmaConfig = EmaConfig()
 
 
@@ -239,6 +240,7 @@ def main(dcfg: DictConfig) -> None:
         on_eval=on_eval,
         ckpt_every_epochs=cfg.training.ckpt_every_epochs,
         on_checkpoint=on_checkpoint,
+        precision=cfg.training.precision,
     )
     # Mean DDPM loss over the final epoch's steps (one minibatch is too noisy).
     last_epoch = history[-1]["epoch"]

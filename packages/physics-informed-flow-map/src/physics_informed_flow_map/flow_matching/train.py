@@ -158,6 +158,7 @@ def train(
     on_eval: Callable[[BaseModel, int], float | None] | None = None,
     ckpt_every_epochs: int = 0,
     on_checkpoint: Callable[..., None] | None = None,
+    precision: str = "fp32",
 ) -> tuple[list[dict[str, float]], BaseModel | None]:
     """Train a flow-matching model; thin wrapper over the shared ``train_loop``.
 
@@ -208,5 +209,6 @@ def train(
         on_eval=on_eval,
         ckpt_every_epochs=ckpt_every_epochs,
         on_checkpoint=on_checkpoint,
+        precision=precision,
     )
     return history, cast("BaseModel | None", ema)

@@ -1,0 +1,6 @@
+# DiT-B/4 eps-denoiser, architecture-matched to 0001/0002's dit_b (~130M params).
+kind: dit
+hidden: 768
+depth: 12
+num_heads: 12
+patch_size: 4
