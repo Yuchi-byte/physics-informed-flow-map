@@ -1,8 +1,7 @@
 # Full-OpenFWI Priors + Inversion Benchmark — Implementation Plan
 
-> **Status: DRAFT for discussion.** Task granularity only — the code-level TDD expansion
-> (exact test/code listings per step, per repo convention) happens after the open questions in
-> the design doc (§9) are settled.
+> **Status: DRAFT — design questions resolved 2026-07-06 (spec §9); ready for code-level TDD
+> expansion (exact test/code listings per step, per repo convention) on sign-off.**
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
@@ -80,36 +79,41 @@ in all three experiments, loader kwargs where the DataLoader is built.
 - [ ] Per-family energy distance vs held-out val at final eval (extends the existing
       energy-distance path).
 
-### Task 4: Throughput calibration on the target GPU (H100 80 GB)
+### Task 4: Throughput calibration on the target GPU
 
-Gate for the long runs — replaces the §6 extrapolations with measurements.
+Gate for the long runs — replaces the §6 extrapolations with measurements. Target card per spec
+§6: RTX PRO 6000 Blackwell 96 GB recommended; 5090/H100 acceptable (32 GB cards → bs 128–192).
 
-- [ ] Provision the H100 pod (RunPod, ≥16 vCPU / ≥64 GB RAM); `uv sync`; verify Deepwave + FA
-      backend import.
+- [ ] Provision the pod (≥16 vCPU / ≥64 GB RAM); `uv sync`; verify Deepwave import + SDPA path.
 - [ ] 1-epoch run of each experiment at `dit_b` + bf16 on all 10 families; record maps/s and
-      VRAM; pick final batch size (256 recommended) and confirm/adjust `n_epochs` to keep the
-      19M+ sample budget.
-- [ ] Update the three `openfwi_full.yaml`s: model `dit_b`, chosen bs/lr/epochs, `hflip: true`,
-      per-family eval on. Commit with the measured numbers in the yaml comment (repo convention).
+      VRAM; confirm bs 256 fits (else bs 128 + lr 1.4e-4 per spec §6).
+- [ ] Update the three `openfwi_full.yaml`s: model `dit_b`, bs 256 / lr 2e-4 / n_epochs 90
+      (decided), `hflip: true`, per-family eval on, `ckpt_every_epochs: 0` (wandb quota, spec
+      §6.1). Commit with the measured numbers in the yaml comment (repo convention).
 
 ### Task 5: Train 0001 flow-matching prior (definitive)
 
-- [ ] `experiments/0001_flow_matching/run.py experiment=openfwi_full` (est. 4–8 h).
+- [ ] `experiments/0001_flow_matching/run.py experiment=openfwi_full` (est. 4–10 h on
+      H100/PRO 6000, up to ~24 h on the current PRO 4500).
 - [ ] Review: loss curves, per-family val losses converged and comparable; per-family grids show
       family-appropriate structure (faults in Fault rows, textures in Style rows).
-- [ ] JOURNAL entry + wandb artifact confirmed uploaded (best + final + EMA).
+- [ ] JOURNAL entry + best/final/EMA backed up per spec §6.1 (volume + HF; final EMA to wandb
+      only if quota allows).
 
 ### Task 6: Train 0003 diffusion prior (parallel with Task 5, second pod)
 
-- [ ] `experiments/0003_diffusion/run.py experiment=openfwi_full` (est. 4–8 h).
-- [ ] Same review + journal + artifact gates as Task 5.
+- [ ] `experiments/0003_diffusion/run.py experiment=openfwi_full` (est. as Task 5).
+- [ ] Same review + journal + backup gates as Task 5.
 
 ### Task 7: Train 0002 flow-map prior (esd_teacher distill from Task 5)
 
-- [ ] `experiment=openfwi_full training=teacher training.teacher_ckpt=<0001 EMA artifact ref>`
-      (est. 12–24 h).
-- [ ] (Open question §9.3) optional from-scratch `mf` full run as scaling ablation.
-- [ ] Same review + journal + artifact gates.
+- [ ] `experiment=openfwi_full training=teacher training.teacher_ckpt=<0001 EMA ckpt>`
+      (est. 12–24 h on H100/PRO 6000, ~1–2 days on 5090, up to ~4 days on PRO 4500).
+      Diagonal stays on data (`data_fm=True` is hard-coded in `flow_matching/train.py`);
+      teacher supplies off-diagonal target + warm start only — no config change needed (spec
+      §9.3).
+- [ ] Optional (deferred): from-scratch `mf` full run as scaling ablation.
+- [ ] Same review + journal + backup gates.
 
 ### Task 8: Inversion benchmark set
 
@@ -117,30 +121,30 @@ Gate for the long runs — replaces the §6 extrapolations with measurements.
 `0004_inversion` conf (`target: <id>`), tests.
 
 - [ ] Selection script: per family, rank val maps by total variation, take percentiles
-      {5,25,50,75,95} × 2 draws → 100 targets; append legacy 6044 by Task-0 provenance → 101.
+      {5,25,50,75,95} × 4 draws → 200 targets; append legacy 6044 by Task-0 provenance → 201.
+      Tag a fixed ~100-target `core: true` subset in the manifest for day-to-day work.
 - [ ] Write `manifest.json` (ids, provenance, stats, tags, dataset fingerprint),
       `velocity/<id>.npy`, `previews/<id>.png` (fixed 1500–4500 m/s scale), per-family galleries.
 - [ ] Seismic extraction (recommended): transiently download only the `data/seis` files containing
-      selected rows (~21 GB), extract `seismic/<id>.npy` (5×1000×70), delete transients.
+      selected rows (~30–40 GB), extract `seismic/<id>.npy` (5×1000×70, ~280 MB total), delete
+      transients.
 - [ ] `InversionBenchmark` loader (manifest-driven, no bulk-data dependency) + `target=<id>`
-      support in 0004; velocity + previews + manifest committed to git; seismic → volume + wandb
-      artifact.
+      support in 0004; velocity + previews + manifest committed to git; seismic → volume + HF
+      backup.
 - [ ] Tests: manifest↔file consistency; loader returns native m/s maps matching
       `held_out_targets` output for the same provenance while bulk data still exists.
 
 ### Task 9: Prior zoo + verification gates + deletion
 
-- [ ] `docs/prior-zoo.md`: one row per definitive prior (run, artifact ref, config, per-family
-      metrics, thumbnail); 0004 configs point at these refs.
-- [ ] Gate 1: each checkpoint reloads **from its wandb artifact** on a clean path and samples 64
-      maps.
+- [ ] `docs/prior-zoo.md`: one row per definitive prior (run, volume path, HF ref, config,
+      per-family metrics, thumbnail); 0004 configs point at these refs.
+- [ ] Gate 1: each checkpoint reloads **from its HF backup** on a clean path and samples 64 maps.
 - [ ] Gate 2: per-family energy distance within agreed factor of the FlatVel-era baseline.
 - [ ] Gate 3: flow_tilt + mfm_g inversion of benchmark id `flatvel_a_legacy_6044` reproduces
       journal numbers within seed noise, using only checkpoint + benchmark.
-- [ ] Gate 4: benchmark artifact (incl. seismic) uploaded to wandb.
-- [ ] Delete `data/openfwi/*/data/` and `seis*` files (~160 GB reclaimed); per §9.5 decision,
-      keep or delete the ~8 GB of velocity maps. JOURNAL note recording what was deleted and how
-      to restore it.
+- [ ] Gate 4: benchmark assets (incl. seismic) backed up to HF.
+- [ ] Delete `data/openfwi/*/data/` and `seis*` files (~160 GB reclaimed); **keep the ~8 GB of
+      velocity maps** (spec §9.5). JOURNAL note recording what was deleted and how to restore it.
 
 ---
 

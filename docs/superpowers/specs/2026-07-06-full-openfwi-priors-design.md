@@ -143,26 +143,46 @@ Extrapolation to **DiT-B (~18× FLOPs)**, bf16:
 
 | Hardware | 0001 / 0003 (each) | 0002 distill | Notes |
 |---|---|---|---|
-| Current RTX PRO 4500 32 GB | ~1–1.5 days | ~3–4 days | workable, slow |
-| **1× H100 80 GB SXM (recommended)** | **~4–8 h** | **~12–24 h** | ~$2.5–3.5/h on RunPod |
-| 1× H200 141 GB | similar, more headroom | | |
+| RTX PRO 4500 Blackwell 32 GB (current) | ~12–24 h | ~2–4 days | workable, slow; bs ≤192 |
+| RTX 5090 32 GB | ~6–12 h | ~1–2 days | best value/h; bs ≤192 |
+| **RTX PRO 6000 Blackwell 96 GB (recommended)** | **~5–10 h** | **~1–1.5 days** | ~5090 compute + no VRAM constraint |
+| 1× H100 80 GB SXM | ~4–8 h | ~12–24 h | fastest; FA3 irrelevant at 256 tokens |
 
-- **VRAM:** DiT-B @ bs 256 bf16 + AdamW + EMA ≈ 20–30 GB. 32 GB workable at bs 128; 80 GB
+Any of these is acceptable — the model is small (130M params, 256 tokens). The binding
+constraint on 32 GB cards is the 0002 regime (frozen teacher + student + EMA ≈ 1.5× memory)
+and batch size (DiT-B bs 256 bf16 ≈ 20–30 GB → bs 128–192 on 32 GB). Alternative topology:
+2× RTX 5090 pods running 0001 and 0003 concurrently, then one for 0002.
+
+- **VRAM:** DiT-B @ bs 256 bf16 + AdamW + EMA ≈ 20–30 GB. 32 GB workable at bs 128–192; 80–96 GB
   comfortable (room for bs 512, and for the 0002 regime which holds frozen teacher + student + EMA
   ≈ 1.5× memory).
 - **System RAM:** ≥ 64 GB (9 GB dataset + ~18 GB load peak + workers). **vCPU:** ≥ 16.
 - **Storage:** trivial after §1 — ~8 GB of velocity maps total.
 - **Parallelism:** 0001 and 0003 are independent → two pods concurrently. 0002 (esd_teacher)
-  **depends on the finished 0001 checkpoint**. Critical path ≈ 0001 → 0002 ≈ 1–1.5 days.
+  **depends on the finished 0001 checkpoint**. Critical path ≈ 0001 → 0002 ≈ 1.5–2 days on
+  PRO 6000-class hardware.
 - **Whole-program budget** incl. smoke tests, one throughput-calibration run, and slack for one
-  retune per prior: **~2–4 H100-days ≈ $150–350.** A real (not extrapolated) throughput number
-  comes from Task 4 of the plan (1-epoch calibration on the target GPU) before committing to the
-  long runs.
+  retune per prior: **~$100–350 depending on card choice.** A real (not extrapolated) throughput
+  number comes from Task 4 of the plan (1-epoch calibration on the target GPU) before committing
+  to the long runs.
 
-**Batch-size decision (flagged for discussion):** the yaml's bs 64 underutilises an H100 with
-DiT-B. Recommended: **bs 256, lr 2e-4** (≈ sqrt scaling from the near-universal 1e-4 @ 64),
-n_epochs 90 → ~150k steps but 2× the sample budget (38M). Conservative alternative: keep bs 64 /
-lr 1e-4 / 45 epochs exactly as written and just pay the wall-clock.
+**Batch size / LR (decided 2026-07-06):** **bs 256, lr 2e-4** (≈ sqrt scaling from the
+near-universal 1e-4 @ 64), n_epochs 90 → ~150k steps and a 38M-sample budget (2× the yaml's).
+On 32 GB cards fall back to bs 128 / lr 1.4e-4 / same sample budget.
+
+### 6.1 Checkpoint storage (wandb free plan = 5 GB total)
+
+Checkpoints are weights-only (`save_checkpoint` stores `model.state_dict()` — no optimizer
+state), so DiT-B ≈ 520 MB per fp32 `.pt`. Best + final + EMA × 3 priors ≈ 3.5–5 GB — **at or
+over the free wandb cap**. This does NOT justify a smaller model; change where the bytes live:
+
+- **Primary:** the RunPod network volume (`runs/.../checkpoints/`) — persistent, effectively
+  unlimited, already the source of truth for 0004.
+- **Durable backup:** a private HuggingFace model repo (free at this scale); `hf upload` each
+  definitive best/final/EMA file. `docs/prior-zoo.md` records volume path + HF ref.
+- **wandb:** set `ckpt_every_epochs: 0` for the full runs and upload **only the final EMA file
+  per prior** (3 × 520 MB ≈ 1.6 GB) — or skip wandb artifacts entirely if the quota is already
+  crowded. The §8 reload gate then verifies against the HF copy instead of the wandb artifact.
 
 ## 7. Inversion benchmark set (post-training, pre-deletion)
 
@@ -177,19 +197,23 @@ inversion phase.
 - `velocity/<id>.npy` — native 70×70 float32 m/s. ~2 MB total → **git-committed**.
 - `previews/<id>.png` — one labeled PNG per target, fixed 1500–4500 m/s viridis scale, and a
   per-family `gallery_<family>.png` contact sheet → the "I recognise this map" workflow.
-- `seismic/<id>.npy` (optional but recommended) — the **original OpenFWI-simulated seismic**
+- `seismic/<id>.npy` (recommended) — the **original OpenFWI-simulated seismic**
   (5×1000×70) for each target. This is the only asset that becomes hard to get after deletion and
   it unlocks non-inverse-crime experiments (their simulator ≠ our Deepwave operator) — a caveat
-  the journal already flags on every result to date. ~140 MB: volume + wandb artifact, not git.
+  the journal already flags on every result to date. ~280 MB: volume + HF backup, not git.
   Requires transiently downloading only the specific `data/seis` files containing selected rows
-  (~30 files ≈ 21 GB, then deleted).
+  (~40–60 files ≈ 30–40 GB, then deleted).
 
-**Selection: 101 targets.**
-- 10 per family × 10 families, drawn **only from the canonical val split**: rank the family's val
-  maps by a complexity proxy (total variation) and take percentiles {5, 25, 50, 75, 95} × 2
+**Selection: 201 targets** (decided 2026-07-06 — oversized on purpose so the seismic never has to
+be re-downloaded; velocity maps are kept after deletion (§9.5), so only seismic is
+hard-to-recover).
+- 20 per family × 10 families, drawn **only from the canonical val split**: rank the family's val
+  maps by a complexity proxy (total variation) and take percentiles {5, 25, 50, 75, 95} × 4
   independent draws — spans easy→hard within every family without hand-picking bias.
 - +1: the legacy FlatVel_A map 6044 (pinned by provenance, §2) for continuity with all existing
   journal results.
+- Day-to-day work can use a fixed 101-target (or smaller) subset tagged in the manifest
+  (`core: true`); the rest is reserve.
 
 **Loader:** a small `InversionBenchmark` class reading the manifest; `0004_inversion` configs gain
 `target=<id>` (string id) alongside the existing index path. After deletion, `held_out_targets`'
@@ -202,23 +226,27 @@ prior" has exactly one answer.
 
 ## 8. Verification gates before deletion
 
-1. Each definitive checkpoint reloads **from its wandb artifact** (not the local file) and
-   generates a 64-sample grid without error.
+1. Each definitive checkpoint reloads **from its off-volume backup** (HF repo or wandb artifact,
+   per §6.1 — not the local file) and generates a 64-sample grid without error.
 2. Per-family energy distance vs held-out val within an agreed factor of the FlatVel_A-era
    baseline (0.127 vs 0.090 floor was the 0001 precedent).
 3. One end-to-end inversion (flow_tilt + mfm_g on map 6044 via the new benchmark loader) matches
    journal numbers within seed noise — proves the checkpoint + benchmark pair is self-sufficient.
-4. Benchmark assets (incl. seismic) uploaded as a wandb artifact.
+4. Benchmark assets (incl. seismic) backed up off-volume (HF; wandb only if quota allows).
 
-Then delete: all `data/` + `seis*` files, and (optionally) the velocity maps themselves — though at
-~8 GB keeping velocity maps is cheap insurance for retraining.
+Then delete: all `data/` + `seis*` files. **Velocity maps (~8 GB) are kept** (§9.5) — cheap
+insurance for retraining and for expanding the benchmark without any re-download.
 
-## 9. Open questions for discussion
+## 9. Decisions (resolved 2026-07-06 unless noted)
 
-1. **Batch size / LR** for the full runs (bs 256 + lr 2e-4 recommended vs keep bs 64 as written).
-2. **Model scale**: is DiT-B (130M) the right ceiling, or train dit_m too as a scaling datapoint?
-3. **0002 regime**: esd_teacher distillation only (recommended, journal-proven), or also a
-   from-scratch `mf` run at full scale as an ablation (+1 GPU-day)?
-4. **Benchmark size**: 101 targets OK? (Big enough for per-family conclusions at n=10, small
-   enough to know individual maps by name.)
-5. Keep velocity maps (~8 GB) after benchmark extraction, or delete everything?
+1. **Batch size / LR:** bs 256 + lr 2e-4, n_epochs 90 (§6). ✅
+2. **Model scale:** DiT-B; `dit_m` exists as fallback only. (Still open: none — proceed with
+   DiT-B unless the Task 4 calibration or early loss curves argue otherwise.)
+3. **0002 regime:** esd_teacher with the full-data DiT-B 0001 prior as teacher. Note the harness
+   already trains the **diagonal from data** (`data_fm=True, distill_fm=False` in
+   `flow_matching/train.py`) — the teacher supplies only the off-diagonal consistency target and
+   the warm start, and the data-FM diagonal is *cheaper* than a distilled diagonal (no teacher
+   forward for that term). Nothing to switch. From-scratch `mf` full run: deferred, optional
+   ablation.
+4. **Benchmark size:** 201 targets (20/family × 10 + legacy 6044), §7. ✅
+5. **Velocity maps kept** after bulk deletion. ✅
