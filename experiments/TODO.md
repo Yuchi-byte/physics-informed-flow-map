@@ -7,6 +7,36 @@
 ▎ 2. Launch 0001: uv run python experiments/0001_flow_matching/run.py experiment=openfwi_full and 0003 in parallel if I have a second pod. After 0001 finishes and passes review (per-family val losses + sample grids), launch 0002 with experiment=openfwi_full training=teacher training.teacher_ckpt=<0001 final EMA checkpoint>.
 ▎ 3. Review each finished run per plan Tasks 5–7 (per-family metrics, journal entry, upload final EMA + final raw as wandb artifacts — nothing more, my wandb quota is 5 GB).
 ▎ Then proceed to Task 8 (201-target inversion benchmark) and Task 9 (verification gates, prior zoo, deletion) per the plan. Legacy target 6044 provenance is already pinned in data/inversion_bench/legacy_6044_provenance.json.
+
+
+
+- (highest priority) Pick up the 0002 flow-map work from yesterday (see memory: 0002-batch128-bf16-handoff).
+
+1. Check the overnight 0002 openfwi batch-128 run (wandb r3majqyl, dir
+   /workspace/runs/0002_flow_map/openfwi_mf_2026-07-07T00-37-28Z). If it completed
+   100 epochs, summarize final val/loss and the new off-diagonal metrics
+   (val/fewstep_ode_gap*, val/jump_consistency*) and how they evolved. If it was
+   killed again (like the epoch-80 SIGKILL the night before), report the last epoch
+   and what survived.
+
+2. bf16 probe, if it didn't already run overnight (look for a bf16 probe log in
+   /workspace/runs/0002_flow_map/_probes/): run
+   WANDB_MODE=offline uv run python experiments/0002_flow_map/run.py experiment=openfwi \
+     training.batch_size=128 training.n_epochs=1 training.flow_map_warmup_steps=0 \
+     training.warmup_steps=0 training.eval_every_epochs=0 training.precision=bf16
+   Compare it/s, peak GPU memory, and the steps.jsonl loss trajectory against the
+   fp32 reference (_probes/0002_b128_probe.log: 2.85 it/s, 28.3 GB peak). If parity
+   holds, also probe whether batch 256 fits under bf16 (it OOMs in fp32).
+
+3. Before launching any new long run: implement resume support (optimizer state +
+   epoch in checkpoints, a training.resume_from flag for 0001/0002) and switch to
+   setsid launches, then decide the bf16 (maybe batch-256) relaunch with me.
+
+
+
+
+
+
 - (fix) also visualise the predicted x at every denoising time step (for when the trajectory is to be visualised) together with the noisy xt for both 0001 and 0002 just like what claude did to 0003. 
 
 - (fix) add quantitative validation loss for off-diagonal velocities in 0002 flow map.  Consider using: self-consistency against the fine ODE because i think this is essentially quite easy to implement now? 
