@@ -12,3 +12,6 @@ results/
 
 # Downloaded artifacts (populated by checkpoints_download.sh)
 checkpoints/
+
+# Upstream demo assets (from the FMRG release archive; not committed)
+data/
