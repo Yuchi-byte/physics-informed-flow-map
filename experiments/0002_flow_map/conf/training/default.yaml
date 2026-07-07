@@ -6,7 +6,11 @@ batch_size: 256
 lr: 0.001  # peak Adam learning rate
 warmup_steps: 2000  # linear LR warmup, 0.1x -> 1x over this many optimizer steps
 num_workers: 4  # DataLoader workers
-precision: fp32  # "bf16" runs the loss forward under autocast (weights/optimizer stay fp32)
+precision: fp32  # "bf16" runs the loss forward under autocast (weights/optimizer stay fp32).
+                 # Prefer bf16 for openfwi runs — probed 2026-07-07 (b128, esd_teacher, RTX PRO
+                 # 4500 Blackwell): +34% it/s (3.34 vs 2.50), peak mem 24.4 vs 28.4 GB, step
+                 # losses within ±1% of fp32; b256 OOMs even under bf16, so bf16 buys speed,
+                 # not batch size (runs/0002_flow_map/_probes/teacher_probes_status.log).
 resume_from: null  # raw-model checkpoint (step_<E>.pt) to resume from; n_epochs stays the TOTAL
 
 # --- Flow-map (off-diagonal) consistency term ---
