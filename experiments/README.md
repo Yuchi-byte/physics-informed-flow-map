@@ -134,11 +134,35 @@ Method roster (config `name:` → what it is):
 ```bash
 uv run python experiments/new.py "short title of the idea"
 ```
+## Methodology notes -- training
+### Training steps 
+Training mimics that done in mfm. mfm starts directly with a teacher FLOW MAP model which is already state-of-the-art. 
 
-## Model guidance 
+There are three losses that are sumed to give the training loss: 
+* fm_loss or distill_fm_loss. This trains the diagonal loss (i.e. when s=u). You only choose one out of those two losses because you decide whether you train from data or from a teacher. mfm chooses to train from a SOTA teacher flow map model. We choose to train from data, because our teacher (the output from experiment 0001) isn't necessary better than traning from data.
+* distillation_loss. This trains the off diagonal loss (i.e. when s!=u). The lsd, esd_teacher, etc 'distillation_type' is only relevant here. This training has to be done based on a teacher model, which in our case is the flow matching model from experiment 0001. 
+
+Note that the 'meta-ness' of mfm, which is the conditioning component, is embedded in the mfm training itself: 
+* For diagonal loss, check that fm_loss is trained conditionally in 0002????????
+* For off-diagonal loss, the conditional velocity comes from the unconditional teacher using a clever trick called GLASS distillation. It queries the unconditional teacher at a special point that returns the conditional velocity the student is trying to learn from. 
+
+The training has three phases: firstly, the warmup phase that only trains the diagonal loss. Secondly the anealling phase that now gradually turns on the off-diagonal training: the jump size increases linearly with training steps (training steps are similar to epochs). Thirdly, the off diagonal is now fully turned on. Note that the diagonal loss is always turned on.  
+
+0001 flow matching trains through the mfm framework end-to-end (same DiTMFM model, same get_consistency_loss_fn loss), with the flow-map-specific parts (off-diagonal jumps, conditioning) disabled through parameter settings rather than different code. Therefore it makes sense that 0001 and 0002 have the same amount of model parameters. 
+
+uncond_prob (renamed from mfm's t_cond_rate_0) = 0.1 is the rate at which t_cond is 0 (when 0, the mfm is unconditional). So 10% of the time, t_cond will be set to 0, whilst 90% of the time t_cond will take any value between 0 and 1. For each training sample, a Bernoulli draw with probability 1 - uncond_prob decides whether the conditioning time t_cond is nonzero. This is the mechanism that turns the flow map into a posterior model rather than just a prior. Keeping it 0.1 rather than 0 because the model must stay good at t_cond = 0. Reserving a fraction of batches for the unconditional case keeps the prior mode from degrading while most of the capacity goes to the harder, richer conditional task. It's the same idea as classifier-free-guidance label dropout (mfm uses class_dropout_prob = 0.1 for class labels analogously), just applied to the state-conditioning pathway.
+
+
+### Validation loss 
+Validation loss is exactly the same as training loss, but applied to the validation dataset, which is unseen during training. compute_val_loss() takes a target velocity map and finds the interpolant associate with the x and t. Then x and t are passed to the neural network, and the model's predicted velocity is compared with the target velocity (that from the interpolant) to compute the loss. The validation loss has nothing to do with sampling (i.e. image generation through some ODE/SDE solver). The sampling is done when on_eval is true merely for visualisation purposes. 
+Validation loss is only calculated on diagonal velocities, because off-diagonal velcoities have no data-defined ground truth. The teacher velocity will be the closest to the ground truth, from which the student learns. 
+The off-diagonal velocities are tested through the few-step sample. sample_few_step() uses the trained s-u velocities to generate the samples when a particular epoch is on_eval. Those visualisations are the images generated using the weights at that particular training epoch. 
+For 0002, the validation loss is observed to increase before decreasing. The validation loss is only tracking the diagonal loss. And the initial increase is associated with the flow-map anealing phase. Initially, the anealing is almost turned off and the model behaves like a very good flow matching model. As off-diagonal loss are introduced to the training, the model weights now deviates from the flow matching to train the off-diagonal, resulting in an increase in validation loss. 
+
+### Model guidance 
 In mfm, model guidance using classifier-free guidance (CFG) is turned on. This happens during training, not inference time, therefore it has nothing to do with reward/physics steering. In our experiment, CFG is turned off as openFWI doesn't have the concept of 'classes' like that in ImageNet, so it's irrelevant. 
 
-## off-diagonal distillation
+### off-diagonal distillation
 Here I explain how this training is done.
 Line 482 in mfm/losses/loss.py is essentially doing the following math. Take the middle equation in equation (11) in the mfm paper and substitute the residual form X_{s,u}(x) = x + (u-s)·v_{s,u}(x). 
   Now look at the code:
@@ -158,10 +182,13 @@ Line 482 in mfm/losses/loss.py is essentially doing the following math. Take the
 
 Note that vss is that from the teacher (through extract_posterior_velocity) and the jvp is done through the student. 
 
-## distillation 
+### distillation 
 Both diagonal (distill_fm_loss) and off-diagonal loss (distillation_loss) uses the teacher's velocity, that is extracted from the extract_posterior_velocity() function. This function IS GLASS reparameterisation. It first computes t_start, the reparameterised time (line 121-125). It then computes x_star, which is the linear sufficient statistic S in equation (25) in the mfm paper and it is the point at which we need to query the teacher. It then finds v_star by querying the teacher 'teacher_model.v(t_star, t_star,x_star, 0, 0s). This is the only place the teacher is called. 
 In the next few lines, term 2 is the second term in equation (25), and term 1 is the other two term combined (the xt_cond term is the third term, and Is term is the first term in the equation). Overall, the function returns the conditional teacher velocity even though the teacher we have is unconditional. This conditional teacher velocity then becomes the target velocity used in both diagonal and off diagonal distillation.  
 
 
-## conditioning -- the 'meta-ness' 
+### conditioning -- the 'meta-ness' 
 When t_cond is zero, the values of xt_cond is completely irrelevant: it can be set to noise, zeros, or anything, and nothing will be affected. This is designed in the DiT model. Firstly, x_cond_embedder and t_cond_embedder both have initial weights and biases that are zero. So a from-scratch model never learns to use x_cond. To learn x_cond, mfm copies x_embedder into x_cond_embedder inside 'init_from_dmf'. In my experiments, those activation codes are handled in the function activate_x_cond_conditioning(). The preserve_t_cond_0 is off in mfm's code, probably so that the network can learn its own gating schedule rather than hardcoding xt_cond to be zero when t_cond = 0. 
+
+## Methodology notes on Inversion 
+At every inversion, no matter the method, 4 random samples were drawn and their trajectories calculated. That's why eventually we have 4 different samples in the trajectory visualisation. All 4 final velocity images ARE the inversions of the same d_obs. Having four rather than one means the sampling uncertainty can also be determined. Arbitrarily, we took one of the velocity maps as the 'final' inversion -- in practice, we could have picked the min-misfit sample as the final inversion. Note that the metrics (mae_mean, etc) are averaged across the 4 samples. Those 4 samples have nothing to do with the mc_samples in mfm: for mfm, each sample will have their own mc_samples. 
