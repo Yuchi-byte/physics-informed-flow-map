@@ -183,6 +183,7 @@ class Run:
             is_best: bool = False,
             is_final: bool = False,
             ema_model: torch.nn.Module | None = None,
+            train_state: dict[str, Any] | None = None,
         ) -> None:
             aliases: list[str] = []
             if is_final:
@@ -191,8 +192,15 @@ class Run:
                 aliases.append("best")
             if ckpt_every_epochs and (epoch + 1) % ckpt_every_epochs == 0:
                 aliases.append("periodic")
+            # train_state (optimizer/scheduler/EMA state, step, best metric) rides in the
+            # raw-model file only — the EMA file stays weights-only for inference use.
             path = self.save_checkpoint(
-                model, epoch, epoch=epoch, dataset=dataset, config=config
+                model,
+                epoch,
+                epoch=epoch,
+                dataset=dataset,
+                config=config,
+                train_state=train_state,
             )
             if aliases:
                 self.log_artifact(path, name=artifact_name, aliases=aliases)

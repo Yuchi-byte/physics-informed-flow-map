@@ -5,6 +5,9 @@ n_epochs: 10
 batch_size: 256
 lr: 0.001  # peak Adam learning rate
 warmup_steps: 2000  # linear LR warmup, 0.1x -> 1x over this many optimizer steps
+num_workers: 4  # DataLoader workers
+precision: fp32  # "bf16" runs the loss forward under autocast (weights/optimizer stay fp32)
+resume_from: null  # raw-model checkpoint (step_<E>.pt) to resume from; n_epochs stays the TOTAL
 
 # --- Flow-map (off-diagonal) consistency term ---
 # The prior is a Meta Flow Map: beyond the diagonal flow-matching velocity v(s,s,·) it learns the

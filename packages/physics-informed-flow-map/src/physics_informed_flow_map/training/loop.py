@@ -41,6 +41,7 @@ def train_loop(
     ckpt_every_epochs: int = 0,
     on_checkpoint: Callable[..., None] | None = None,
     precision: str = "fp32",
+    resume: dict | None = None,
 ) -> tuple[list[dict[str, float]], nn.Module | None]:
     """Run ``n_epochs`` of training, returning a per-step history and the EMA model (or None).
 
@@ -49,6 +50,13 @@ def train_loop(
         precision: ``"fp32"`` (default) or ``"bf16"`` — bf16 runs the loss forward under
             autocast (weights, optimizer state and gradients stay fp32; no GradScaler
             needed). Eval/sampling paths are the caller's and are not autocast here.
+        resume: the ``train_state`` dict from a prior checkpoint (see ``on_checkpoint``) —
+            restores optimizer/scheduler/EMA state plus the step counter and best metric,
+            and continues from the checkpoint's epoch + 1 (``n_epochs`` stays the total,
+            not an increment). The caller loads the model weights. A weights-only
+            checkpoint may pass just ``{"epoch": E}``: the optimizer restarts fresh and
+            ``step`` is estimated as ``(E + 1) * len(loader)`` so step-gated loss terms
+            keep their schedule.
         log: receives per-epoch ``train/loss``, ``train/grad_norm``, ``train/lr``,
             ``time/epoch_s`` and, at eval epochs, ``val/loss`` +
             ``time/eval_s`` (each with ``step`` + ``epoch``). A final ``time/total_min``
@@ -59,8 +67,10 @@ def train_loop(
             constant (mirrors mfm). ``0`` disables it.
         on_eval: ``(eval_model, epoch) -> metric | None`` at the eval cadence; a new best
             metric flags an ``is_best`` checkpoint.
-        on_checkpoint: ``(model, epoch, *, is_best, is_final, ema_model)`` at the ckpt cadence,
-            on every new best, and once at the end (``is_final=True``).
+        on_checkpoint: ``(model, epoch, *, is_best, is_final, ema_model, train_state)`` at
+            the ckpt cadence, on every new best, and once at the end (``is_final=True``).
+            ``train_state`` carries everything ``resume`` needs (optimizer/scheduler/EMA
+            state, step, epoch, best metric) — persist it next to the model weights.
     """
     if precision not in ("fp32", "bf16"):
         raise ValueError(f"precision must be 'fp32' or 'bf16', got {precision!r}")
@@ -96,8 +106,37 @@ def train_loop(
     history: list[dict[str, float]] = []
     best_metric = math.inf
     step = 0
+    start_epoch = 0
+    if resume is not None:
+        start_epoch = int(resume["epoch"]) + 1
+        if start_epoch >= n_epochs:
+            raise ValueError(
+                f"resume checkpoint is at epoch {resume['epoch']} but n_epochs={n_epochs}; "
+                "raise n_epochs (it is the total, not an increment)"
+            )
+        # A weights-only checkpoint has no optimizer/step: estimate the step counter from
+        # the epoch so step-gated schedules (warmup, off-diagonal gating) stay aligned.
+        step = int(resume.get("step", start_epoch * len(loader)))
+        best_metric = float(resume.get("best_metric", math.inf))
+        if resume.get("optimizer") is not None:
+            optimizer.load_state_dict(resume["optimizer"])
+        if scheduler is not None and resume.get("scheduler") is not None:
+            scheduler.load_state_dict(resume["scheduler"])
+        if ema is not None and resume.get("ema") is not None:
+            ema.load_state_dict(resume["ema"])
+
+    def train_state(epoch: int) -> dict:
+        return {
+            "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict() if scheduler is not None else None,
+            "ema": ema.state_dict() if ema is not None else None,
+            "step": step,
+            "epoch": epoch,
+            "best_metric": best_metric,
+        }
+
     train_start = time.perf_counter()
-    for epoch in range(n_epochs):
+    for epoch in range(start_epoch, n_epochs):
         epoch_loss = 0.0
         epoch_grad_norm = 0.0
         epoch_steps = 0
@@ -180,7 +219,12 @@ def train_loop(
             is_best or (ckpt_every_epochs and (epoch + 1) % ckpt_every_epochs == 0)
         ):
             on_checkpoint(
-                model, epoch, is_best=is_best, is_final=False, ema_model=ema_module()
+                model,
+                epoch,
+                is_best=is_best,
+                is_final=False,
+                ema_model=ema_module(),
+                train_state=train_state(epoch),
             )
 
     if log is not None:
@@ -192,6 +236,11 @@ def train_loop(
 
     if on_checkpoint is not None:
         on_checkpoint(
-            model, n_epochs - 1, is_best=False, is_final=True, ema_model=ema_module()
+            model,
+            n_epochs - 1,
+            is_best=False,
+            is_final=True,
+            ema_model=ema_module(),
+            train_state=train_state(n_epochs - 1),
         )
     return history, ema_module()

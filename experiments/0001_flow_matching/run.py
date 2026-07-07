@@ -61,6 +61,10 @@ class TrainingConfig(Config):
         0, ge=0
     )  # local save + wandb artifact upload cadence
     precision: str = "fp32"  # "bf16" runs the loss forward under autocast
+    # Path to a raw-model checkpoint (step_<E>.pt) from a prior run: loads the weights and,
+    # when the checkpoint carries train_state, the optimizer/scheduler/EMA/step too, then
+    # continues at epoch E+1. n_epochs stays the TOTAL epoch count, not an increment.
+    resume_from: str | None = None
     ema: EmaConfig = EmaConfig()
 
 
@@ -125,6 +129,24 @@ def main(dcfg: DictConfig) -> None:
     model = build_model(cfg.dataset.shape, cfg.dataset.num_classes, cfg.model).to(
         device
     )
+    # Resume: load weights and hand the checkpoint's train_state to the loop. Weights-only
+    # checkpoints (pre-resume-support) fall back to epoch-only resume with a fresh optimizer.
+    resume_state: dict | None = None
+    if cfg.training.resume_from:
+        ckpt = torch.load(
+            Path(cfg.training.resume_from), map_location=device, weights_only=False
+        )
+        model.load_state_dict(ckpt["model"])
+        resume_state = ckpt.get("train_state") or {"epoch": int(ckpt["epoch"])}
+        if "optimizer" not in resume_state:
+            print(
+                f"[{EXPERIMENT}] resume checkpoint has no train_state; "
+                "restarting optimizer fresh from its weights"
+            )
+        print(
+            f"[{EXPERIMENT}] resuming from {cfg.training.resume_from} "
+            f"at epoch {resume_state['epoch'] + 1}"
+        )
     n_params, n_trainable = count_parameters(model)
     print(
         f"[{EXPERIMENT}] model params: {n_params:,} total ({n_trainable:,} trainable)"
@@ -246,6 +268,7 @@ def main(dcfg: DictConfig) -> None:
         ckpt_every_epochs=cfg.training.ckpt_every_epochs,
         on_checkpoint=on_checkpoint,
         precision=cfg.training.precision,
+        resume=resume_state,
     )
     # Mean FM loss over the final epoch's steps (one minibatch is too noisy).
     last_epoch = history[-1]["epoch"]

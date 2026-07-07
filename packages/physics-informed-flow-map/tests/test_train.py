@@ -120,6 +120,7 @@ def test_train_hooks_fire_on_epoch_cadence() -> None:
         is_best: bool,
         is_final: bool,
         ema_model: object = None,
+        train_state: dict | None = None,
     ) -> None:
         ckpts.append((epoch, is_best, is_final))
 
@@ -155,6 +156,7 @@ def test_train_checkpoint_cadence_without_eval() -> None:
         is_best: bool,
         is_final: bool,
         ema_model: object = None,
+        train_state: dict | None = None,
     ) -> None:
         ckpts.append((epoch, is_best, is_final))
 
@@ -228,6 +230,88 @@ def test_train_ema_warmup_beyond_run_returns_none() -> None:
         ema_warmup_steps=100,  # never reached -> EMA never updates
     )
     assert ema_model is None
+
+
+def test_train_resume_continues_from_checkpoint() -> None:
+    torch.manual_seed(0)
+    spec = GaussiansDatasetConfig()
+    loader = _gaussian_loader(96, 32)  # 3 batches/epoch
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
+
+    saved: dict = {}
+
+    def on_checkpoint(
+        m: object,
+        epoch: int,
+        *,
+        is_best: bool,
+        is_final: bool,
+        ema_model: object = None,
+        train_state: dict | None = None,
+    ) -> None:
+        if is_final and train_state is not None:
+            saved.update(train_state)
+
+    train(
+        model,
+        loader,
+        n_epochs=2,
+        lr=1e-3,
+        device=torch.device("cpu"),
+        warmup_steps=100,  # so scheduler state is exercised through the round-trip
+        on_checkpoint=on_checkpoint,
+    )
+    assert saved["epoch"] == 1 and saved["step"] == 6
+    assert saved["optimizer"] is not None and saved["scheduler"] is not None
+
+    history, _ = train(
+        model,
+        loader,
+        n_epochs=4,  # the TOTAL: resume runs epochs 2 and 3 only
+        lr=1e-3,
+        device=torch.device("cpu"),
+        warmup_steps=100,
+        resume=saved,
+    )
+    assert {h["epoch"] for h in history} == {2.0, 3.0}
+    assert history[0]["step"] == 6  # step counter continues, not restarts
+
+
+def test_train_resume_weights_only_estimates_step() -> None:
+    torch.manual_seed(0)
+    spec = GaussiansDatasetConfig()
+    loader = _gaussian_loader(96, 32)  # 3 batches/epoch
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
+
+    # Pre-resume-support checkpoints carry only the epoch: the optimizer restarts fresh and
+    # the step counter is estimated as (epoch + 1) * len(loader).
+    history, _ = train(
+        model,
+        loader,
+        n_epochs=3,
+        lr=1e-3,
+        device=torch.device("cpu"),
+        resume={"epoch": 1},
+    )
+    assert {h["epoch"] for h in history} == {2.0}
+    assert history[0]["step"] == 6
+
+
+def test_train_resume_past_n_epochs_rejected() -> None:
+    import pytest
+
+    spec = GaussiansDatasetConfig()
+    loader = _gaussian_loader(96, 32)
+    model = build_model(spec.shape, spec.num_classes, MLPModelConfig(width=16, depth=2))
+    with pytest.raises(ValueError, match="n_epochs"):
+        train(
+            model,
+            loader,
+            n_epochs=2,
+            lr=1e-3,
+            device=torch.device("cpu"),
+            resume={"epoch": 1},
+        )
 
 
 def test_make_loss_fn_produces_finite_loss() -> None:

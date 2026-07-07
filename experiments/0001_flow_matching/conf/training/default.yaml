@@ -2,6 +2,9 @@ n_epochs: 10
 batch_size: 256
 lr: 0.001
 warmup_steps: 0  # linear LR warmup (0.1x -> 1x); 0 = off. Distinct from ema.warmup_steps.
+num_workers: 4  # DataLoader workers
+precision: fp32  # "bf16" runs the loss forward under autocast (weights/optimizer stay fp32)
+resume_from: null  # raw-model checkpoint (step_<E>.pt) to resume from; n_epochs stays the TOTAL
 eval_every_epochs: 0
 ckpt_every_epochs: 0  # local checkpoint save + wandb artifact upload cadence (0 = only best + final)
 ema:
