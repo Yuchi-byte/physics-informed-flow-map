@@ -6,6 +6,10 @@
 # yaml's inline training keys are composed after the training group, so they apply in both
 # regimes. Diagonal always trains on data (data_fm=True in flow_matching/train.py); the teacher
 # supplies only the off-diagonal target + warm start.
+# Calibrated 2026-07-07 (0001's diagonal-only step, RTX PRO 4500 32GB): dit_b bf16 bs128 =
+# 297 maps/s @ 24.3GB peak; bs256 OOMs on 32GB. The flow-map step is ~2.5-3.5x costlier
+# (off-diagonal JVP + teacher forward), and the teacher regime holds a frozen second dit_b —
+# on 32GB cards override training.batch_size=128 training.lr=1.4e-4 and expect VRAM to be tight.
 # Design: docs/superpowers/specs/2026-07-06-full-openfwi-priors-design.md
 defaults:
   - override /model: dit_b

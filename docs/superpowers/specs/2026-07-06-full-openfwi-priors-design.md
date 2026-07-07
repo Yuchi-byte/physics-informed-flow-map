@@ -142,19 +142,21 @@ Measured baseline (RTX PRO 4500 Blackwell 32 GB, DiT 256/6/8, fp32, FlatVel_A, 2
 Sample budget per full run: `openfwi_full` = 45 epochs × 423k train maps ≈ **19M samples**
 (297k steps @ bs 64 — mid the literature's 200k–400k band; 0003 = 30 epochs ≈ 12.7M).
 
-Extrapolation to **DiT-B (~18× FLOPs)**, bf16:
+**Measured dit_b calibration (2026-07-07, RTX PRO 4500, full 10-family dataset, bf16, 300
+timed steps):** 297 maps/s @ bs 128, **24.3 GB peak VRAM**; **bs 256 OOMs on 32 GB** (>31 GB —
+the earlier 20–30 GB estimate was optimistic). Projections from that anchor:
 
-| Hardware | 0001 / 0003 (each) | 0002 distill | Notes |
-|---|---|---|---|
-| RTX PRO 4500 Blackwell 32 GB (current) | ~12–24 h | ~2–4 days | workable, slow; bs ≤192 |
-| RTX 5090 32 GB | ~6–12 h | ~1–2 days | best value/h; bs ≤192 |
-| **RTX PRO 6000 Blackwell 96 GB (recommended)** | **~5–10 h** | **~1–1.5 days** | ~5090 compute + no VRAM constraint |
-| 1× H100 80 GB SXM | ~4–8 h | ~12–24 h | fastest; FA3 irrelevant at 256 tokens |
+| Hardware | 0001 (38M samples) | 0003 (25M) | 0002 distill (~2.5–3.5×/step) | Notes |
+|---|---|---|---|---|
+| RTX PRO 4500 Blackwell 32 GB (current) | ~36 h (measured rate) | ~24 h | ~4–5 days | bs 128 only |
+| RTX 5090 32 GB | ~18 h | ~12 h | ~2–2.5 days | bs 128 only; VRAM tight for 0002 teacher regime |
+| **RTX PRO 6000 Blackwell 96 GB (recommended)** | **~14–18 h** | **~9–12 h** | **~1.5–2 days** | bs 256 fits with room for the frozen teacher |
+| 1× H100 80 GB SXM | ~9–12 h | ~6–8 h | ~1–1.5 days | bs 256 fits; FA3 irrelevant at 256 tokens |
 
-Any of these is acceptable — the model is small (130M params, 256 tokens). The binding
-constraint on 32 GB cards is the 0002 regime (frozen teacher + student + EMA ≈ 1.5× memory)
-and batch size (DiT-B bs 256 bf16 ≈ 20–30 GB → bs 128–192 on 32 GB). Alternative topology:
-2× RTX 5090 pods running 0001 and 0003 concurrently, then one for 0002.
+The 32 GB cards work but pay bs 128 (override `training.batch_size=128 training.lr=1.4e-4`;
+same sample budget) and are tight for the 0002 teacher regime (frozen second dit_b resident).
+Topology: 0001 and 0003 on two pods concurrently, then 0002 on the bigger card.
+Re-calibrate on the target GPU before committing to the long runs (plan Task 4).
 
 - **VRAM:** DiT-B @ bs 256 bf16 + AdamW + EMA ≈ 20–30 GB. 32 GB workable at bs 128–192; 80–96 GB
   comfortable (room for bs 512, and for the 0002 regime which holds frozen teacher + student + EMA

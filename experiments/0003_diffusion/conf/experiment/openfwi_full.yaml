@@ -5,6 +5,9 @@
 # priors' budget that the earlier 30-vs-45-epoch configs used). dit_b eps-denoiser
 # (architecture-matched to 0001/0002), T=1000, bf16; ckpt_every_epochs 0 = only best + final
 # artifacts (wandb free-plan quota, spec §6.1).
+# Calibrated 2026-07-07 (0001's step ≈ this one, RTX PRO 4500 32GB): dit_b bf16 bs128 =
+# 297 maps/s @ 24.3GB peak; bs256 OOMs on 32GB. On 32GB cards override:
+#   training.batch_size=128 training.lr=1.4e-4   (same 25M-sample budget, ~24h on PRO 4500)
 # Design: docs/superpowers/specs/2026-07-06-full-openfwi-priors-design.md
 defaults:
   - override /model: dit_b

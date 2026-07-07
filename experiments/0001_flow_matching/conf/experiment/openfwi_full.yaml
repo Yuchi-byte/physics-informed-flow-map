@@ -5,6 +5,9 @@
 # 200k-400k-step @ bs 64 band (KAUST 2402.06277 & 2412.06959 = 200k; RED-DiffEq 2509.21659 =
 # 400k). dit_b (~130M) per spec §5; bf16 verified loss-parity vs fp32 on FlatVel_A (2026-07-06).
 # ckpt_every_epochs 0 = only best + final artifacts (wandb free-plan quota, spec §6.1).
+# Calibrated 2026-07-07 on RTX PRO 4500 32GB: dit_b bf16 bs128 = 297 maps/s @ 24.3GB peak;
+# bs256 OOMs on 32GB (needs 80-96GB). On 32GB cards override:
+#   training.batch_size=128 training.lr=1.4e-4   (same 38M-sample budget, ~36h on PRO 4500)
 # Design: docs/superpowers/specs/2026-07-06-full-openfwi-priors-design.md
 defaults:
   - override /model: dit_b
