@@ -1,3 +1,12 @@
+- (highest priority) prompt for claude next session: Continue the full-OpenFWI prior training program. Read docs/superpowers/plans/2026-07-06-full-openfwi-priors.md (checkboxes show progress) and docs/superpowers/specs/2026-07-06-full-openfwi-priors-design.md first.
+▎
+▎ State: Tasks 0–4 are done and committed (through bd4ca2f) — all 470k velocity maps for the 10 families are verified under data/openfwi (8.8 GB, velocity-only), the loader has the per-family split/hflip/fingerprint, bf16 + dit_b presets are in, per-family eval is wired and smoke-tested in all three experiments, and the openfwi_full yamls are finalized and compose-validated.
+▎
+▎ Next is Task 5–7 (the training runs). I am running this on: [FILL IN: which GPU/pod you got, e.g. "a new RTX PRO 6000 96GB pod" / "this same PRO 4500"].
+▎ 1. If this is a new pod, run uv sync and re-run the throughput calibration from plan Task 4 (the yaml comments have the 2026-07-07 PRO 4500 numbers to compare against: dit_b bf16 bs128 = 297 maps/s, 24.3 GB; bs256 OOMs on 32 GB — on a 32 GB card override training.batch_size=128 training.lr=1.4e-4).
+▎ 2. Launch 0001: uv run python experiments/0001_flow_matching/run.py experiment=openfwi_full and 0003 in parallel if I have a second pod. After 0001 finishes and passes review (per-family val losses + sample grids), launch 0002 with experiment=openfwi_full training=teacher training.teacher_ckpt=<0001 final EMA checkpoint>.
+▎ 3. Review each finished run per plan Tasks 5–7 (per-family metrics, journal entry, upload final EMA + final raw as wandb artifacts — nothing more, my wandb quota is 5 GB).
+▎ Then proceed to Task 8 (201-target inversion benchmark) and Task 9 (verification gates, prior zoo, deletion) per the plan. Legacy target 6044 provenance is already pinned in data/inversion_bench/legacy_6044_provenance.json.
 - (fix) also visualise the predicted x at every denoising time step (for when the trajectory is to be visualised) together with the noisy xt for both 0001 and 0002 just like what claude did to 0003. 
 
 - (fix) add quantitative validation loss for off-diagonal velocities in 0002 flow map.  Consider using: self-consistency against the fine ODE because i think this is essentially quite easy to implement now? 
