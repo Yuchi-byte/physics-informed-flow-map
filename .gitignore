@@ -58,9 +58,11 @@ trained_models/
 # Data
 csv/
 data/*
-# ... except the curated inversion benchmark (small, provenance-critical)
+# The inversion benchmark is script-regenerated (deterministic seeds; velocity maps are
+# kept after bulk deletion, spec §9.5) — only its hand-pinned provenance input is tracked.
 !data/inversion_bench/
-data/inversion_bench/seismic/
+data/inversion_bench/*
+!data/inversion_bench/legacy_6044_provenance.json
 
 # Weights & Biases
 wandb/
