@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,26 +132,48 @@ class Run:
     # else is a superseded periodic upload whose aliases moved to a newer version.
     _KEEP_ALIASES = frozenset({"best", "final", "latest"})
 
-    def log_artifact(self, path: Path, *, name: str, aliases: list[str]) -> None:
+    def log_artifact(
+        self,
+        path: Path,
+        *,
+        name: str,
+        aliases: list[str],
+        strip_keys: tuple[str, ...] = (),
+    ) -> None:
         """Upload a checkpoint file as a wandb model artifact under ``aliases``.
+
+        ``strip_keys`` drops top-level checkpoint entries (e.g. ``train_state``: optimizer
+        + EMA state, ~4x the weights) from the uploaded copy only — the local file is
+        untouched. The wandb copy is the off-volume inference/warm-start snapshot (spec
+        §6.1); full resume state lives on the volume.
 
         After the upload commits, superseded versions of the collection (no ``best`` /
         ``final`` / ``latest`` alias left) are deleted from wandb, mirroring the local
         checkpoint rotation so cloud storage stays flat instead of accumulating every
         periodic upload."""
         artifact = wandb.Artifact(name, type="model")
-        artifact.add_file(str(path))
-        self.run.log_artifact(artifact, aliases=aliases)
-        try:
-            artifact.wait()  # block until committed so the prune sees the moved aliases
-            collection = wandb.Api().artifact_collection(
-                "model", f"{self.run.entity}/{self.run.project}/{name}"
-            )
-            for version in collection.artifacts():
-                if not (set(version.aliases) & self._KEEP_ALIASES):
-                    version.delete(delete_aliases=True)
-        except Exception as exc:  # offline mode / transient API errors must not kill training
-            print(f"[wandb] skipped pruning superseded '{name}' versions: {exc}")
+        with tempfile.TemporaryDirectory() as td:
+            upload = path
+            if strip_keys:
+                ckpt = torch.load(path, map_location="cpu", weights_only=False)
+                slim = {k: v for k, v in ckpt.items() if k not in strip_keys}
+                if len(slim) < len(ckpt):
+                    upload = Path(td) / path.name  # same basename → same artifact layout
+                    torch.save(slim, upload)
+            artifact.add_file(str(upload))
+            self.run.log_artifact(artifact, aliases=aliases)
+            try:
+                # block until committed (also keeps any stripped temp copy alive through
+                # the upload) so the prune sees the moved aliases
+                artifact.wait()
+                collection = wandb.Api().artifact_collection(
+                    "model", f"{self.run.entity}/{self.run.project}/{name}"
+                )
+                for version in collection.artifacts():
+                    if not (set(version.aliases) & self._KEEP_ALIASES):
+                        version.delete(delete_aliases=True)
+            except Exception as exc:  # offline mode / transient API errors must not kill training
+                print(f"[wandb] skipped pruning superseded '{name}' versions: {exc}")
 
     def checkpoint_callback(
         self,
@@ -163,8 +186,11 @@ class Run:
         """Build the ``on_checkpoint`` hook ``train_loop`` calls (raw + optional EMA).
 
         Saves the model locally every time, and uploads it as a wandb artifact when it
-        carries an alias: ``final`` (end of run), ``best`` (new best eval metric), or
-        ``periodic`` (every ``ckpt_every_epochs`` epochs). An EMA model, when present, is
+        carries an alias: ``final`` (end of run) or ``periodic`` (every
+        ``ckpt_every_epochs`` epochs). ``best`` checkpoints stay local-only (spec §6.1:
+        wandb holds one final pair per prior — val loss is a noisy selection signal and
+        with EMA final ≈ best; the volume keeps best). Raw-model uploads strip
+        ``train_state`` so the wandb copy is weights-only. An EMA model, when present, is
         saved/uploaded alongside under ``<artifact_name>-ema``. Shared by every framework
         so the cadence/alias logic stays in one place.
 
@@ -188,8 +214,6 @@ class Run:
             aliases: list[str] = []
             if is_final:
                 aliases.append("final")
-            if is_best:
-                aliases.append("best")
             if ckpt_every_epochs and (epoch + 1) % ckpt_every_epochs == 0:
                 aliases.append("periodic")
             # train_state (optimizer/scheduler/EMA state, step, best metric) rides in the
@@ -203,7 +227,12 @@ class Run:
                 train_state=train_state,
             )
             if aliases:
-                self.log_artifact(path, name=artifact_name, aliases=aliases)
+                self.log_artifact(
+                    path,
+                    name=artifact_name,
+                    aliases=aliases,
+                    strip_keys=("train_state",),
+                )
             paths = [path]
             if ema_model is not None:
                 ema_path = self.save_checkpoint(
