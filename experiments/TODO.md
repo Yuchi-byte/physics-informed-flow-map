@@ -16,14 +16,14 @@
   raw with a weights-only copy (mirror what e80d348's journal entry describes for 0001),
   (2) review per plan Task 6 (per-family val/energy vs the floor control, grids, journal).
 
-  NEXT — Task 7: 0002 definitive on the PRO 6000 96 GB. MEASURED: dit_b teacher regime
-  OOMs on 32 GB at BOTH bs128 and bs64 (≥30.5 GB; probes in
-  runs/0002_flow_map/_probes/0002_full_teacher_b{128,64}_bf16_probe.log) — spec §6's
-  "bs256 fits on 96 GB with the teacher" is likely wrong too (~60 GB est. at bs128,
-  possibly >96 GB at bs256). Probe bs256 for ~5 min first, fall back bs192 (lr 1.7e-4)
-  then bs128 (lr 1.4e-4); then setsid-launch:
-  uv run python experiments/0002_flow_map/run.py experiment=openfwi_full training=teacher \
-    training.teacher_ckpt=<teacher ckpt above> <batch/lr override from probe>
+  IN FLIGHT — Task 7: 0002 definitive LAUNCHED 2026-07-08 on the PRO 6000 96 GB:
+  runs/0002_flow_map/openfwi_mf_2026-07-08T10-23-48Z, wandb l4l4ecfp, ETA ~66 h
+  (~2026-07-11 morning). MEASURED on 96 GB (probes in
+  runs/0002_flow_map/_probes/0002_full_teacher_b{256,192,128}_bf16_96g_probe.log,
+  script run_96g_probe.sh): bs256 AND bs192 both OOM at step 0 (>94.7 / >94.9 GB —
+  spec §6's "bs256 fits on 96 GB" was wrong; teacher-regime activations ≈ 0.65 GB/map,
+  so bs128 is the largest viable batch on ANY current card). Definitive run: bs128 /
+  lr 1.4e-4 / bf16, 86.9 GB peak, 1.25 it/s = 160 maps/s, 90 epochs = 297,360 steps.
   Then Tasks 8-9 per the plan (Task 8's CPU-side selection/manifest can start while 0002
   trains; legacy 6044 provenance pinned in data/inversion_bench/legacy_6044_provenance.json).
 
