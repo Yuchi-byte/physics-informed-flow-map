@@ -3,6 +3,7 @@ module recovers held-out velocity maps.
 """
 
 from .base import InversionModule, InversionResult
+from .benchmark import InversionBenchmark
 from .bridge import held_out_targets, mps_to_norm, seismic_forward, to_mps_native
 from .evaluate import Evaluator, InversionStats, score_target, ssim
 from .flowmap_steer import FlowMapSteerModule, make_misfit_reward
@@ -16,6 +17,7 @@ from .modules import (
 )
 
 __all__ = [
+    "InversionBenchmark",
     "InversionModule",
     "InversionResult",
     "Evaluator",
