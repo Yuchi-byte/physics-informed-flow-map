@@ -8,6 +8,7 @@ defaults:
 seed: 0
 ckpt: ""  # trained prior (a training-framework checkpoint); empty = untrained, plumbing only
 target_index: 0  # index into the seed-0 validation split selecting the held-out target map
+target: ""  # benchmark id (e.g. style_a_03, flatvel_a_legacy_6044); overrides target_index, no bulk data needed
 n_samples: 4
 steps: 200  # sampler / reverse steps (matched cost across priors)
 

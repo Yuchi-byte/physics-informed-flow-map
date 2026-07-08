@@ -156,6 +156,24 @@ def test_write_benchmark_and_loader_roundtrip(
         np.testing.assert_array_equal(v.numpy(), full._data[entry["global_index"], 0])
 
 
+def test_load_target_by_benchmark_id(
+    bench_cfg: OpenFWIDatasetConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import physics_informed_flow_map.inversion.single_target as st
+
+    out = tmp_path / "bench"
+    write_benchmark(bench_cfg, out)
+    monkeypatch.setattr(st, "simulate", lambda v: torch.zeros(1))
+    bench = InversionBenchmark(out)
+    tid = bench.core_ids[0]
+    gidx, label, v_true, _ = st.load_target(
+        bench_cfg, 0, torch.device("cpu"), target=tid, benchmark_root=out
+    )
+    assert label == tid
+    assert gidx == bench.entry(tid)["global_index"]
+    torch.testing.assert_close(v_true, bench.velocity(tid))
+
+
 def test_manifest_is_json_clean(
     bench_cfg: OpenFWIDatasetConfig, tmp_path: Path
 ) -> None:

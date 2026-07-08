@@ -22,6 +22,7 @@ from torch import Tensor
 from ..flow_matching.datasets import OpenFWIDatasetConfig
 from ..physics.forward import simulate
 from ..physics.misfit import MisfitFn
+from .benchmark import InversionBenchmark
 from .bridge import held_out_targets, mps_to_norm, seismic_forward, to_mps_native
 from .evaluate import ssim
 
@@ -31,13 +32,28 @@ Inverter = Callable[[Tensor, float], Tensor]
 
 
 def load_target(
-    dataset_cfg: OpenFWIDatasetConfig, target_index: int, device: torch.device
-) -> tuple[int, Tensor, Tensor]:
-    """``(global_index, v_true native 70x70 m/s, observed seismic d_obs)`` for the
-    ``target_index``-th seed-0 validation-split map (genuinely held out of training)."""
+    dataset_cfg: OpenFWIDatasetConfig,
+    target_index: int,
+    device: torch.device,
+    *,
+    target: str | None = None,
+    benchmark_root: Path | str = "data/inversion_bench",
+) -> tuple[int, str, Tensor, Tensor]:
+    """``(global_index, label, v_true native 70x70 m/s, observed seismic d_obs)``.
+
+    ``target`` (a benchmark id, e.g. ``style_a_03``) loads from the self-contained
+    inversion benchmark — no bulk-data dependency. Otherwise ``target_index`` selects
+    from the seed-0 validation split via the bulk dataset (legacy path). The label names
+    the target for figures/captions; the global index goes to the run summary.
+    """
+    if target is not None:
+        bench = InversionBenchmark(benchmark_root)
+        gidx = int(bench.entry(target)["global_index"])
+        v_true = bench.velocity(target).to(device)
+        return gidx, target, v_true, simulate(v_true).detach()
     gidx, native = held_out_targets(dataset_cfg, target_index + 1)[target_index]
     v_true = native.to(device)
-    return gidx, v_true, simulate(v_true).detach()
+    return gidx, f"val map {gidx}", v_true, simulate(v_true).detach()
 
 
 def invert_and_report(
@@ -45,6 +61,7 @@ def invert_and_report(
     *,
     dataset_cfg: OpenFWIDatasetConfig,
     target_index: int,
+    target: str | None = None,
     method_name: str,
     guidance: float,
     steps: int,
@@ -71,8 +88,10 @@ def invert_and_report(
     (MAE/RMSE/SSIM and the L2 misfit ratio) never change with the guidance misfit, so runs stay
     comparable across ``method.misfit`` settings.
     """
-    gidx, v_true, d_obs = load_target(dataset_cfg, target_index, device)
-    print(f"target: val map global index {gidx} (native {tuple(v_true.shape)})")
+    gidx, label, v_true, d_obs = load_target(
+        dataset_cfg, target_index, device, target=target
+    )
+    print(f"target: {label} (global index {gidx}, native {tuple(v_true.shape)})")
 
     if out_obs_png is not None:
         _plot_seismic(d_obs, gidx, out_obs_png)
@@ -105,12 +124,14 @@ def invert_and_report(
 
     n_solves = int(cost()) if cost is not None else None
     banner = (
-        f"{method_name} · val map {gidx} · MAE {float(mae.mean()):.3f} · "
+        f"{method_name} · {label} · MAE {float(mae.mean()):.3f} · "
         f"RMSE {float(rmse.mean()):.3f} · SSIM {ssim_mean:.3f}"
     )
     if n_solves is not None:
         banner += f" · solves {n_solves}"
-    _plot(v_true, vg[0], float(mae[0]), out_png, banner)  # sample 0: a representative draw
+    _plot(
+        v_true, vg[0], float(mae[0]), out_png, banner
+    )  # sample 0: a representative draw
     summary = {
         "inv/mae_mean": float(mae.mean()),
         "inv/rmse_mean": float(rmse.mean()),
@@ -123,10 +144,12 @@ def invert_and_report(
             gm = misfit_factory(d_obs)
             summary["inv/guidance_misfit_guided"] = float(gm(pred_g).mean())
             summary["inv/guidance_misfit_unguided"] = float(gm(pred_u).mean())
-    return summary, f"{method_name} · val map {gidx}"
+    return summary, f"{method_name} · {label}"
 
 
-def _plot(v_true: Tensor, v_hat: Tensor, mae: float, out_png: Path, banner: str) -> None:
+def _plot(
+    v_true: Tensor, v_hat: Tensor, mae: float, out_png: Path, banner: str
+) -> None:
     vt = v_true.cpu().numpy()
     vh = v_hat.detach().cpu().numpy()
     fig, ax = plt.subplots(1, 3, figsize=(9, 3.2))
@@ -140,7 +163,9 @@ def _plot(v_true: Tensor, v_hat: Tensor, mae: float, out_png: Path, banner: str)
     ax[2].set_title("error (m/s)")
     ax[2].axis("off")
     fig.colorbar(im, ax=ax[2], fraction=0.046)
-    fig.suptitle(banner, fontsize=10)  # quality metrics + total solves, all in one place
+    fig.suptitle(
+        banner, fontsize=10
+    )  # quality metrics + total solves, all in one place
     fig.tight_layout()
     fig.savefig(out_png, dpi=140, bbox_inches="tight")
     plt.close(fig)
@@ -156,9 +181,7 @@ def _plot_seismic(d_obs: Tensor, gidx: int, out_png: Path) -> None:
     for s in range(n_src):
         ax = axes[0, s]
         # (n_receivers, nt) -> (nt, n_receivers): time on the vertical axis
-        im = ax.imshow(
-            d[s].T, aspect="auto", cmap="RdBu_r", vmin=-vabs, vmax=vabs
-        )
+        im = ax.imshow(d[s].T, aspect="auto", cmap="RdBu_r", vmin=-vabs, vmax=vabs)
         ax.set_title(f"source {s + 1}", fontsize=9)
         ax.set_xlabel("receiver", fontsize=8)
         ax.set_ylabel("time sample" if s == 0 else "", fontsize=8)

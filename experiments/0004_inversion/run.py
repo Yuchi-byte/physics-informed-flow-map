@@ -23,7 +23,7 @@ supplies how to load each prior and how to invert. ``eval.py`` is the multi-map 
 Caveat: ``d_obs`` comes from the same noiseless forward operator used inside the guidance term
 (an "inverse crime"), so recovery is optimistic.
 
-for fmrg: 
+for fmrg:
 To run a real inversion:
 uv run python experiments/0004_inversion/run.py prior=flow_map method=fmrg_e ckpt=<path> steps=200
 
@@ -139,9 +139,13 @@ class MethodConfig(Config):
     lr: float = Field(0.02, gt=0.0)  # step size (Adam ~0.02; L-BFGS ~1.0)
     reg: str = "tikhonov"  # roughness penalty: tikhonov | tv
     reg_weight: float = Field(0.0, ge=0.0)  # weight on R(v); 0 = pure least-squares
-    init: str = "smooth"  # classical_fwi start: smooth (1-D gradient) | random (structure-free)
+    init: str = (
+        "smooth"  # classical_fwi start: smooth (1-D gradient) | random (structure-free)
+    )
     optimizer: str = "adam"  # realistic_fwi optimiser: lbfgs | adam
-    iters_per_stage: int = Field(40, gt=0)  # realistic_fwi: inner iterations per frequency band
+    iters_per_stage: int = Field(
+        40, gt=0
+    )  # realistic_fwi: inner iterations per frequency band
     freqs_hz: list[float] = Field(  # realistic_fwi: multiscale cutoffs (Hz), ascending
         default_factory=lambda: [4.0, 8.0, 15.0]
     )
@@ -160,9 +164,7 @@ class MethodConfig(Config):
                 f"got '{self.drift_estimator}'"
             )
         if self.misfit not in MISFITS:
-            raise ValueError(
-                f"unknown misfit '{self.misfit}' ({' | '.join(MISFITS)})"
-            )
+            raise ValueError(f"unknown misfit '{self.misfit}' ({' | '.join(MISFITS)})")
         if self.misfit != "l2" and self.name in {"classical_fwi", "realistic_fwi"}:
             raise ValueError(
                 f"misfit '{self.misfit}' is not threaded through the prior-free FWI "
@@ -201,6 +203,9 @@ class InversionConfig(Config):
     ckpt: str = ""  # trained prior (a training-framework checkpoint); empty = untrained, plumbing only
     diff_ckpt: str = ""  # sweep-only: a second checkpoint for diffusion entries to interpolate (${diff_ckpt})
     target_index: int = Field(0, ge=0)  # index into the seed-0 validation split
+    # Benchmark target id (e.g. style_a_03) from data/inversion_bench/manifest.json;
+    # overrides target_index and needs no bulk data. Empty = legacy target_index path.
+    target: str = ""
     n_samples: int = Field(4, gt=0)
     steps: int = Field(200, gt=0)  # sampler / reverse steps
     n_frames: int = Field(6, ge=0)  # trajectory snapshots per inversion run (0 = off)
@@ -264,7 +269,9 @@ def main(dcfg: DictConfig) -> None:
     n_solves = (
         0  # forward (PDE) solves consumed by the guided pass (matched-cost reporting)
     )
-    solves = {"n": 0}  # actual guided-pass solve count (FWI fills this; used for the figure banner)
+    solves = {
+        "n": 0
+    }  # actual guided-pass solve count (FWI fills this; used for the figure banner)
 
     if cfg.prior.name == "none":
         # Classical / realistic FWI: no learned prior. Optimise the velocity map directly against
@@ -410,7 +417,9 @@ def main(dcfg: DictConfig) -> None:
                     on_step=step_cb,
                 )
 
-            n_solves = cfg.steps * cfg.method.n_opt * n  # n_opt wave solves per step per sample
+            n_solves = (
+                cfg.steps * cfg.method.n_opt * n
+            )  # n_opt wave solves per step per sample
         else:
             # DPS Tweedie baseline (flow_tilt) / unguided control: tilt from a fixed noise context
             # x0 (reused guided/unguided), using v(t,t,x|noise) at t_cond=0.
@@ -542,6 +551,7 @@ def main(dcfg: DictConfig) -> None:
         invert_fn,
         dataset_cfg=cfg.dataset,
         target_index=cfg.target_index,
+        target=cfg.target or None,
         method_name=cfg.method.name,
         guidance=cfg.method.guidance_strength,
         steps=cfg.steps,
