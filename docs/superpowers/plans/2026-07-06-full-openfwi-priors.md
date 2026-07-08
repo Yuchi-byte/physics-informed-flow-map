@@ -115,6 +115,22 @@ Gate for the long runs — replaces the §6 extrapolations with measurements. Ta
       §9.3).
 - [ ] Optional (deferred): from-scratch `mf` full run as scaling ablation.
 - [ ] Same review + journal + backup gates.
+- [ ] **Post-training: quality-vs-NFE on the full priors** (requested 2026-07-08). Re-run
+      `notebooks/run_quality_vs_nfe.py` on the full-OpenFWI trio once the 0002 definitive
+      checkpoint lands. The script currently hard-codes the FlatVel_A single-family setup;
+      needed edits: (a) per-curve model config — the full priors are dit_b
+      (hidden=768, depth=12, num_heads=12, patch_size=4), and the full 0003 denoiser is
+      `build_denoiser("dit", ...)` at that shape, NOT the UNet; (b) dataset = all 10
+      families, `split_scheme="per_family"` (resolution 64) so it matches the training
+      val split; (c) score per family (the metric already returns per-family numbers) and
+      report both the per-family curves and a sample-weighted aggregate. Checkpoints:
+      0001 `runs/0001_flow_matching/openfwi_2026-07-07T11-19-11Z/checkpoints/step_89_ema.pt`,
+      0003 `runs/0003_diffusion/openfwi_2026-07-07T23-26-16Z/checkpoints/step_59_ema.pt`,
+      0002 = the final EMA checkpoint of `runs/0002_flow_map/openfwi_mf_2026-07-08T10-23-48Z`.
+      Keep the DDPM NFE grid on divisors of 1000 (250/500, never 256/512 — diffusers
+      "leading" spacing truncates the reverse chain for non-divisor counts; see the
+      2026-07-08 quality_vs_nfe JOURNAL entry). FlatVel_A reference analysis:
+      `runs/quality_vs_nfe/2026-07-08T16-26-21Z`, wandb quality_vs_nfe/p3b2c5ri.
 
 ### Task 8: Inversion benchmark set
 

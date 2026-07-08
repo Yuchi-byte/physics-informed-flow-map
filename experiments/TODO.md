@@ -27,6 +27,12 @@
   Then Tasks 8-9 per the plan (Task 8's CPU-side selection/manifest can start while 0002
   trains; legacy 6044 provenance pinned in data/inversion_bench/legacy_6044_provenance.json).
 
+  WHEN TASK 7 (0002 full) FINISHES: also run the quality-vs-NFE analysis on the full
+  10-family priors — see the new checklist item under Task 7 in
+  docs/superpowers/plans/2026-07-06-full-openfwi-priors.md for the exact checkpoints and
+  the script edits needed (notebooks/run_quality_vs_nfe.py is FlatVel_A-specific today;
+  full priors are dit_b and 0003-full is the DiT denoiser, not the UNet).
+
 
 
 
