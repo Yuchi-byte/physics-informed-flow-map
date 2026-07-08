@@ -10,11 +10,11 @@
   wandb artifacts slimmed to finals-only (1.07 GB); harness now uploads finals-only with
   train_state stripped (e80d348) — never re-upload best pairs, quota is 5 GB.
 
-  IN FLIGHT — Task 6: 0003 diffusion training on a separate 5090 pod,
-  runs/0003_diffusion/openfwi_2026-07-07T23-26-16Z, wandb 984t0883, ETA midday 2026-07-08.
-  When it finishes: (1) delete its wandb 'best' artifact pair + replace the 2.14 GB final
-  raw with a weights-only copy (mirror what e80d348's journal entry describes for 0001),
-  (2) review per plan Task 6 (per-family val/energy vs the floor control, grids, journal).
+  DONE — Task 6: 0003 diffusion definitive trained + reviewed + journaled (2026-07-08).
+  Run runs/0003_diffusion/openfwi_2026-07-07T23-26-16Z, wandb 984t0883; artifacts slimmed
+  to finals-only 1.07 GB (EMA v28 + weights-only raw v29). Energy vs floor: A/Style
+  families at floor, fault families +0.25..+0.49 (mild under-fit at 60 epochs, accepted),
+  B-Vel ~0.7 below their ~14 intrinsic floors. The 5090 pod can be closed.
 
   IN FLIGHT — Task 7: 0002 definitive LAUNCHED 2026-07-08 on the PRO 6000 96 GB:
   runs/0002_flow_map/openfwi_mf_2026-07-08T10-23-48Z, wandb l4l4ecfp, ETA ~66 h
