@@ -32,9 +32,7 @@
 
 
 
-- (fix) also visualise the predicted x at every denoising time step (for when the trajectory is to be visualised) together with the noisy xt for both 0001 and 0002 just like what claude did to 0003. 
 
-- (fix) add quantitative validation loss for off-diagonal velocities in 0002 flow map.  Consider using: self-consistency against the fine ODE because i think this is essentially quite easy to implement now? 
 - (understand) Experiment 0003 diffusion. num_train_timesteps = 1000, and num_sample_steps = 200. How come those values are different? The structure of the configs for 0003 is not very consistent with that of 0001 and 0002. The number of parameters are also not present in the config -- should it have the same number of parameters to flow map? 
 
 - (understand) There's ODE and SDE methods for the unconditional drfit calculation for sampling (maybe also for training?). What is used for mfm as specified in their paper? And which one is used for flow maps? 
