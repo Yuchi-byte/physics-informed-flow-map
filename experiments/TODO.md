@@ -1,36 +1,31 @@
-- (highest priority) prompt for claude next session: Continue the full-OpenFWI prior training program. Read docs/superpowers/plans/2026-07-06-full-openfwi-priors.md (checkboxes show progress) and docs/superpowers/specs/2026-07-06-full-openfwi-priors-design.md first.
-▎
-▎ State: Tasks 0–4 are done and committed (through bd4ca2f) — all 470k velocity maps for the 10 families are verified under data/openfwi (8.8 GB, velocity-only), the loader has the per-family split/hflip/fingerprint, bf16 + dit_b presets are in, per-family eval is wired and smoke-tested in all three experiments, and the openfwi_full yamls are finalized and compose-validated.
-▎
-▎ Next is Task 5–7 (the training runs). I am running this on: [FILL IN: which GPU/pod you got, e.g. "a new RTX PRO 6000 96GB pod" / "this same PRO 4500"].
-▎ 1. If this is a new pod, run uv sync and re-run the throughput calibration from plan Task 4 (the yaml comments have the 2026-07-07 PRO 4500 numbers to compare against: dit_b bf16 bs128 = 297 maps/s, 24.3 GB; bs256 OOMs on 32 GB — on a 32 GB card override training.batch_size=128 training.lr=1.4e-4).
-▎ 2. Launch 0001: uv run python experiments/0001_flow_matching/run.py experiment=openfwi_full and 0003 in parallel if I have a second pod. After 0001 finishes and passes review (per-family val losses + sample grids), launch 0002 with experiment=openfwi_full training=teacher training.teacher_ckpt=<0001 final EMA checkpoint>.
-▎ 3. Review each finished run per plan Tasks 5–7 (per-family metrics, journal entry, upload final EMA + final raw as wandb artifacts — nothing more, my wandb quota is 5 GB).
-▎ Then proceed to Task 8 (201-target inversion benchmark) and Task 9 (verification gates, prior zoo, deletion) per the plan. Legacy target 6044 provenance is already pinned in data/inversion_bench/legacy_6044_provenance.json.
+- (highest priority) Handoff state 2026-07-08 (written by the 0001-pod session before pod
+  closure; plan Tasks 5-7 in docs/superpowers/plans/2026-07-06-full-openfwi-priors.md):
 
+  DONE — Task 5: 0001 definitive prior trained + reviewed + journaled (e80d348).
+  Run runs/0001_flow_matching/openfwi_2026-07-07T11-19-11Z, wandb gmgx7psw. Per-family
+  energy distances all at the perfect-model floor (real-mixture control ±0.28; the ~14.3
+  for CurveVel_B/FlatVel_B is the intrinsic floor for those families, not a defect).
+  Teacher checkpoint for 0002:
+  runs/0001_flow_matching/openfwi_2026-07-07T11-19-11Z/checkpoints/step_89_ema.pt
+  wandb artifacts slimmed to finals-only (1.07 GB); harness now uploads finals-only with
+  train_state stripped (e80d348) — never re-upload best pairs, quota is 5 GB.
 
+  IN FLIGHT — Task 6: 0003 diffusion training on a separate 5090 pod,
+  runs/0003_diffusion/openfwi_2026-07-07T23-26-16Z, wandb 984t0883, ETA midday 2026-07-08.
+  When it finishes: (1) delete its wandb 'best' artifact pair + replace the 2.14 GB final
+  raw with a weights-only copy (mirror what e80d348's journal entry describes for 0001),
+  (2) review per plan Task 6 (per-family val/energy vs the floor control, grids, journal).
 
-- (highest priority) Pick up the 0002 flow-map work from yesterday (see memory: 0002-batch128-bf16-handoff).
-
-1. Check the overnight 0002 openfwi batch-128 run (wandb r3majqyl, dir
-   /workspace/runs/0002_flow_map/openfwi_mf_2026-07-07T00-37-28Z). If it completed
-   100 epochs, summarize final val/loss and the new off-diagonal metrics
-   (val/fewstep_ode_gap*, val/jump_consistency*) and how they evolved. If it was
-   killed again (like the epoch-80 SIGKILL the night before), report the last epoch
-   and what survived.
-
-2. bf16 probe, if it didn't already run overnight (look for a bf16 probe log in
-   /workspace/runs/0002_flow_map/_probes/): run
-   WANDB_MODE=offline uv run python experiments/0002_flow_map/run.py experiment=openfwi \
-     training.batch_size=128 training.n_epochs=1 training.flow_map_warmup_steps=0 \
-     training.warmup_steps=0 training.eval_every_epochs=0 training.precision=bf16
-   Compare it/s, peak GPU memory, and the steps.jsonl loss trajectory against the
-   fp32 reference (_probes/0002_b128_probe.log: 2.85 it/s, 28.3 GB peak). If parity
-   holds, also probe whether batch 256 fits under bf16 (it OOMs in fp32).
-
-3. Before launching any new long run: implement resume support (optimizer state +
-   epoch in checkpoints, a training.resume_from flag for 0001/0002) and switch to
-   setsid launches, then decide the bf16 (maybe batch-256) relaunch with me.
+  NEXT — Task 7: 0002 definitive on the PRO 6000 96 GB. MEASURED: dit_b teacher regime
+  OOMs on 32 GB at BOTH bs128 and bs64 (≥30.5 GB; probes in
+  runs/0002_flow_map/_probes/0002_full_teacher_b{128,64}_bf16_probe.log) — spec §6's
+  "bs256 fits on 96 GB with the teacher" is likely wrong too (~60 GB est. at bs128,
+  possibly >96 GB at bs256). Probe bs256 for ~5 min first, fall back bs192 (lr 1.7e-4)
+  then bs128 (lr 1.4e-4); then setsid-launch:
+  uv run python experiments/0002_flow_map/run.py experiment=openfwi_full training=teacher \
+    training.teacher_ckpt=<teacher ckpt above> <batch/lr override from probe>
+  Then Tasks 8-9 per the plan (Task 8's CPU-side selection/manifest can start while 0002
+  trains; legacy 6044 provenance pinned in data/inversion_bench/legacy_6044_provenance.json).
 
 
 
