@@ -17,13 +17,18 @@ def _disable_wandb(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_lifecycle(tmp_path: Path) -> None:
     run = start_run("test_exp", tmp_path, {"lr": 0.1})
     assert run.ckpt_dir == tmp_path / "checkpoints"
-    assert run.ckpt_dir.is_dir()
+    # Scaffolding is lazy: nothing exists until first use.
+    assert not run.ckpt_dir.exists()
+    assert not (tmp_path / "metrics.jsonl").exists()
+    assert not (tmp_path / "steps.jsonl").exists()
 
     run.log(epoch=0, total=1.0, fm_loss=1.0)
     run.log(epoch=1, total=0.5, fm_loss=0.5)
+    assert len((tmp_path / "metrics.jsonl").read_text().splitlines()) == 2
 
     model = torch.nn.Linear(2, 2)
     path = run.save_checkpoint(model, 1, dataset="demo")
+    assert run.ckpt_dir.is_dir()
     assert path.exists()
     ckpt = torch.load(path, weights_only=False)
     assert ckpt["step"] == 1

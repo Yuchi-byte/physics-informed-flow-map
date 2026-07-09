@@ -116,7 +116,7 @@ Gate for the long runs — replaces the §6 extrapolations with measurements. Ta
 - [ ] Optional (deferred): from-scratch `mf` full run as scaling ablation.
 - [ ] Same review + journal + backup gates.
 - [ ] **Post-training: quality-vs-NFE on the full priors** (requested 2026-07-08). Re-run
-      `notebooks/run_quality_vs_nfe.py` on the full-OpenFWI trio once the 0002 definitive
+      `experiments/0005_analysis/prior_quality_vs_nfe.py` on the full-OpenFWI trio once the 0002 definitive
       checkpoint lands. The script currently hard-codes the FlatVel_A single-family setup;
       needed edits: (a) per-curve model config — the full priors are dit_b
       (hidden=768, depth=12, num_heads=12, patch_size=4), and the full 0003 denoiser is
@@ -130,7 +130,7 @@ Gate for the long runs — replaces the §6 extrapolations with measurements. Ta
       Keep the DDPM NFE grid on divisors of 1000 (250/500, never 256/512 — diffusers
       "leading" spacing truncates the reverse chain for non-divisor counts; see the
       2026-07-08 quality_vs_nfe JOURNAL entry). FlatVel_A reference analysis:
-      `runs/quality_vs_nfe/2026-07-08T16-26-21Z`, wandb quality_vs_nfe/p3b2c5ri.
+      `runs/0005_analysis/prior_quality_vs_nfe_2026-07-08T16-26-21Z`, wandb quality_vs_nfe/p3b2c5ri.
 
 ### Task 8: Inversion benchmark set
 

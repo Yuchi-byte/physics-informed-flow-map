@@ -11,6 +11,8 @@ Every metric that goes to wandb is also mirrored to the network-volume run direc
   - ``metrics.jsonl`` — one JSON line per :meth:`log` call (epoch-level scalars)
   - ``steps.jsonl``   — one JSON line per optimizer step via :meth:`log_step`
   - ``summary.json``  — final summary scalars written by :meth:`finish`
+The jsonl mirrors and ``checkpoints/`` are created on first use, so a run only leaves
+behind the files it actually produced.
 """
 
 from __future__ import annotations
@@ -60,15 +62,21 @@ class Run:
     experiment: str
     ckpt_dir: Path
     _last_epoch: int | None = None
-    _metrics_fh: Any = field(default=None, repr=False)  # open file handle for metrics.jsonl
-    _steps_fh: Any = field(default=None, repr=False)    # open file handle for steps.jsonl
+    # Lazily-opened jsonl mirror handles, keyed by filename. Files (and checkpoints/) are
+    # created on first use, so runs that never log stepwise scalars or save checkpoints
+    # (e.g. 0005 analysis scripts) don't leave empty scaffolding behind.
+    _jsonl_fhs: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
     def log_dir(self) -> Path:
         """The run directory (parent of ``checkpoints/``); all local logs live here."""
         return self.ckpt_dir.parent
 
-    def _append_jsonl(self, fh: Any, record: dict[str, Any]) -> None:
+    def _append_jsonl(self, name: str, record: dict[str, Any]) -> None:
+        fh = self._jsonl_fhs.get(name)
+        if fh is None:
+            fh = open(self.log_dir / name, "a")  # noqa: SIM115
+            self._jsonl_fhs[name] = fh
         fh.write(json.dumps(record, default=str) + "\n")
         fh.flush()
 
@@ -83,8 +91,7 @@ class Run:
         if epoch is not None:
             self._last_epoch = int(epoch)
         self.run.log(metrics)
-        if self._metrics_fh is not None:
-            self._append_jsonl(self._metrics_fh, {"_ts": time.time(), **metrics})
+        self._append_jsonl("metrics.jsonl", {"_ts": time.time(), **metrics})
 
     def log_step(self, **metrics: Any) -> None:
         """Log per-optimizer-step scalars to ``steps.jsonl`` only (not wandb).
@@ -92,8 +99,7 @@ class Run:
         Intended for high-frequency step-level data (loss, grad_norm, lr per batch)
         that would be too noisy to stream to wandb but useful for offline analysis.
         """
-        if self._steps_fh is not None:
-            self._append_jsonl(self._steps_fh, {"_ts": time.time(), **metrics})
+        self._append_jsonl("steps.jsonl", {"_ts": time.time(), **metrics})
 
     def update_config(self, **values: Any) -> None:
         """Merge extra static values into the wandb run config (e.g. param counts).
@@ -124,6 +130,7 @@ class Run:
         self, model: torch.nn.Module, step: int, *, suffix: str = "", **meta: Any
     ) -> Path:
         """Save ``model`` state (+ metadata) to ``checkpoints/step_<step><suffix>.pt``."""
+        self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         path = self.ckpt_dir / f"step_{step}{suffix}.pt"
         torch.save({"model": model.state_dict(), "step": step, **meta}, path)
         return path
@@ -335,10 +342,10 @@ class Run:
         summary_path.write_text(
             json.dumps({"_ts": time.time(), **summary}, default=str, indent=2)
         )
-        # Close the step/metrics file handles before finishing wandb.
-        for fh in (self._metrics_fh, self._steps_fh):
-            if fh is not None:
-                fh.close()
+        # Close any opened jsonl mirror handles before finishing wandb.
+        for fh in self._jsonl_fhs.values():
+            fh.close()
+        self._jsonl_fhs.clear()
         self.run.finish()
 
 
@@ -357,8 +364,10 @@ def start_run(
     wandb-native via ``WANDB_MODE`` (default online).
     """
     run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    # checkpoints/ and the jsonl mirrors are created lazily on first use (Run), so
+    # analysis-style runs that never touch them stay free of empty scaffolding.
     ckpt_dir = run_dir / "checkpoints"
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     full_config = {**config, **_env()}
 
@@ -379,13 +388,4 @@ def start_run(
     run.define_metric("epoch")
     run.define_metric("*", step_metric="epoch")
     print(f"[{experiment}] run → {run_dir}")
-
-    metrics_fh = open(run_dir / "metrics.jsonl", "a")  # noqa: SIM115
-    steps_fh = open(run_dir / "steps.jsonl", "a")      # noqa: SIM115
-    return Run(
-        run=run,
-        experiment=experiment,
-        ckpt_dir=ckpt_dir,
-        _metrics_fh=metrics_fh,
-        _steps_fh=steps_fh,
-    )
+    return Run(run=run, experiment=experiment, ckpt_dir=ckpt_dir)

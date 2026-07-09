@@ -18,10 +18,11 @@ the val split, as in ``per_family_energy_distance``'s default); each point is re
 several noise seeds for error bars; a real-vs-real noise floor (energy distance between two
 disjoint 512-map halves of the val split) anchors the y-axis.
 
-    uv run python notebooks/run_quality_vs_nfe.py
+    uv run python experiments/0005_analysis/prior_quality_vs_nfe.py
 
-Outputs quality_vs_nfe.png + results.md under runs/quality_vs_nfe/<ts>/ and logs the
-curves, table and figure to wandb (project physics-informed-flow-map-quality_vs_nfe).
+Outputs quality_vs_nfe.png + results.md under runs/0005_analysis/prior_quality_vs_nfe_<ts>/
+and logs the curves, table and figure to wandb (project
+physics-informed-flow-map-0005_analysis).
 """
 
 from __future__ import annotations
@@ -54,7 +55,8 @@ from physics_informed_flow_map.flow_matching.family_eval import (
 from physics_informed_flow_map.flow_matching.models import DiTModelConfig, build_model
 from physics_informed_flow_map.flow_matching.sample import sample, sample_few_step
 
-EXPERIMENT = "quality_vs_nfe"
+EXPERIMENT = "0005_analysis"
+ANALYSIS = "prior_quality_vs_nfe"
 RUNS_ROOT = Path("/workspace/runs")
 FAMILY = "FlatVel_A"
 SHAPE = (1, 64, 64)
@@ -251,7 +253,7 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-    run_dir = RUNS_ROOT / EXPERIMENT / ts
+    run_dir = RUNS_ROOT / EXPERIMENT / f"{ANALYSIS}_{ts}"
 
     # The standard seed-0 held-out split all three priors were trained against.
     dataset = OpenFWIDatasetConfig(
@@ -270,7 +272,7 @@ def main() -> None:
             for c in CURVES
         },
     }
-    run = start_run(EXPERIMENT, run_dir, config, name=ts)
+    run = start_run(EXPERIMENT, run_dir, config, name=f"{ANALYSIS}_{ts}")
 
     floors = noise_floor(val_by_family[FAMILY], args.n_samples, seeds, device)
     floor_mean = sum(floors) / len(floors)
