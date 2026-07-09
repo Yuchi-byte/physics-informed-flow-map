@@ -222,7 +222,118 @@ industrially proven per Viridien/CGG First Break 2021; shallow-seismic Geophysic
 confirming that OT-*inside-generative-guidance* comparisons, not new OT variants, are
 where our misfit work should point.
 
-## 8. Decision log
+## 8. References
+
+Grouped by the tier they support. Links captured in the 2026-07-09 sweep; entries marked
+*(verify)* are recalled from memory — confirm the ID before citing in a manuscript.
+
+### Diffusion/generative priors for FWI (context; Tiers 0–1 positioning)
+
+- Peng, Jiang, Ma & Yan 2026 — *Robust Physics-Guided Diffusion for Full-Waveform
+  Inversion* — [arXiv:2603.16393](https://arxiv.org/abs/2603.16393). Our OT-potential
+  reference point (`method.misfit=ot`); PDF in `docs/papers/`.
+- Taufik & Alkhalifah 2025 — *Diffusion Model-Based Posterior Sampling in FWI* —
+  [arXiv:2512.12797](https://arxiv.org/abs/2512.12797). **Already does supergather source
+  encoding inside diffusion FWI** — the Tier 2 repositioning driver.
+- *DiffusionInv: Prior-enhanced Bayesian FWI using diffusion models* —
+  [arXiv:2505.03138](https://arxiv.org/abs/2505.03138) (fine-tunes the prior with FWI guidance).
+- *Accelerating Bayesian FWI using reconstruction-guided diffusion sampling* — GJI 2026 —
+  [ggag066](https://academic.oup.com/gji/article/245/2/ggag066/8487641). Closest prior art
+  to Tier 1B's Bayesian framing.
+- *Decoupled Latent Optimization of Diffusion Models for FWI* —
+  [arXiv:2606.14139](https://arxiv.org/abs/2606.14139).
+- *Joint Velocity–Slope Diffusion Prior for Structurally Constrained Velocity Model
+  Building* — [arXiv:2607.04982](https://arxiv.org/abs/2607.04982).
+- Wang & Alkhalifah — *A prior regularized FWI using generative diffusion models* —
+  [arXiv:2306.12776](https://arxiv.org/abs/2306.12776) (the early entry in the lane).
+- *Improving FWI in the Large Model Era* — [arXiv:2603.00377](https://arxiv.org/html/2603.00377v2).
+- NVIDIA PhysicsNeMo diffusion-FWI reference example —
+  [docs](https://docs.nvidia.com/physicsnemo/26.03/physicsnemo/examples/geophysics/diffusion_fwi/README.html).
+- RED-DiffEq — arXiv:2509.21659 *(verify)*; DiffusionVel — arXiv:2410.21776 *(verify)* —
+  both already cited in `research-plan.html`.
+- Potaptchik et al. 2026 — *Meta Flow Maps enable scalable reward alignment* —
+  arXiv:2601.14430; PDF in `docs/papers/`. The steering estimators we build on.
+- Huang et al. 2026 (ICML) — FMRG — see `inversion/fmrg.py` header *(no link on file)*.
+
+### Misfit design / OT (Tiers 0, 1A, 3)
+
+- Engquist & Froese 2014 — *Application of the Wasserstein metric to seismic signals* —
+  Commun. Math. Sci. 12(5). The W2-convexity-in-shift result (for nonnegative signals).
+- Yang, Engquist et al. 2018 — *Application of OT and the quadratic Wasserstein metric to
+  FWI* — Geophysics — [geo2016-0663.1](https://library.seg.org/doi/abs/10.1190/geo2016-0663.1).
+  The trace-wise shift-normalize construction Peng et al. inherit.
+- Métivier, Brossier et al. 2016 — *An optimal transport approach for seismic tomography* /
+  OT misfit — GJI 205(1). KR-norm line; critique of linear shift normalization.
+- Métivier et al. 2018–2019 — graph-space OT — GJI / Geophysics *(verify exact refs)*;
+  industrial validation: Messud et al. 2021 — *OT FWI: from theory to industrial
+  applications* — [First Break / Viridien PDF](https://www.viridiengroup.com/sites/default/files/2021-12/First%20Break%20December%202021%20CGG%20Messud%20et%20al%20Final%20published.pdf).
+- *Optimal transport-based FWI for shallow seismic data* — Geophysics 2024 —
+  [geo2024-0165.1](https://library.seg.org/doi/10.1190/geo2024-0165.1).
+- Warner & Guasch 2016 — *Adaptive waveform inversion: theory* — Geophysics 81(6). The
+  Wiener matching filter behind the Tier 1A controller.
+- Sun & Alkhalifah — matching-filter OT (MSOT) *(verify ref)*.
+- Bunks et al. 1995 — *Multiscale seismic waveform inversion* — Geophysics 60(5). The
+  frequency-continuation classic behind Tier 1A.
+- *DLM-FWI: deep learning matching filtering for FWI* — GJI 2026 —
+  [ggag019](https://academic.oup.com/gji/article/245/1/ggag019/8427320); also SEG IMAGE25
+  [dynamic matching filtering](https://onepetro.org/SEGAM/proceedings-abstract/IMAGE25/IMAGE25/SEG-2025-4315365/798949)
+  and [DL-AWI](https://www.mdpi.com/2076-3263/16/2/65). Matching filters as misfit
+  surrogates — none as a guidance controller (the Tier 1A gap).
+
+### Guidance scheduling precedents (Tier 1A)
+
+- *Frequency-Guided Posterior Sampling for Diffusion-Based Image Restoration* —
+  [arXiv:2411.15295](https://arxiv.org/html/2411.15295v2). **The imaging precedent for
+  frequency annealing** — cite and differentiate (FWI, cycle skipping, missing lows).
+- SPIN — *Sparse Scheduled Diffusion Guidance for Inverse Problems* —
+  [arXiv:2603.07860](https://arxiv.org/abs/2603.07860).
+- *Posterior sampling with piecewise guidance* — [arXiv:2507.18654](https://arxiv.org/html/2507.18654).
+
+### SMC / particle methods / UQ (Tier 1B)
+
+- Wu, Trippe, Naesseth, Blei & Cunningham 2023 (NeurIPS) — *Practical and Asymptotically
+  Exact Conditional Sampling in Diffusion Models* (Twisted Diffusion Sampler) —
+  [arXiv:2306.17775](https://arxiv.org/abs/2306.17775),
+  [code](https://github.com/blt2114/twisted_diffusion_sampler).
+- Cardoso et al. — MCGDiff, *Monte Carlo guided Diffusion for Bayesian linear inverse
+  problems* — [OpenReview](https://openreview.net/forum?id=nHESwXvxWK) / arXiv:2308.07983 *(verify)*.
+- *Inverse Problem Sampling in Latent Space Using SMC* —
+  [arXiv:2502.05908](https://arxiv.org/abs/2502.05908).
+- *Decoupled Diffusion SMC for linear-Gaussian inverse problems* —
+  [arXiv:2502.06379](https://arxiv.org/html/2502.06379v1).
+- *Annealed SVGD for improved uncertainty estimation in FWI* —
+  [arXiv:2410.13249](https://arxiv.org/pdf/2410.13249). SVGD in classical FWI — the
+  Tier 1B rung-2 differentiation point.
+- Liu & Wang 2016 (NeurIPS) — *Stein Variational Gradient Descent* — arXiv:1608.04471.
+- Corso, Xu, De Bortoli, Barzilay & Jaakkola 2023 — *Particle Guidance: non-I.I.D. Diverse
+  Sampling with Diffusion Models* — [arXiv:2310.13102](https://arxiv.org/abs/2310.13102),
+  [code](https://github.com/gcorso/particle-guidance).
+- **⚠ *Particle-Guided Diffusion Models for PDEs* —
+  [arXiv:2601.23262](https://arxiv.org/abs/2601.23262) (2026). Found during reference
+  verification — potentially close prior art for Tier 1B rung 2 (repulsion between guided
+  trajectories in a PDE setting). READ BEFORE claiming rung-2 novelty.** Related:
+  *Marginal-Preserving Particle Guidance* — [arXiv:2605.06553](https://arxiv.org/html/2605.06553v1);
+  *Particle Denoising Diffusion Sampler* — [arXiv:2402.06320](https://arxiv.org/html/2402.06320v2).
+
+### Compute: encoding, relaxation, ROM, surrogates (Tiers 2–3)
+
+- Krebs et al. 2009 — *Fast full-wavefield seismic inversion using encoded sources* —
+  Geophysics 74(6). The supershot/random-polarity classic.
+- *FWI with random shot selection using adaptive gradient descent* —
+  [arXiv:2005.09899](https://arxiv.org/pdf/2005.09899) /
+  [J. Earth Syst. Sci. 2021](https://link.springer.com/article/10.1007/s12040-021-01679-y).
+- van Leeuwen & Herrmann 2013 — Wavefield Reconstruction Inversion — GJI *(verify)*;
+  IR-WRI: Aghamiry et al. — [arXiv:1809.00891](https://arxiv.org/pdf/1809.00891).
+- Borcea, Garnier, Mamonov & Zimmerling 2024 — *When data-driven ROM meets FWI* —
+  [SIAM Review 66](https://epubs.siam.org/doi/10.1137/23M1552826); 2025 first-order
+  hyperbolic / multiparameter acoustic — [SIAM J. Imaging Sci.](https://epubs.siam.org/doi/10.1137/24M1699784)
+  / [arXiv:2505.08937](https://arxiv.org/pdf/2505.08937); the original —
+  [arXiv:2202.01824](https://arxiv.org/abs/2202.01824). Convexity-vs-L2 results explicit.
+- Li et al. 2020 — Fourier Neural Operator — arXiv:2010.08895 *(verify)* (Tier 2 FNO-early).
+- Richardson — Deepwave (the differentiable solver everything here runs on) —
+  [github](https://github.com/ar4/deepwave).
+
+## 9. Decision log
 
 - 2026-07-09 — Document drafted from the two brainstorm sessions (Claude + user ideas doc).
   Positioning fixed: Camp A, ML-side, synthetic-but-hard. Tier 1 = scheduling + calibration.

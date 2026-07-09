@@ -21,6 +21,7 @@ Standalone contributions on any single lever are crowded; the publishable gaps a
 | Adaptive Waveform Inversion (AWI) | Warner & Guasch | Wiener matching filter, penalise deviation from delta | Commercial (S-Cube); AWI-vs-OT under realistic noise is under-studied |
 | Matching-filter OT (MSOT) | Sun & Alkhalifah | Apply OT to the matching filter, not the data | Sidesteps OT positivity issues more naturally |
 | Envelope / instantaneous phase / DTW | Bozdağ; Ma & Hale | Kinematics-focused attributes | Mostly useful as stage-1 objectives in multiscale strategies |
+| Spectral L2 |  | Misfit in Fourier space | time-shift that causes cycle skipping might not affect the frequency spectrum |
 
 > Assessment: yet another standalone misfit is a hard sell in 2026. Misfit **+ something else** is where papers are.
 
