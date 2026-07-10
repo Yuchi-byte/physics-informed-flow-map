@@ -43,6 +43,79 @@ data-overfitting. Three upgrades to `0004`, all cheap:
 | **Operator mismatch (kill the inverse crime)** | Generate `d_obs` on a finer grid / different dt or wavelet than the guidance operator | Removes the "fit data harder = win" degeneracy that currently flatters aggressive methods |
 | **OOD targets** | Marmousi2 / Overthrust 70×70 crops appended to the benchmark manifest | Measures how much steering compensates prior misspecification (research-plan M5) |
 
+### 1.1 The upgrades in detail — what each is, what problem it solves, what breaks without it *(added 2026-07-11)*
+
+**(a) Band-limited data — the "missing lows" stressor.**
+*Jargon first:* "lows" = low temporal frequencies in the recorded seismograms (≲ 4–6 Hz);
+"highs" = the rest. The correspondence that makes them matter: **data lows constrain the
+smooth, long-wavelength background velocity** (the "macro-model" that sets traveltimes);
+data highs constrain fine layering detail. *What the upgrade is:* high-pass filter both
+`d_obs` and the source wavelet so no energy exists below `bench.min_freq_hz` (~4 Hz).
+Our 15 Hz-Ricker synthetics currently carry usable energy down to ~1–2 Hz; **field data
+never has this** — marine/land sources emit almost nothing there and ambient noise is
+strongest there, so the lows are the first thing lost in practice. *The problem it
+deliberately creates — cycle skipping:* L2 compares waveforms sample-by-sample, so if a
+predicted arrival is mistimed by more than **half a period**, the gradient aligns it with
+the *wrong oscillation cycle* — a spurious local minimum. Half-period at 3 Hz = 167 ms of
+tolerated timing error; at 15 Hz = 33 ms. The lows are the safety rail that keeps a rough
+early model within half a cycle; remove them and every moderately wrong model is beyond
+T/2 at *all* available frequencies — descent locks onto wrong cycles. This is exactly why
+classical FWI proceeds low→high frequency (Bunks) and why "no lows below ~4 Hz" is the
+community's canonical hard benchmark. *Why we need it:* with lows present, cycle skipping
+barely occurs here (`FWI_problem_exploration` finding 1: low-passing flattens the skip
+wells) — so every anti-cycle-skipping claim in Tier 1A (OT, annealing, AWI) is currently
+untestable, and geophysics reviewers discount full-band synthetics on sight. Side question
+it unlocks (Probe C, decision rule b): must *model* lows come from *data* lows, or can the
+learned prior supply them?
+
+**(b) Observation noise with matched σ.**
+*What:* `d_obs = F(v_true) + η`, `η ~ N(0, σ_true² I)`, and the guidance likelihood uses
+σ = σ_true. *The three problems it fixes:* (i) with noiseless data the Bayesian target is
+degenerate — the true σ is 0, the posterior collapses onto the set {v : F(v) = d_obs},
+and any finite σ we choose defines an *arbitrary* pseudo-posterior (the §1.5 MFM-G
+discussion); (ii) "fit the data harder = win" is unboundedly exploitable — there is no
+noise floor below which further fitting is fitting nothing; (iii) calibration metrics are
+undefined — cov90 (does the 90% credible region contain the truth ~90% of the time?) and
+CRPS (a proper score for a whole predicted distribution against the realized truth) need a
+well-defined posterior to be right *about*. *Why necessary:* the JOURNAL's n=32 conclusion
+already named this THE unblocking experiment — every posterior-quality claim in the thesis
+(MFM-G vs Tweedie, the calibration ladder, SMC bias measurement) is vacuous until the
+posterior exists. Bonus: overfitting becomes *measurable* — final misfit below the known
+noise floor means fitting noise. *What it does not fix:* systematic modeling error — (c).
+
+**(c) Operator mismatch — killing the "inverse crime".**
+*Jargon:* the **inverse crime** = generating synthetic observations with the *same*
+numerical operator the inversion uses internally. A perfect data fit is then achievable
+and optimal — the data carries zero trace of modeling error, which never happens with
+real data. *What the upgrade is:* simulate `d_obs` with a deliberately different
+discretization than the guidance operator (finer grid, different dt, slightly perturbed
+wavelet). *The problem it fixes:* the Earth is elastic, 3-D, attenuating, with an unknown
+source; our operator is 2-D acoustic on a 70×70 grid. In the field the residual can never
+reach zero, and the last few percent of misfit is *operator error, not information* —
+methods that hammer the data (FMRG-E, classical descent) are systematically flattered
+under the crime; the June "classical ties the learned prior" results carry exactly this
+caveat. Noise (b) is **not** a substitute: noise is zero-mean with known statistics;
+operator error is systematic and unknown — a different beast, and the one the §2.1a
+nuisance-marginalization idea targets. *Cost to know about:* mismatch deliberately breaks
+exact calibration (no true posterior under unknown systematic error) — hence the
+two-track split below.
+
+**(d) OOD targets — Marmousi2 / Overthrust crops.**
+*What:* 70×70 crops from the community's standard realistic 2-D structural models
+(Marmousi2, Overthrust) appended to the target manifest — targets *not* drawn from the
+ten OpenFWI families the priors were trained on. *The problem it fixes:* every current
+target is in-distribution — a held-out draw from the same synthetic generator as the
+training set, so the prior has effectively seen the answer's *distribution* and guidance
+only has to select the right member. Real subsurfaces are never OpenFWI draws. *Why
+necessary:* (i) it is the first objection every reviewer raises against learned-prior
+FWI; (ii) it separates "the prior does the work" from "the steering does the work" — the
+attribution a steering-methods paper rests on; (iii) it stresses selection and calibration
+exactly where honest uncertainty matters most — a misspecified prior should *widen* its
+reported uncertainty, not confidently hallucinate OpenFWI geology (research-plan M5).
+
+Track membership: (b) alone defines the **calibration track**; (a) + (c) + (d) compose
+the **robustness track** (next).
+
 **Two-track split (2026-07-10 review).** "Matched σ" and "operator mismatch / OOD" cannot
 live in one benchmark configuration: calibration metrics (cov90, CRPS) are falsifiable only
 when the guidance operator equals the observation operator, the noise is exactly the assumed
@@ -765,3 +838,12 @@ Grouped by the tier they support. Links captured in the 2026-07-09 sweep; entrie
   log p(v)-colored embedding), E2 cycle-skipped family via flow_tilt against T_τ·d_obs
   (the diagnostic twin of §2.1a), and the E1-vs-E2 MAE histogram as the disease-report
   money figure.
+- 2026-07-11 — §1.1 added: the four Tier 0 upgrades explained in full (what / problem /
+  why necessary), with the jargon (missing lows, cycle-skipping half-period rule, inverse
+  crime, macro-model) defined inline; track membership made explicit ((b) = calibration
+  track; (a)+(c)+(d) = robustness track). Clarified in discussion: the σ problem does NOT
+  touch MFM training (Camp A — training is purely generative; σ enters only the inference
+  reward), but the t_cond>0 fidelity check can and should run on the *existing*
+  esd_teacher checkpoint now, before the definitive 0002 training lands — if the
+  conditional channel is weak, the fix is a training-recipe change, and we want to know
+  that before spending more 0002 epochs.
