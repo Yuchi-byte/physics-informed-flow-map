@@ -248,6 +248,29 @@ very different verdicts:
    standard in neural vocoders (Yamamoto et al. 2020); wavelet-scattering metrics are
    provably stable to small deformations (Mallat 2012). Neither appears in FWI guidance;
    the closest classical relative is the envelope misfit.
+5. **f–k (2-D frequency–wavenumber) magnitude misfit** *(clarified 2026-07-10 — this, not
+   variant 2, is the user's intended construction)*: 2-D FFT per shot gather over
+   (receiver, time); compare `|D̂_pred(ω,k)|` vs the frozen `|D̂_obs(ω,k)|` with L2 or OT.
+   Materially better than variant 2: in 2-D only *global* time/space shifts are phase
+   ramps, and **kinematics live in the magnitude** — a linear event of slowness p maps
+   onto the line k = p·ω, so event slopes / apparent velocities / moveout are |f–k|
+   content. Keeps the primary velocity signal, gains invariance to exactly the right
+   nuisances (datum/origin errors), and is structurally cycle-skip-immune (no phase → no
+   oscillatory mismatch). What it loses: absolute event times (t₀) are phase → weak
+   sensitivity to depth-shifted interfaces at fixed velocity — a specific, testable
+   null-space enlargement (probe: misfit-vs-depth-shift curve `v(z) → v(z−Δ)`, alongside
+   Probe A's α-scan). **OT-on-|f–k| is the standout combination**: magnitudes are
+   nonnegative by construction, so Peng's shift-to-positive hack — the exact ingredient
+   our unit tests showed neuters the transport — is unnecessary, and kinematic error
+   becomes smooth transport in the (ω,k) plane (slope rotation) instead of an oscillatory
+   L2 residual. Practicals: taper the short 70-trace arrays (leakage); expect direct-wave
+   energy to dominate → frozen spectral amplitude weighting; full 2-D Sinkhorn on
+   ~70×501 grids per shot per step is heavy — start with sliced-W2 (cheap,
+   differentiable) or plain/log L2 on |f–k|. Classical relatives to differentiate from:
+   Radon/τ-p misfits, semblance/velocity-spectrum objectives, slope tomography, and
+   Shin & Cha's Laplace/Laplace–Fourier-domain FWI (the canonical "spectral misfit vs
+   cycle skipping" line). f–k-magnitude OT inside generative guidance: no prior art known,
+   **needs a targeted lit check before any novelty claim**.
 
 Bayesian caveat (applies to OT and everything above except plain/weighted L2): a non-L2
 potential defines a *Gibbs/generalized posterior*, not exact Bayes under a noise model — the
@@ -440,7 +463,8 @@ in §6.6.
 
 **Misfit design (gated on §1.5 outcome, except the ablation)**
 - [ ] OT decomposition ablation (§2.1c) — runnable now on the current benchmark, rerun on both tracks
-- [ ] `misfit=spectral` (complex/amp/logamp/stft) + `misfit=softmin_shift` + unit tests (Parseval identity, shift-flatness, trapped-model blindness)
+- [ ] `misfit=spectral` (complex/amp/logamp/stft/**fk_amp/fk_ot**) + `misfit=softmin_shift` + unit tests (Parseval identity, shift-flatness, trapped-model blindness; f–k: depth-shift blindness curve)
+- [ ] Lit check: f–k/Radon-domain misfits, spectral-magnitude OT, Shin & Cha Laplace-domain FWI — before any §2.1b-variant-5 novelty claim
 - [ ] Misfit bake-off under one annealing framework (§2.1 protocol) — only if Probes B/C show basin failures
 - [ ] AWI as misfit *and* controller (upgraded from controller-only)
 
@@ -670,3 +694,10 @@ Grouped by the tier they support. Links captured in the 2026-07-09 sweep; entrie
   feature; MFM-Search revived; SMC distilled-recalibration deliverable; tuning-protocol +
   paired-statistics requirement; InversionNet baseline; FNO-early cut; scale-credibility
   caveat.
+- 2026-07-10 (later) — Spectral misfit clarified as the 2-D f–k construction (variant 5,
+  §2.1b): magnitude keeps kinematics (event slopes), invariance shrinks to global shifts,
+  structurally cycle-skip-immune; known cost is t₀/depth-registration blindness (phase).
+  OT-on-|f–k| flagged as the standout candidate — nonnegativity for free removes the Peng
+  positivity hack that the unit tests showed neuters the transport. Added to Probe A +
+  TODO with a pre-claim lit check (Radon/τ-p, semblance, slope tomography, Shin & Cha
+  Laplace-domain).
