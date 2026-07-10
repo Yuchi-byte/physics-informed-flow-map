@@ -68,10 +68,21 @@ the hypothesis is that the OT edge appears only *after* hardening.
 ## 1.5 Tier 0.5 — disease-existence check (gates Tier 1A; run before any misfit work)
 
 **Principle: demonstrate and *visualize* the pathology before building the cure.** We have
-been burned once already — weeks of MFM-G tuning before discovering the noiseless benchmark
-could not reward posterior sampling at all. `FWI_problem_exploration/` (single map 6044,
-full-band data) already gives a partial answer, and it cuts *against* the naive
-cycle-skipping story:
+been burned once already — the MFM-G steering arc (JOURNAL ~2026-06-28→07-02: guidance-scale,
+renorm, σ, and mc-samples sweeps, then an n=32 validation) ended with the diagnosis that
+under the noiseless inverse crime **no steering strength significantly helps beyond the
+prior**: strong steering exploits the data-fit degeneracy (misfit −10×, MAE 0.284→0.52–0.62),
+gentle steering does nothing (SSIM +0.023 ≈ 1 SEM at n=32), MC draw count is irrelevant
+(mc 4→20 identical at 5× solves), and at matched data fit MFM-G still loses on model error
+(misfit_ratio 0.077 vs flow_tilt's 0.072, MAE 0.195 vs 0.127) — with noiseless data σ has no
+principled value, so there is no well-defined posterior to be *better at*. Precisely stated:
+the benchmark rewarded guidance (−40% MAE) and even misfit design (the OT wins), but not the
+posterior-quality edge that is MFM-G's entire claim. Caveat (part of why §1.5 exists): that
+diagnosis is still confounded with the untested `t_cond>0` channel (§6.5 item 1); the
+matched-σ track plus the fidelity check disentangle them.
+
+`FWI_problem_exploration/` (single map 6044, full-band data) already gives a partial answer,
+and it cuts *against* the naive cycle-skipping story:
 
 - The aggregate L2 landscape along `α·v_true` is unimodal-but-saturating; the textbook skip
   wells exist only at the single-trace level (README finding 1).
@@ -133,6 +144,46 @@ easy FlatVel-A map with classical descent. The Tier 1A stressor is the opposite 
   ambiguity — the very quantity Tier 1B's posterior is supposed to report.
 - Output: a per-family **"ambiguity radius at fixed relative misfit"** table — the
   non-uniqueness baseline every Tier 1B claim is measured against.
+
+### Probe E — disease atlases via the samplers themselves (the visualization layer)
+
+Use our own generation/inversion machinery to *sample* the pathological sets and look at
+them — the samplers are level-set explorers, not just the methods under test. (Probe D
+quantifies; Probe E is what the quantities look like.)
+
+- **E1 — the same-d_obs family (null-space atlas).** For a fixed target, pool maps that fit
+  its d_obs to equal misfit (misfit_ratio ≤ threshold) from deliberately *diverse*
+  generators: flow_tilt·{l2, ot} from n ≥ 32 noise seeds (the on-manifold slice of the
+  solution set); the JOURNAL-documented off-manifold data-fitters used as **features, not
+  bugs** (fmrg_e at g ≥ 1, mfm_g at small σ / renorm=T — the misfit-crushers); and classical
+  multi-start (`classical_fwi_nonuniqueness.py`). Visuals:
+  - gallery sorted by MAE-to-truth (equal data fit across the whole row — the disease in
+    one image);
+  - pixelwise std / quantile maps → *where* the null space lives spatially (expect the deep
+    half, per finding 5);
+  - top PCA eigenmaps of the pool = empirical null-space modes;
+  - pairwise-MAE MDS embedding colored by (i) generator and (ii) prior log-likelihood
+    log p(v) — a visual preview of rung 1.5: off-manifold members should sit at low log p(v).
+  - Headline quantity: ambiguity radius **with** the prior (flow_tilt subset) vs **without**
+    (full pool) — the prior's uniqueness contribution, measured and pictured.
+- **E2 — the cycle-skipped family.** Generate *prior-plausible* maps whose predicted data
+  is one cycle off: run flow_tilt with the target's d_obs replaced by `T_τ·d_obs`,
+  τ = ±one dominant period (≈ 67 ms at 15 Hz; also per-shot-sign variants), plus the
+  classical trapped models from `cycle_skipping_escape.py` for the off-manifold version.
+  Visuals: skip-family gallery vs truth; difference maps (*where* the velocity absorbs the
+  shift — shallow vs deep); far-offset trace overlays (the one-cycle-apart picture).
+  This is also the **diagnostic twin of the §2.1a shifted-copies idea**: it empirically
+  answers "are the preimages of slightly-shifted data slightly-perturbed models?" — if yes
+  at small τ, the softmin nuisance potential is cheap tolerance; if the preimages differ
+  wildly, shift tolerance is expensive in model space and the schedule must retire it early.
+- **The money figure**: MAE-to-truth histograms of E1 (null space) vs E2 (one full skip) on
+  shared axes — the two diseases' sizes in model space, directly comparable. Finding 1
+  predicts E2 ≈ 20% background-velocity error; finding 2 predicts E1 spans ~500 m/s. If
+  E1 ≳ E2, non-uniqueness is confirmed as the dominant disease on this geometry; the gap
+  between them is the honest budget split between Tier 1A and Tier 1B.
+
+Cost note: n=32 flow_tilt draws ≈ 25.6k solves per target/config — run E on 2–3 targets
+(one easy, one hard family), not the full core set.
 
 ### Decision rules
 
@@ -453,6 +504,8 @@ in §6.6.
 - [ ] §1.5 Probe B — classical basin-failure rate, 20 core targets, ± band-limit
 - [ ] §1.5 Probe C — guided-sampler inheritance → make the Tier 1A go/no-go call
 - [ ] §1.5 Probe D — misfit-vs-MAE scatters + ambiguity-radius table → `disease_report.md`
+- [ ] §1.5 Probe E1 — null-space atlas (same-d_obs family via flow_tilt seeds + off-manifold fitters + classical multi-start; galleries, std maps, PCA modes, log p(v)-colored embedding)
+- [ ] §1.5 Probe E2 — cycle-skipped family (flow_tilt vs `T_τ·d_obs`) + the E1-vs-E2 histogram money figure
 - [ ] Close the pending L2-vs-OT run (pre-hardening leg)
 
 **Benchmark / infrastructure**
@@ -701,3 +754,14 @@ Grouped by the tier they support. Links captured in the 2026-07-09 sweep; entrie
   positivity hack that the unit tests showed neuters the transport. Added to Probe A +
   TODO with a pre-claim lit check (Radon/τ-p, semblance, slope tomography, Shin & Cha
   Laplace-domain).
+- 2026-07-10 (later) — §1.5 opening claim challenged and corrected: the MFM-G arc was ~5
+  days not "weeks", and the benchmark *did* reward guidance (−40% MAE) and misfit design —
+  what it couldn't reward is the posterior-quality edge beyond Tweedie (no principled σ →
+  no well-defined posterior target), and that diagnosis remains confounded with the
+  untested t_cond>0 channel. Evidence now cited inline (the five JOURNAL entries + the
+  barrier/nonuniqueness studies). Probe E added: disease atlases generated *by the samplers
+  themselves* — E1 same-d_obs null-space atlas (flow_tilt seeds + off-manifold fitters as
+  features + classical multi-start; galleries, pixelwise std, PCA null-space modes,
+  log p(v)-colored embedding), E2 cycle-skipped family via flow_tilt against T_τ·d_obs
+  (the diagnostic twin of §2.1a), and the E1-vs-E2 MAE histogram as the disease-report
+  money figure.
