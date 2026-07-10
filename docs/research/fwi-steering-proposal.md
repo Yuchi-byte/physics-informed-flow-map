@@ -66,7 +66,14 @@ barely occurs here (`FWI_problem_exploration` finding 1: low-passing flattens th
 wells) — so every anti-cycle-skipping claim in Tier 1A (OT, annealing, AWI) is currently
 untestable, and geophysics reviewers discount full-band synthetics on sight. Side question
 it unlocks (Probe C, decision rule b): must *model* lows come from *data* lows, or can the
-learned prior supply them?
+learned prior supply them? *References stating the missing-lows problem explicitly (verify
+wording before quoting):* Virieux & Operto 2009 (Geophysics 74(6) review — the half-cycle
+criterion); Bunks et al. 1995; Sirgue & Pratt 2004; Warner & Guasch 2016 (AWI's opening
+motivation); Shin & Cha 2008 (Laplace-domain FWI exists *because* of missing lows);
+Sun & Demanet 2020 + Ovcharenko et al. 2019 (the low-frequency-extrapolation literature —
+field data below ~3–5 Hz absent or noise-dominated); Brenders & Pratt 2007 (blind-test
+success attributed to unrealistically low frequencies); Chevron 2014 SEG blind benchmark
+(band-limited by design).
 
 **(b) Observation noise with matched σ.**
 *What:* `d_obs = F(v_true) + η`, `η ~ N(0, σ_true² I)`, and the guidance likelihood uses
@@ -82,6 +89,16 @@ already named this THE unblocking experiment — every posterior-quality claim i
 (MFM-G vs Tweedie, the calibration ladder, SMC bias measurement) is vacuous until the
 posterior exists. Bonus: overfitting becomes *measurable* — final misfit below the known
 noise floor means fitting noise. *What it does not fix:* systematic modeling error — (c).
+*Implementation (2026-07-11):* noise drawn **once per target with a fixed seed** and stored
+in the benchmark manifest — `d_obs` is a fixed noisy observation, never resampled per step
+or run; σ_true = ε·RMS(d_obs) per target, reported as SNR; white Gaussian on this track.
+*"But field σ is unknown"* — three answers: (i) this track is a methodological instrument,
+not a field workflow — it certifies that a sampler can hit a known target *when one exists*
+(the simulation-based-calibration logic, Talts et al. 2018); (ii) field σ is estimable
+(pre-first-arrival noise windows, repeat-shot differences); (iii) σ can be a nuisance
+parameter, estimated or marginalized during inversion (hierarchical/empirical Bayes) — a
+natural §2.1a extension. Cheap reviewer-proof ablation to include: **mis-specified σ**
+(assumed ≠ true → calibration-degradation curve).
 
 **(c) Operator mismatch — killing the "inverse crime".**
 *Jargon:* the **inverse crime** = generating synthetic observations with the *same*
@@ -98,7 +115,22 @@ caveat. Noise (b) is **not** a substitute: noise is zero-mean with known statist
 operator error is systematic and unknown — a different beast, and the one the §2.1a
 nuisance-marginalization idea targets. *Cost to know about:* mismatch deliberately breaks
 exact calibration (no true posterior under unknown systematic error) — hence the
-two-track split below.
+two-track split below. *Implementation ladder (2026-07-11; all via a second simulate
+config used only for data generation — the guidance operator is untouched):* **mild** —
+generate on a refined discretization (bilinear-upsample v_true 70→140, dx 10→5 m, halve
+dt), decimate traces back to the guidance time axis — real numerical-dispersion error;
+**moderate** — + perturbed wavelet (centre frequency ±3%, slight phase rotation) —
+source-uncertainty error; **hard** — different physics: elastic generation (Deepwave ships
+an elastic solver; plausible Vs, invert acoustically) and/or an attenuation proxy. Start
+mild; the only requirement is `d_obs ∉ range(F_guidance)`. *Attenuation note (2026-07-11
+Q&A):* real data is attenuated (intrinsic Q — amplitude decay, stronger at high frequency,
+with causal dispersion); our scalar solver is lossless. Within the current benchmark that
+is *consistent* (both sides lossless), not a bug — but it is exactly the systematic
+un-modeled physics (c) exists for: a t*-style frequency-dependent damping filter on
+generated `d_obs` is the cheap proxy. Attenuation is also a standard classical
+justification for amplitude-insensitive misfits (matching filters, OT normalizations) —
+field amplitude information is partly corrupted anyway, so kinematics-leaning misfits are
+field-motivated, not only cycle-skipping-motivated.
 
 **(d) OOD targets — Marmousi2 / Overthrust crops.**
 *What:* 70×70 crops from the community's standard realistic 2-D structural models
@@ -112,9 +144,33 @@ FWI; (ii) it separates "the prior does the work" from "the steering does the wor
 attribution a steering-methods paper rests on; (iii) it stresses selection and calibration
 exactly where honest uncertainty matters most — a misspecified prior should *widen* its
 reported uncertainty, not confidently hallucinate OpenFWI geology (research-plan M5).
+*Reading an OOD failure (2026-07-11):* decompose before concluding — good data fit + wrong
+model → prior bias dominates and steering can't override (fix: broader/augmented prior,
+adaptive likelihood weight); bad data fit → guidance under-powered (a steering problem);
+narrow-but-wrong posterior → the dangerous, most publishable case (confident hallucination
+of in-distribution geology). Classical FWI has no prior and does not degrade OOD, so the
+**crossover point** where classical overtakes prior-guided methods is itself a result.
 
-Track membership: (b) alone defines the **calibration track**; (a) + (c) + (d) compose
-the **robustness track** (next).
+**Track membership (corrected 2026-07-11):** (b) alone defines the **calibration track**.
+(a) is *compatible* with calibration when the band-limit filter is applied identically to
+`d_obs` and to predicted data — it is then part of F and the posterior stays exactly
+defined, just wider and possibly multimodal, which makes an **(a)+(b) "hard-calibration"
+config** the ideal SMC-vs-mode-collapse test. (c) and (d) *destroy* the ground truth
+(systematic operator error / prior misspecification → no true posterior exists) and so
+define the **robustness track**, with (a) joining in its stressor role. Endgame once the
+calibration rungs are certified: **all four on** = the realistic benchmark, where
+calibration metrics remain reportable but only *comparatively* (method A less overconfident
+than B), never absolutely.
+
+*Glossary:* **skip well** — a cycle-skipping local minimum: a "well" in the
+misfit-vs-model-perturbation curve where data is matched one cycle off (see the per-trace
+curves in `cycle_skipping_landscape.png`). **cov90** — empirical coverage: how often the
+sampler's 90% credible interval actually contains the truth (want ≈0.90; lower =
+overconfident). **CRPS** — continuous ranked probability score, a proper score for a whole
+predicted distribution against the realized truth; reduces to MAE for a point prediction
+("MAE generalized to distributions"; lower better; rewards accuracy *and* honest spread;
+Gneiting & Raftery 2007). **Hardening** — applying the Tier 0 upgrades; "hardened
+benchmark" = post-Tier-0.
 
 **Two-track split (2026-07-10 review).** "Matched σ" and "operator mismatch / OOD" cannot
 live in one benchmark configuration: calibration metrics (cov90, CRPS) are falsifiable only
@@ -847,3 +903,19 @@ Grouped by the tier they support. Links captured in the 2026-07-09 sweep; entrie
   esd_teacher checkpoint now, before the definitive 0002 training lands — if the
   conditional channel is weak, the fix is a training-recipe change, and we want to know
   that before spending more 0002 epochs.
+- 2026-07-11 (Q&A follow-up) — §1.1 enriched from the user's nine questions: missing-lows
+  references added (Virieux & Operto 2009 half-cycle criterion, Shin & Cha, low-freq
+  extrapolation literature, Chevron 2014 blind benchmark); noise implementation pinned
+  (frozen per-target realization + seed in the manifest; σ_true = ε·RMS; field-σ answer:
+  SBC logic + noise-window estimation + σ-as-nuisance; mis-specified-σ ablation added);
+  operator-mismatch implementation ladder (refined-grid mild → wavelet moderate → elastic/
+  attenuation hard; solver has no Q term — consistent internally, and the t*-damping proxy
+  is the cheap attenuation mismatch); OOD failure-mode decomposition + classical-crossover
+  reading. **Correction:** band-limiting (a) is calibration-compatible when the filter is
+  part of F on both sides — (a)+(b) "hard calibration" (wider, multimodal exact posterior)
+  is the ideal SMC-vs-mode-collapse test; only (c)/(d) destroy ground truth. Glossary added
+  (skip well, cov90, CRPS, hardening). L2-vs-OT "pending" status clarified in discussion:
+  the 07-05/07-09 runs largely closed the pre-hardening leg; what remains is the mfm_g σ
+  boundary ({0.003,0.01}), the multi-map mfm_g leg, and the post-hardening repeat that
+  tests whether OT's edge changes mechanism (preconditioning → transport) once lows are
+  missing.
