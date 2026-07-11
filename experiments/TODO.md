@@ -1,5 +1,5 @@
-- (highest priority) Handoff state 2026-07-08 (written by the 0001-pod session before pod
-  closure; plan Tasks 5-7 in docs/superpowers/plans/2026-07-06-full-openfwi-priors.md):
+- (highest priority) Handoff state 2026-07-11 (updated by the PRO-6000-pod session before
+  pod closure; plan in docs/superpowers/plans/2026-07-06-full-openfwi-priors.md):
 
   DONE — Task 5: 0001 definitive prior trained + reviewed + journaled (e80d348).
   Run runs/0001_flow_matching/openfwi_2026-07-07T11-19-11Z, wandb gmgx7psw. Per-family
@@ -16,22 +16,43 @@
   families at floor, fault families +0.25..+0.49 (mild under-fit at 60 epochs, accepted),
   B-Vel ~0.7 below their ~14 intrinsic floors. The 5090 pod can be closed.
 
-  IN FLIGHT — Task 7: 0002 definitive LAUNCHED 2026-07-08 on the PRO 6000 96 GB:
-  runs/0002_flow_map/openfwi_mf_2026-07-08T10-23-48Z, wandb l4l4ecfp, ETA ~66 h
-  (~2026-07-11 morning). MEASURED on 96 GB (probes in
-  runs/0002_flow_map/_probes/0002_full_teacher_b{256,192,128}_bf16_96g_probe.log,
-  script run_96g_probe.sh): bs256 AND bs192 both OOM at step 0 (>94.7 / >94.9 GB —
-  spec §6's "bs256 fits on 96 GB" was wrong; teacher-regime activations ≈ 0.65 GB/map,
-  so bs128 is the largest viable batch on ANY current card). Definitive run: bs128 /
-  lr 1.4e-4 / bf16, 86.9 GB peak, 1.25 it/s = 160 maps/s, 90 epochs = 297,360 steps.
-  Then Tasks 8-9 per the plan (Task 8's CPU-side selection/manifest can start while 0002
-  trains; legacy 6044 provenance pinned in data/inversion_bench/legacy_6044_provenance.json).
+  TRAINED, REVIEW PENDING — Task 7: 0002 definitive FINISHED 2026-07-11 on the PRO 6000:
+  runs/0002_flow_map/openfwi_mf_2026-07-08T10-23-48Z, wandb l4l4ecfp. 90/90 epochs @
+  bs128 / lr 1.4e-4 / bf16 (86.3 GB, 1.25 it/s; bs256 AND bs192 OOM on 96 GB — teacher
+  regime needs ~0.65 GB/map of activations, bs128 is the ceiling on any current card).
+  Final val/loss 206.3; checkpoints step_89{,_ema}.pt on the volume; wandb artifacts came
+  out slim automatically via the new harness (openfwi-flowmap{,-ema}:v29, 1.08 GB;
+  account ~3.2/5 GB). The 2026-07-11 inversion sweep already used step_89_ema (journal:
+  distillation parity with the teacher, OT wins 10/10).
+  STILL TO DO for Task 7 sign-off:
+  (a) the formal training review + "0002_flow_map/openfwi_full DEFINITIVE" journal entry:
+      per-family val losses from the run's metrics.jsonl, per-family energy distance
+      (in the run's wandb summary under val/energy/<family>) vs the real-mixture floor
+      control — floors + method in the 0003 journal entry (2026-07-08); NOTE ca17d47's
+      correction: control seed noise is ~±0.5, deviations under that are "at floor";
+      final sample grid vs val_reference.png.
+  (b) quality-vs-NFE on the full 10-family priors — checklist item under plan Task 7
+      (experiments/0005_analysis/prior_quality_vs_nfe.py is FlatVel_A-specific today;
+      full priors are dit_b and 0003-full is the DiT denoiser, not the UNet).
 
-  WHEN TASK 7 (0002 full) FINISHES: also run the quality-vs-NFE analysis on the full
-  10-family priors — see the new checklist item under Task 7 in
-  docs/superpowers/plans/2026-07-06-full-openfwi-priors.md for the exact checkpoints and
-  the script edits needed (experiments/0005_analysis/prior_quality_vs_nfe.py is FlatVel_A-specific today;
-  full priors are dit_b and 0003-full is the DiT denoiser, not the UNet).
+  NEXT — Task 8 seismic extraction + Task 9 gates (any cheap GPU pod works; ≥16 vCPU /
+  ≥64 GB RAM, ~50 GB free volume space for the transient download):
+  seismic: transiently download ONLY the data/seis files containing the 201 manifest rows
+  (~30-40 GB), extract seismic/<id>.npy (5x1000x70 each, ~280 MB total) into
+  data/inversion_bench/seismic/ (git-ignored by design), delete transients, add
+  manifest<->seismic consistency test. Then Task 9: prior-zoo doc, Gate 1 (each EMA
+  artifact reloads from wandb + samples 64), Gate 2 (energy within factor of baseline),
+  Gate 3 (flow_tilt + mfm_g on flatvel_a_legacy_6044 reproduces journal numbers — NOTE
+  the manifest records in_current_val=false for it: the full priors SAW this map in
+  training; it's a continuity check, not an unseen-target claim), Gate 4 (benchmark
+  artifact upload — ASK Lyra before any wandb upload, quota 5 GB, ~3.2 used), then bulk
+  deletion (keep velocity maps per spec §9.5).
+
+  Pod notes for the next session: repo + runs live on the /workspace network volume (this
+  working copy carries over; no re-clone). Run `uv run wandb login` first if wandb calls
+  fail (fresh pods aren't logged in). Git history was rewritten 2026-07-08 to drop the
+  benchmark data blobs (force-pushed) — any OLD clone elsewhere needs
+  `git fetch && git reset --hard origin/main`, never `git pull`.
 
 
 
