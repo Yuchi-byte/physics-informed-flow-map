@@ -24,6 +24,58 @@ def test_simulate_shape_and_finite() -> None:
     assert float((d**2).sum()) > 0.0  # the source actually injected energy
 
 
+def test_default_knobs_are_passthrough() -> None:
+    """min_freq_hz=0 / grid_scale=1 / freq_scale=1 must reproduce the legacy operator
+    exactly — the continuity guarantee for every existing run."""
+    v = torch.full((16, 16), 1500.0)
+    v[8:] = 2000.0
+    d_legacy = _sim(v)
+    d_knobbed = simulate(
+        v,
+        dx=10.0,
+        dt=1e-3,
+        nt=120,
+        n_sources=1,
+        n_receivers=12,
+        freq=40.0,
+        grid_scale=1,
+        freq_scale=1.0,
+    )
+    assert torch.equal(d_legacy, d_knobbed)
+
+
+def test_grid_scale_same_physics_different_numerics() -> None:
+    v = torch.full((16, 16), 1500.0)
+    v[8:] = 2000.0
+    d1 = _sim(v)
+    d2 = simulate(
+        v, dx=10.0, dt=1e-3, nt=120, n_sources=1, n_receivers=12, freq=40.0, grid_scale=2
+    )
+    assert d2.shape == d1.shape
+    assert torch.isfinite(d2).all()
+    # The toy survey is deliberately under-resolved (3.75 cells/wavelength at 40 Hz), so
+    # refinement changes the data a lot here (~0.8 relative) — on the production operator
+    # (10 cells/wavelength at 15 Hz) the mismatch is much smaller. Assert same-physics
+    # sanity bounds only: different, but the same order of magnitude.
+    rel = float((d2 - d1).norm() / d1.norm())
+    assert 1e-6 < rel < 2.0
+
+
+def test_freq_scale_shifts_spectrum() -> None:
+    v = torch.full((16, 16), 1500.0)
+    v[8:] = 2000.0
+    kw = dict(dx=10.0, dt=1e-3, nt=120, n_sources=1, n_receivers=12)
+    f = torch.fft.rfftfreq(120, 1e-3)
+
+    def peak_hz(d: torch.Tensor) -> float:
+        spec = (torch.fft.rfft(d, dim=-1).abs() ** 2).sum(dim=(0, 1))
+        return float(f[int(spec.argmax())])
+
+    assert peak_hz(simulate(v, freq=40.0, freq_scale=0.5, **kw)) < peak_hz(
+        simulate(v, freq=40.0, **kw)
+    )
+
+
 def test_gradient_matches_finite_difference() -> None:
     torch.manual_seed(0)
     v_true = torch.full((16, 16), 1500.0, dtype=torch.float64)
