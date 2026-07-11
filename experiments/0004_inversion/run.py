@@ -55,6 +55,7 @@ from physics_informed_flow_map.inversion.single_target import (
     invert_and_report,
 )
 from physics_informed_flow_map.physics.misfit import MISFITS, make_misfit
+from physics_informed_flow_map.physics.observation import ObservationConfig
 from physics_informed_flow_map.physics.tilt import guided_sample
 
 import sys
@@ -213,6 +214,9 @@ class InversionConfig(Config):
     dataset: DatasetConfig = OpenFWIDatasetConfig()
     prior: PriorConfig = PriorConfig()
     method: MethodConfig = MethodConfig()
+    # Benchmark track (conf/obs group): clean (legacy default) | calib | hard_calib |
+    # robust_mild | robust — band limit / frozen matched-σ noise / operator mismatch.
+    obs: ObservationConfig = ObservationConfig()
     evaluation: EvalConfig = EvalConfig()  # eval.py sweep params (experiment=eval)
 
     @model_validator(mode="after")
@@ -243,15 +247,23 @@ def main(dcfg: DictConfig) -> None:
     name = f"invert-{cfg.prior.name}-{cfg.method.name}"
     if cfg.method.misfit != "l2":
         name += f"-{cfg.method.misfit}"
+    if not cfg.obs.is_clean:
+        name += f"-obs{cfg.obs.min_freq_hz:g}hz" if cfg.obs.min_freq_hz else "-obsnoise"
     run = start_run(EXPERIMENT, run_dir, cfg.dump(), name=name)
 
     # Guidance data-misfit, built lazily from d_obs (the OT potential precomputes its
     # weights/CDFs from the observation). None keeps the samplers' hard-wired L2 path
-    # byte-identical for existing runs.
+    # byte-identical for existing runs; a band-limited benchmark needs the factory even
+    # for L2 so predictions are filtered before comparison (the guidance-side half of F).
     misfit_factory = (
         None
-        if cfg.method.misfit == "l2"
-        else lambda d: make_misfit(cfg.method.misfit, d, ot_k=cfg.method.ot_k)
+        if cfg.method.misfit == "l2" and cfg.obs.min_freq_hz <= 0.0
+        else lambda d: make_misfit(
+            cfg.method.misfit,
+            d,
+            ot_k=cfg.method.ot_k,
+            min_freq_hz=cfg.obs.min_freq_hz,
+        )
     )
 
     # Composite trajectory grid (rows = samples, cols = t=0 → t=1) — the same renderer
@@ -282,9 +294,19 @@ def main(dcfg: DictConfig) -> None:
             multiscale_fwi,
             regularized_fwi,
         )
+        from physics_informed_flow_map.physics.filters import highpass
         from physics_informed_flow_map.physics.forward import simulate
 
         realistic = cfg.method.name == "realistic_fwi"
+
+        # Band-limited benchmark: the classical loops compare their own forward solves to
+        # d_obs, so their operator gets the same guidance-side high-pass (part of F).
+        if cfg.obs.min_freq_hz > 0.0:
+
+            def forward_op(v: torch.Tensor) -> torch.Tensor:
+                return highpass(simulate(v), cfg.obs.min_freq_hz, 1e-3)
+        else:
+            forward_op = simulate
 
         def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
             run_it = guidance_strength != 0.0
@@ -305,7 +327,7 @@ def main(dcfg: DictConfig) -> None:
                 )
             if realistic:
                 v_mps, ns = multiscale_fwi(
-                    simulate,
+                    forward_op,
                     d_obs,
                     shape=(NATIVE, NATIVE),
                     n_samples=n,
@@ -320,7 +342,7 @@ def main(dcfg: DictConfig) -> None:
                 )
             else:
                 v_mps, ns = regularized_fwi(
-                    simulate,  # forward_fn: (H, W) m/s -> data
+                    forward_op,  # forward_fn: (H, W) m/s -> data (band-limited if obs is)
                     d_obs,
                     shape=(NATIVE, NATIVE),
                     n_samples=n,
@@ -560,6 +582,7 @@ def main(dcfg: DictConfig) -> None:
         out_obs_png=obs_out,
         cost=solve_count,
         misfit_factory=misfit_factory,
+        obs_cfg=cfg.obs,
     )
     if cfg.prior.name == "none":
         n_solves = solves["n"]  # actual forward solves from the guided FWI pass

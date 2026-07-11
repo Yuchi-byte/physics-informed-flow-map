@@ -161,16 +161,21 @@ def test_load_target_by_benchmark_id(
 ) -> None:
     import physics_informed_flow_map.inversion.single_target as st
 
+    from physics_informed_flow_map.physics.observation import Observation
+
     out = tmp_path / "bench"
     write_benchmark(bench_cfg, out)
-    monkeypatch.setattr(st, "simulate", lambda v: torch.zeros(1))
+    monkeypatch.setattr(
+        st, "observe", lambda v, cfg, key: Observation(torch.zeros(1), None, None)
+    )
     bench = InversionBenchmark(out)
     tid = bench.core_ids[0]
-    gidx, label, v_true, _ = st.load_target(
+    gidx, label, v_true, obs = st.load_target(
         bench_cfg, 0, torch.device("cpu"), target=tid, benchmark_root=out
     )
     assert label == tid
     assert gidx == bench.entry(tid)["global_index"]
+    assert obs.sigma is None
     torch.testing.assert_close(v_true, bench.velocity(tid))
 
 

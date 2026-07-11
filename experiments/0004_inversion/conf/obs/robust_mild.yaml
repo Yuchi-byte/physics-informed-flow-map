@@ -1,0 +1,7 @@
+# Robustness track, mild rung: missing lows + noise + refined-grid generation operator
+# (numerical-dispersion mismatch kills the inverse crime). No exact posterior here.
+min_freq_hz: 4.0
+noise_frac: 0.05
+noise_seed: 0
+grid_scale: 2
+wavelet_freq_scale: 1.0

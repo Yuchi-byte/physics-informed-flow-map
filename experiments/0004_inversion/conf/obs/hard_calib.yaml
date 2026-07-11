@@ -1,0 +1,8 @@
+# Hard calibration: missing lows + matched noise, same operator. The band limit is part
+# of F on both sides, so the posterior is still exact - just wider and possibly
+# multimodal (the SMC-vs-mode-collapse test).
+min_freq_hz: 4.0
+noise_frac: 0.05
+noise_seed: 0
+grid_scale: 1
+wavelet_freq_scale: 1.0

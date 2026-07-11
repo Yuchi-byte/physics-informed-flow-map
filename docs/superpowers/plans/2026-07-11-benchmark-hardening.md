@@ -70,18 +70,23 @@ through 0004, then build the Tier 0.5 probe harness (A–E) and produce
 `physics/misfit.py`, `experiments/0004_inversion/{run.py,eval.py,conf/}`,
 `tests/test_misfit.py`, `tests/test_inversion_eval.py`.
 
-- [ ] `make_misfit(..., min_freq_hz=0.0, dt=1e-3)` — wrapper high-passes *predictions*
+- [x] `make_misfit(..., min_freq_hz=0.0, dt=1e-3)` — wrapper high-passes *predictions*
       before any base misfit (guidance-side band limit, D1); autograd flows (OT + L2).
-- [ ] `load_target(...)` accepts `obs_cfg` → returns `Observation`; `invert_and_report`
+- [x] `load_target(...)` accepts `obs_cfg` → returns `Observation`; `invert_and_report`
       band-passes eval predictions when `min_freq_hz > 0` and reports
-      `inv/misfit_over_floor` when noise is on.
-- [ ] Hydra group `conf/obs/`: `clean.yaml` (default), `calib.yaml`, `hard_calib.yaml`,
+      `inv/misfit_over_floor` + `inv/sigma_true` when noise is on. Evaluator/`score_target`
+      threaded too (`obs_cfg`, in-band misfit, `misfit_over_floor`); classical run.py path
+      gets a wrapped `forward_op` under band limit (eval.py FWI modules guarded with a
+      clear error instead — thread when Probe B needs the multi-map path).
+- [x] Hydra group `conf/obs/`: `clean.yaml` (default), `calib.yaml`, `hard_calib.yaml`,
       `robust_mild.yaml`, `robust.yaml` (spec §1 table).
-- [ ] Matched-σ default for `mfm_g` when `obs.noise_frac > 0` (`method.sigma=null` →
-      matched); explicit value still wins.
-- [ ] Smoke on RunPod: `flow_tilt` on map 6044, `obs=clean` vs pre-change commit —
-      metric deltas ≤ float noise (the 1055871-style verification); `obs=calib` runs and
-      reports `misfit_over_floor`.
+- [ ] *(deferred to Tier 1B work)* Matched-σ default for `mfm_g` when `obs.noise_frac > 0`
+      — needs the target loaded before module construction; do together with the
+      calibration-ladder experiments.
+- [x] Smoke on RunPod (2026-07-11): `flow_tilt` map 6044 `obs=clean` vs HEAD — MAE
+      bit-identical, SSIM/ratio deltas ≤6e-7 (float noise); `obs=calib` reports
+      `sigma_true`/`misfit_over_floor`; `obs=hard_calib` runs the banded factory
+      (flow_tilt) and the wrapped classical forward end-to-end.
 
 ### Task 5: OOD targets (Marmousi2 / Overthrust crops)
 

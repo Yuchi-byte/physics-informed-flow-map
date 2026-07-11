@@ -3,6 +3,7 @@ defaults:
   - prior: flow_matching
   - method: flow_tilt
   - dataset: openfwi
+  - obs: clean  # benchmark track: clean | calib | hard_calib | robust_mild | robust
   - experiment: single
 
 seed: 0

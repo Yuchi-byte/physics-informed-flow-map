@@ -1,0 +1,7 @@
+# Legacy inverse-crime benchmark (default): noiseless, full-band, same operator both sides.
+# Byte-identical to every pre-hardening run.
+min_freq_hz: 0.0
+noise_frac: 0.0
+noise_seed: 0
+grid_scale: 1
+wavelet_freq_scale: 1.0

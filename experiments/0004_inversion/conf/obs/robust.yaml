@@ -1,0 +1,7 @@
+# Robustness track, moderate rung: + generation-wavelet centre-frequency perturbation
+# (source uncertainty).
+min_freq_hz: 4.0
+noise_frac: 0.05
+noise_seed: 0
+grid_scale: 2
+wavelet_freq_scale: 0.97

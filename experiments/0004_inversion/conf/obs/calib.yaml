@@ -1,0 +1,7 @@
+# Calibration track: frozen matched-sigma white noise, same operator, full band.
+# The exact Bayesian posterior exists -> calibration metrics are falsifiable.
+min_freq_hz: 0.0
+noise_frac: 0.05
+noise_seed: 0
+grid_scale: 1
+wavelet_freq_scale: 1.0

@@ -26,7 +26,9 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from ..flow_matching.datasets import OpenFWIDatasetConfig
+from ..physics.filters import highpass
 from ..physics.forward import simulate
+from ..physics.observation import Observation, ObservationConfig, observe
 from .base import InversionModule
 from .bridge import held_out_targets, mps_to_norm
 
@@ -134,6 +136,9 @@ def score_target(
     v_true: Tensor,
     d_obs: Tensor,
     forward_fn: ForwardFn,
+    *,
+    min_freq_hz: float = 0.0,
+    noise_floor: float | None = None,
 ) -> dict[str, float]:
     """Expected metrics over one target's posterior samples against the truth.
 
@@ -142,6 +147,10 @@ def score_target(
         v_true: ``(H, W)`` ground-truth velocity in m/s.
         d_obs: observed data for this target.
         forward_fn: ``(H, W) m/s -> data`` (for each sample's data misfit, in m/s).
+        min_freq_hz: benchmark band limit — predictions are high-passed before the data
+            misfit so the comparison is in-band (``d_obs`` arrives already filtered).
+        noise_floor: expected ``||F(v_true) - d_obs||²`` under the matched-σ track; when
+            given, adds ``misfit_over_floor`` (≈1 perfect; <1 = fitting noise).
 
     MAE/RMSE/SSIM are computed on the ``[-1, 1]``-normalised velocity (OpenFWI scale) and
     averaged over samples — the expected quality of a typical posterior draw. ``misfit`` is the
@@ -152,10 +161,13 @@ def score_target(
         mps_to_norm(v_true),
     )  # [-1, 1] for the OpenFWI-scale metrics
     misfit = torch.stack(
-        [((forward_fn(v_hat[i]) - d_obs) ** 2).sum() for i in range(v_hat.shape[0])]
+        [
+            ((highpass(forward_fn(v_hat[i]), min_freq_hz, 1e-3) - d_obs) ** 2).sum()
+            for i in range(v_hat.shape[0])
+        ]
     )
     ssim_vals = torch.tensor([ssim(vh[i], vt) for i in range(vh.shape[0])])
-    return {
+    scores = {
         "mae": float(_mae(vh, vt).mean()),
         "rmse": float(_rmse(vh, vt).mean()),
         "ssim": float(ssim_vals.mean()),
@@ -166,6 +178,9 @@ def score_target(
         "energy": energy_score(vh, vt),
         **coverage(vh, vt),  # cov50, cov90, cov_err
     }
+    if noise_floor is not None:
+        scores["misfit_over_floor"] = float(misfit.mean()) / noise_floor
+    return scores
 
 
 @dataclass
@@ -225,11 +240,22 @@ class Evaluator:
         *,
         device: torch.device,
         simulate_fn: ForwardFn = simulate,
+        obs_cfg: ObservationConfig | None = None,
     ) -> None:
         self.device = device
         self.simulate_fn = simulate_fn
+        self.obs_cfg = obs_cfg or ObservationConfig()
         self.targets = [(gidx, v.to(device)) for gidx, v in targets]
-        self.d_obs = [simulate_fn(v).detach() for _, v in self.targets]
+        if simulate_fn is simulate:
+            self.observations = [
+                observe(v, self.obs_cfg, key=f"val{gidx}") for gidx, v in self.targets
+            ]
+        else:  # injected test operator: keep the legacy clean path (no hardening)
+            self.observations = [
+                Observation(simulate_fn(v).detach(), None, None)
+                for _, v in self.targets
+            ]
+        self.d_obs = [o.d_obs for o in self.observations]
 
     @classmethod
     def from_openfwi(
@@ -240,19 +266,30 @@ class Evaluator:
         device: torch.device,
         resolution: int = 64,
         simulate_fn: ForwardFn = simulate,
+        obs_cfg: ObservationConfig | None = None,
     ) -> "Evaluator":
         cfg = OpenFWIDatasetConfig(families=families, resolution=resolution)
         return cls(
-            held_out_targets(cfg, n_targets), device=device, simulate_fn=simulate_fn
+            held_out_targets(cfg, n_targets),
+            device=device,
+            simulate_fn=simulate_fn,
+            obs_cfg=obs_cfg,
         )
 
     def evaluate(self, module: InversionModule) -> InversionStats:
         per_target: list[dict[str, float]] = []
         solves: list[int] = []
-        for (_, v_true), d_obs in zip(self.targets, self.d_obs):
-            res = module.invert(d_obs)
+        for (_, v_true), obs in zip(self.targets, self.observations):
+            res = module.invert(obs.d_obs)
             solves.append(res.n_solves)
             per_target.append(
-                score_target(res.v_hat.to(self.device), v_true, d_obs, self.simulate_fn)
+                score_target(
+                    res.v_hat.to(self.device),
+                    v_true,
+                    obs.d_obs,
+                    self.simulate_fn,
+                    min_freq_hz=self.obs_cfg.min_freq_hz,
+                    noise_floor=obs.noise_floor,
+                )
             )
         return InversionStats.aggregate(module.name, per_target, solves)
