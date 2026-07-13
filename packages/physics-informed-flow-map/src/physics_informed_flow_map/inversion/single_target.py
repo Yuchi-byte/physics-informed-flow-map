@@ -76,6 +76,7 @@ def invert_and_report(
     device: torch.device,
     out_png: Path,
     out_obs_png: Path | None = None,
+    out_npy: Path | None = None,
     cost: Callable[[], float] | None = None,
     misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
     obs_cfg: ObservationConfig | None = None,
@@ -153,6 +154,15 @@ def invert_and_report(
     _plot(
         v_true, vg[0], float(mae[0]), out_png, banner
     )  # sample 0: a representative draw
+    if out_npy is not None:  # persist every posterior draw, not just the plotted sample 0
+        np.savez(
+            out_npy,
+            recon_mps=vg.detach().cpu().numpy(),  # (n, 70, 70) m/s — the n final inversions
+            v_true_mps=v_true.cpu().numpy(),  # (70, 70) m/s ground truth
+            mae=mae.detach().cpu().numpy(),  # (n,) per-sample normalised MAE
+            rmse=rmse.detach().cpu().numpy(),  # (n,) per-sample normalised RMSE
+            target=label,
+        )
     summary = {
         "inv/mae_mean": float(mae.mean()),
         "inv/rmse_mean": float(rmse.mean()),

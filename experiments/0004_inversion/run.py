@@ -561,6 +561,7 @@ def main(dcfg: DictConfig) -> None:
 
     out = run.ckpt_dir.parent / "inversion.png"
     obs_out = run.ckpt_dir.parent / "d_obs.png"
+    recon_out = run.ckpt_dir.parent / "reconstructions.npz"
 
     def solve_count() -> float:
         # Total forward solves of the guided pass, resolved after it runs (FWI fills solves["n"];
@@ -580,6 +581,7 @@ def main(dcfg: DictConfig) -> None:
         device=dev,
         out_png=out,
         out_obs_png=obs_out,
+        out_npy=recon_out,
         cost=solve_count,
         misfit_factory=misfit_factory,
         obs_cfg=cfg.obs,
