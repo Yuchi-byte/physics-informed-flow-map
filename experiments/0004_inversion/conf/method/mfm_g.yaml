@@ -1,5 +1,5 @@
 name: mfm_g  # Meta Flow Maps gradient-based (IWAE) steering — paper Eq. 22 / prior-work.html 5.5
-drift_estimator: iwae  # backprop the data log-likelihood through the one-step posterior draws
+drift_estimator: iwae  
 mc_samples: 4  # posterior draws v(0,1,eps|t_cond=t,x_cond=x_t) per step; wave solves/step scale with this
 # Likelihood temperature in r = -||F(v)-d||^2 / (2 sigma^2): sets both the IWAE weight
 # concentration and (with renorm=false) the steering strength. With noiseless d_obs (inverse

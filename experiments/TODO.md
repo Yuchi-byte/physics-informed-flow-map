@@ -65,7 +65,6 @@
 - (understand) There's ODE and SDE methods for the unconditional drfit calculation for sampling (maybe also for training?). What is used for mfm as specified in their paper? And which one is used for flow maps? 
 
 
-- (low priority) (check and fix) Experiment 0001 records valuation loss too. But the section orders in wandb for 0001 is differnet to 0002. Reorder the sections so 0001 matches 0002. 
 - (fix) in experiment 0004, also visualise the mc_samples for the mfm method. 
 - (high priority) try different methods to improve: 
 
