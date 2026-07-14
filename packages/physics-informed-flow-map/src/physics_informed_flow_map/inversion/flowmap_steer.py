@@ -77,12 +77,16 @@ class FlowMapSteerModule:
         sde: bool = True,
         resolution: int = 64,
         misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
+        diag_misfit_factory: Callable[[Tensor], dict[str, MisfitFn]] | None = None,
         on_step: Callable[..., None] | None = None,
         x0: Tensor | None = None,
     ) -> None:
         self.name = f"flowmap_steer_{drift_estimator}·mc{mc_samples}"
         # d_obs arrives per-invert, so the misfit (which precomputes from it) is built lazily.
         self.misfit_factory = misfit_factory
+        # Named diagnostic misfits (e.g. OT) built lazily from d_obs and logged per step.
+        self.diag_misfit_factory = diag_misfit_factory
+        self._diag: dict[str, MisfitFn] = {}
         self.prior = prior
         self.drift_estimator = drift_estimator
         self.mc_samples = mc_samples
@@ -108,6 +112,7 @@ class FlowMapSteerModule:
 
     def invert(self, d_obs: Tensor) -> InversionResult:
         misfit_fn = self.misfit_factory(d_obs) if self.misfit_factory else None
+        self._diag = self.diag_misfit_factory(d_obs) if self.diag_misfit_factory else {}
         drift_fn = get_conditional_drift_fn(
             self.prior,
             make_misfit_reward(d_obs, self.sigma, misfit_fn),
@@ -166,6 +171,9 @@ class FlowMapSteerModule:
                 # step (native-res m/s -> [-1,1]); (n, mc, H, W). None for dps/base.
                 mc = ret.get("mc_x1_data")
                 mc_norm = mps_to_norm(mc) if mc is not None else None
+                diag = {
+                    f"misfit_{k}": float(fn(pred).mean()) for k, fn in self._diag.items()
+                }
                 self.on_step(
                     i,
                     mps_to_norm(est_mps),
@@ -176,6 +184,7 @@ class FlowMapSteerModule:
                     steering_norm=float(
                         ret["steering_drift_scaled"].flatten(1).norm(dim=1).mean()
                     ),
+                    **diag,
                 )
 
             x = x + drift * dt

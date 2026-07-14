@@ -27,6 +27,7 @@ def guided_sample(
     guidance_strength: float,
     normalize_grad: bool = False,
     misfit_fn: MisfitFn | None = None,
+    diag_misfit_fns: dict[str, MisfitFn] | None = None,
     on_step: Callable[..., None] | None = None,
 ) -> Tensor:
     """Guided Euler sampling of a flow prior toward an observation ``d_obs``.
@@ -87,14 +88,22 @@ def guided_sample(
             grad = torch.zeros_like(x)
 
         if on_step is not None:
-            data_fidelity = float(((forward_fn(x1_hat.detach()) - d_obs) ** 2).mean())
+            pred = forward_fn(x1_hat.detach())
+            data_fidelity = float(((pred - d_obs) ** 2).mean())
             grad_norm = float(grad.flatten(1).norm(dim=1).mean())
+            # Named diagnostic misfits (e.g. OT) on the same prediction — logged per step
+            # alongside the L2 data_fidelity so any misfit's trajectory can be plotted.
+            diag = {
+                f"misfit_{k}": float(fn(pred).mean())
+                for k, fn in (diag_misfit_fns or {}).items()
+            }
             on_step(
                 i,
                 x1_hat.detach(),
                 xt=x.detach(),
                 data_fidelity=data_fidelity,
                 grad_norm=grad_norm,
+                **diag,
             )
 
         with torch.no_grad():

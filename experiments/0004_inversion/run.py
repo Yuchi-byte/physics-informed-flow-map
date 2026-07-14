@@ -285,6 +285,16 @@ def main(dcfg: DictConfig) -> None:
         )
     )
 
+    # Per-step diagnostic misfits: always log OT alongside the L2 data_fidelity (built lazily
+    # from d_obs like misfit_factory), so any run's OT-vs-step trajectory can be plotted from
+    # steps.jsonl without re-simulation. Cheap — reuses the prediction already computed each step.
+    def build_diag_misfits(d: torch.Tensor) -> dict[str, object]:
+        return {
+            "ot": make_misfit(
+                "ot", d, ot_k=cfg.method.ot_k, min_freq_hz=cfg.obs.min_freq_hz
+            )
+        }
+
     # Composite trajectory grid (rows = samples, cols = t=0 → t=1) — the same renderer
     # 0001/0002 log as "trajectory". make_step_saver stacks the snapshots on dim 0 and,
     # for samplers that report their noisy state, interleaves (x_t, estimate) row pairs
@@ -457,6 +467,7 @@ def main(dcfg: DictConfig) -> None:
                     sde=cfg.method.sde,
                     resolution=size,
                     misfit_factory=misfit_factory,
+                    diag_misfit_factory=build_diag_misfits,
                     on_step=step_cb,
                     x0=x0_mfm,
                 )
@@ -529,6 +540,7 @@ def main(dcfg: DictConfig) -> None:
                     guidance_strength=guidance_strength,
                     normalize_grad=cfg.method.normalize_grad,
                     misfit_fn=misfit_factory(d_obs) if misfit_factory else None,
+                    diag_misfit_fns=build_diag_misfits(d_obs),
                     on_step=step_cb,
                 )
 
@@ -600,6 +612,7 @@ def main(dcfg: DictConfig) -> None:
                     device=dev,
                     normalize_grad=cfg.method.normalize_grad,
                     misfit_fn=misfit_factory(d_obs) if misfit_factory else None,
+                    diag_misfit_fns=build_diag_misfits(d_obs),
                     on_step=step_cb,
                     x_init=x_init,
                 )

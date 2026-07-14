@@ -32,6 +32,7 @@ def dps_sample(
     device: torch.device,
     normalize_grad: bool = True,
     misfit_fn: MisfitFn | None = None,
+    diag_misfit_fns: dict[str, MisfitFn] | None = None,
     on_step: Callable[..., None] | None = None,
     x_init: Tensor | None = None,
 ) -> Tensor:
@@ -96,6 +97,12 @@ def dps_sample(
         x = (step.prev_sample - guidance_strength * grad).detach()
 
         if on_step is not None:
-            data_fidelity = float(((forward_fn(x0hat.detach()) - d_obs) ** 2).mean())
-            on_step(step_idx, x0hat.detach(), xt=x, data_fidelity=data_fidelity)
+            pred = forward_fn(x0hat.detach())
+            data_fidelity = float(((pred - d_obs) ** 2).mean())
+            # Named diagnostic misfits (e.g. OT) on the same prediction, logged per step.
+            diag = {
+                f"misfit_{k}": float(fn(pred).mean())
+                for k, fn in (diag_misfit_fns or {}).items()
+            }
+            on_step(step_idx, x0hat.detach(), xt=x, data_fidelity=data_fidelity, **diag)
     return x
