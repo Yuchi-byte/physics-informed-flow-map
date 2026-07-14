@@ -4,6 +4,20 @@ Each numbered directory `NNNN_slug/` is an experiment **framework** — a class 
 related runs sharing machinery, not a single run. Prefer adding a *variant* to an
 existing framework over scaffolding a new number.
 
+
+## Running the scripts 
+
+To invert curvefault_b_17: 
+
+```
+uv run python experiments/0004_inversion/run.py \
+  prior=flow_map method=flow_tilt \
+  method.misfit=ot \
+  target=curvefault_b_17 \
+  ckpt=/workspace/runs/0002_flow_map/openfwi_mf_2026-07-08T10-23-48Z/checkpoints/step_89_ema.pt steps=5 \
+  model.hidden=768 model.depth=12 model.num_heads=12 model.patch_size=4
+```
+
 ## Layout
 
 ```
