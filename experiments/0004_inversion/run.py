@@ -80,6 +80,25 @@ _PRIORS = set(_COMPAT)
 _METHODS = {m for ms in _COMPAT.values() for m in ms}
 _MFM_METHODS = {"mfm_g", "mfm_gf"}
 
+# Human-readable pieces for the data-space figure title ("<prior> + <estimator> + <misfit>").
+_PRIOR_DISP = {
+    "flow_matching": "flow-matching",
+    "flow_map": "flow-map",
+    "diffusion": "diffusion",
+    "none": "FWI",
+}
+_EST_DISP = {
+    "flow_tilt": "Tweedie",
+    "dps": "Tweedie",
+    "mfm_g": "MFM-G",
+    "mfm_gf": "MFM-GF",
+    "fmrg_e": "FMRG-E",
+    "red_diffeq": "RED-DiffEq",
+    "unguided": "unguided",
+    "classical_fwi": "classical FWI",
+    "realistic_fwi": "multiscale FWI",
+}
+
 
 def check_compatible(prior: str, method: str) -> None:
     """Raise if ``prior`` cannot run ``method`` (the approved compatibility matrix)."""
@@ -580,6 +599,12 @@ def main(dcfg: DictConfig) -> None:
     out = run.ckpt_dir.parent / "inversion.png"
     obs_out = run.ckpt_dir.parent / "d_obs.png"
     recon_out = run.ckpt_dir.parent / "reconstructions.npz"
+    dobs_cmp_out = run.ckpt_dir.parent / "d_obs_inverted_vs_true.png"
+    dobs_cmp_npz = run.ckpt_dir.parent / "d_obs_inverted_sample0.npz"
+    cmp_label = (
+        f"{_PRIOR_DISP.get(cfg.prior.name, cfg.prior.name)} + "
+        f"{_EST_DISP.get(cfg.method.name, cfg.method.name)} + {cfg.method.misfit.upper()}"
+    )
 
     def solve_count() -> float:
         # Total forward solves of the guided pass, resolved after it runs (FWI fills solves["n"];
@@ -600,6 +625,9 @@ def main(dcfg: DictConfig) -> None:
         out_png=out,
         out_obs_png=obs_out,
         out_npy=recon_out,
+        out_dobs_cmp_png=dobs_cmp_out,
+        out_dobs_cmp_npz=dobs_cmp_npz,
+        cmp_label=cmp_label,
         cost=solve_count,
         misfit_factory=misfit_factory,
         obs_cfg=cfg.obs,
@@ -609,6 +637,9 @@ def main(dcfg: DictConfig) -> None:
     summary["inv/n_solves"] = float(0 if cfg.method.name == "unguided" else n_solves)
     run.log_image("inversion", out, caption=caption)
     run.log_image("d_obs", obs_out, caption=f"observed seismic · {caption}")
+    run.log_image(
+        "d_obs_inverted_vs_true", dobs_cmp_out, caption=f"data-space fit · {caption}"
+    )
     run.log(**summary)  # mirror to metrics.jsonl on the network volume
     run.finish(**summary)
 

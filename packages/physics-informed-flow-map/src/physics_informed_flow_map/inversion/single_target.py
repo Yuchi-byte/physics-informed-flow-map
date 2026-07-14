@@ -77,6 +77,9 @@ def invert_and_report(
     out_png: Path,
     out_obs_png: Path | None = None,
     out_npy: Path | None = None,
+    out_dobs_cmp_png: Path | None = None,
+    out_dobs_cmp_npz: Path | None = None,
+    cmp_label: str | None = None,
     cost: Callable[[], float] | None = None,
     misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
     obs_cfg: ObservationConfig | None = None,
@@ -89,6 +92,10 @@ def invert_and_report(
 
     If ``out_obs_png`` is given, also writes the observed seismic data ``d_obs`` — the input the
     velocity is inverted *from* — so the run folder shows what recovery was conditioned on.
+
+    If ``out_dobs_cmp_png`` is given, writes the data-space fit figure (observed vs re-simulated
+    seismic for sample 0, plus residual); ``out_dobs_cmp_npz`` persists those two arrays and
+    ``cmp_label`` prefixes the figure title (e.g. ``flow-matching + Tweedie + OT``).
 
     ``cost`` (called after the guided pass) supplies the total forward-solve count for the figure
     banner, so the inference cost is visible next to the quality metrics.
@@ -163,6 +170,20 @@ def invert_and_report(
             rmse=rmse.detach().cpu().numpy(),  # (n,) per-sample normalised RMSE
             target=label,
         )
+    if out_dobs_cmp_png is not None:  # data-space fit: observed vs re-simulated seismic (sample 0)
+        d_inv0 = pred_g[0]  # in-band prediction, matches how d_obs is compared for the misfit
+        plot_dobs_compare(
+            d_obs,
+            d_inv0,
+            out_dobs_cmp_png,
+            title=f"{cmp_label or method_name} · {label} · sample 0",
+        )
+        if out_dobs_cmp_npz is not None:
+            np.savez(
+                out_dobs_cmp_npz,
+                d_obs_inverted=d_inv0.detach().cpu().numpy(),  # (n_src, n_rec, nt) from v_hat[0]
+                d_obs_true=d_obs.detach().cpu().numpy(),  # (n_src, n_rec, nt) observed
+            )
     summary = {
         "inv/mae_mean": float(mae.mean()),
         "inv/rmse_mean": float(rmse.mean()),
@@ -200,6 +221,48 @@ def _plot(
     fig.suptitle(
         banner, fontsize=10
     )  # quality metrics + total solves, all in one place
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_dobs_compare(
+    d_true: Tensor, d_inv: Tensor, out_png: Path, *, title: str
+) -> None:
+    """Data-space fit check: observed seismic (from ``v_true``) vs seismic re-simulated from
+    the inverted velocity (sample 0), per source, with the residual. Complements the
+    model-space ``true | v_hat | error`` figure — it shows whether recovery reproduces the
+    *waveforms* the inversion was conditioned on. Arrays are ``(n_src, n_receivers, nt)``.
+
+    Columns: ``true d_obs`` | ``inverted d_obs`` (shared symmetric scale) | ``inverted − true``
+    residual (own, tighter scale). The header reports the sample-0 residual RMS as a percent of
+    the data RMS (the fraction of the observed energy left unexplained)."""
+    dt = d_true.detach().cpu().numpy()
+    di = d_inv.detach().cpu().numpy()
+    resid = di - dt
+    n_src = dt.shape[0]
+    vabs = float(np.percentile(np.abs(np.stack([dt, di])), 99)) or 1.0
+    rabs = float(np.percentile(np.abs(resid), 99)) or 1.0
+    r_rms = float(np.sqrt(np.mean(resid**2)))
+    d_rms = float(np.sqrt(np.mean(dt**2))) or 1.0
+    cols = [("true d_obs", dt, vabs), ("inverted d_obs", di, vabs), ("inverted − true", resid, rabs)]
+    fig, axes = plt.subplots(n_src, 3, figsize=(9, 2.4 * n_src), squeeze=False)
+    for s in range(n_src):
+        for c, (name, data, scale) in enumerate(cols):
+            ax = axes[s, c]
+            # (n_receivers, nt) -> (nt, n_receivers): time on the vertical axis
+            im = ax.imshow(data[s].T, aspect="auto", cmap="RdBu_r", vmin=-scale, vmax=scale)
+            if s == 0:
+                ax.set_title(name, fontsize=10)
+            ax.set_ylabel(f"source {s + 1}\ntime sample" if c == 0 else "", fontsize=8)
+            if s == n_src - 1 and c == 0:
+                ax.set_xlabel("receiver", fontsize=8)
+            fig.colorbar(im, ax=ax, fraction=0.046)
+    fig.suptitle(
+        f"{title}\nd_obs from forward operator · residual RMS = {r_rms:.3f} "
+        f"({100 * r_rms / d_rms:.1f}% of data RMS {d_rms:.2f})",
+        fontsize=11,
+    )
     fig.tight_layout()
     fig.savefig(out_png, dpi=140, bbox_inches="tight")
     plt.close(fig)
