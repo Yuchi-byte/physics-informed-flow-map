@@ -33,6 +33,7 @@ def dps_sample(
     normalize_grad: bool = True,
     misfit_fn: MisfitFn | None = None,
     on_step: Callable[..., None] | None = None,
+    x_init: Tensor | None = None,
 ) -> Tensor:
     """Canonical DPS over a ``diffusers`` reverse process. Returns ``(n_samples, *shape)`` at ``t=0``.
 
@@ -59,12 +60,19 @@ def dps_sample(
             ``data_fidelity`` diagnostic stays L2 either way so runs remain comparable.
         on_step: optional callback ``(step_idx, x0hat, xt=..., data_fidelity=...)`` for
             trajectory logging (``xt`` is the reverse-process noisy state after the step).
+        x_init: optional ``(n_samples, *shape)`` starting noise. Pass this to share the
+            exact ``t=T`` noise bank with other priors (device-robust reproducibility);
+            ``None`` draws fresh noise from the global RNG (the legacy behaviour).
 
     Returns:
         Samples at ``t=0``, shape ``(n_samples, *shape)``.
     """
     scheduler.set_timesteps(num_steps, device=device)  # type: ignore[attr-defined]
-    x = torch.randn(n_samples, *shape, device=device)
+    x = (
+        x_init
+        if x_init is not None
+        else torch.randn(n_samples, *shape, device=device)
+    )
     for step_idx, t in enumerate(scheduler.timesteps):  # type: ignore[attr-defined]
         x = x.detach().requires_grad_(True)
         eps = denoiser(x, t).sample

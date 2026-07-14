@@ -78,6 +78,7 @@ class FlowMapSteerModule:
         resolution: int = 64,
         misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
         on_step: Callable[..., None] | None = None,
+        x0: Tensor | None = None,
     ) -> None:
         self.name = f"flowmap_steer_{drift_estimator}·mc{mc_samples}"
         # d_obs arrives per-invert, so the misfit (which precomputes from it) is built lazily.
@@ -96,6 +97,9 @@ class FlowMapSteerModule:
         self.renorm = renorm
         self.sde = sde
         self.resolution = resolution
+        # Optional shared t=0 noise bank (device-robust reproducibility across priors);
+        # None => draw fresh noise from the global RNG in invert().
+        self.x0 = x0
         # on_step(step, x_est_norm, data_fidelity=..., drift_norm=..., steering_norm=...) —
         # x_est_norm is the per-step Tweedie estimate in [-1, 1] at native resolution. The
         # data_fidelity diagnostic stays raw L2 (comparable across misfits/methods) and costs
@@ -114,8 +118,12 @@ class FlowMapSteerModule:
             guidance_scale=self.guidance_scale,
             renorm_gradient=self.renorm,
         )
-        x0 = torch.randn(
-            self.n_samples, 1, self.resolution, self.resolution, device=self.device
+        x0 = (
+            self.x0
+            if self.x0 is not None
+            else torch.randn(
+                self.n_samples, 1, self.resolution, self.resolution, device=self.device
+            )
         )
         x1 = self._sample(x0, drift_fn, d_obs)
         # Wave solves: mc_samples reward sims per step per posterior sample (base drift is a

@@ -278,6 +278,19 @@ def main(dcfg: DictConfig) -> None:
 
     channels, size, _ = cfg.dataset.shape
     n = cfg.n_samples
+
+    # Shared t=0 noise bank: draw every prior's initial noise from an explicit device
+    # Generator seeded with cfg.seed so the n samples are byte-identical across prior
+    # families/methods (flow vs diffusion) on *any* device. Previously this held only by
+    # accident on CUDA — model construction consumed the CPU RNG stream while the noise was
+    # drawn from the untouched CUDA stream; on CPU (or if init RNG usage changed) the two
+    # priors diverged. Drawn once here and reused for the guided and unguided passes.
+    _noise_gen = torch.Generator(device=dev).manual_seed(cfg.seed)
+
+    def init_noise() -> torch.Tensor:
+        return torch.randn(
+            n, channels, size, size, device=dev, generator=_noise_gen
+        )
     n_solves = (
         0  # forward (PDE) solves consumed by the guided pass (matched-cost reporting)
     )
@@ -374,6 +387,8 @@ def main(dcfg: DictConfig) -> None:
         if cfg.method.name in _MFM_METHODS:
             # Native flow-map steering (FlowMapSteerModule), adapted to the shared [-1, 1] Inverter
             # contract. guidance=0 => base drift (unguided control: estimator "base", no solves).
+            x0_mfm = init_noise()  # shared t=0 noise, reused across guided/unguided passes
+
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
                 estimator = (
                     cfg.method.drift_estimator if guidance_strength != 0.0 else "base"
@@ -400,6 +415,7 @@ def main(dcfg: DictConfig) -> None:
                     resolution=size,
                     misfit_factory=misfit_factory,
                     on_step=step_cb,
+                    x0=x0_mfm,
                 )
                 return mps_to_norm(module.invert(d_obs).v_hat)[:, None]
 
@@ -409,7 +425,7 @@ def main(dcfg: DictConfig) -> None:
         elif cfg.method.name == "fmrg_e":
             # FMRG-E: n_opt inner gradient steps in x1-space per outer Euler step.
             # Uses marginal velocity v(t,t,xt,0,0) — explicit zeros so intent is clear.
-            x0 = torch.randn(n, channels, size, size, device=dev)
+            x0 = init_noise()  # shared t=0 noise bank (see init_noise)
             t_cond = torch.zeros(n, device=dev)
             x_cond = torch.zeros(n, channels, size, size, device=dev)
 
@@ -445,7 +461,7 @@ def main(dcfg: DictConfig) -> None:
         else:
             # DPS Tweedie baseline (flow_tilt) / unguided control: tilt from a fixed noise context
             # x0 (reused guided/unguided), using v(t,t,x|noise) at t_cond=0.
-            x0 = torch.randn(n, channels, size, size, device=dev)
+            x0 = init_noise()  # shared t=0 noise bank (see init_noise)
             t_cond = torch.zeros(n, device=dev)
 
             def velocity_fn(x: torch.Tensor, t: float) -> torch.Tensor:
@@ -518,6 +534,7 @@ def main(dcfg: DictConfig) -> None:
                     on_step=step_cb,
                 )
         else:  # dps / unguided
+            x_init = init_noise()  # shared t=T noise, reused across guided/unguided passes
 
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
                 step_cb = None
@@ -541,6 +558,7 @@ def main(dcfg: DictConfig) -> None:
                     normalize_grad=cfg.method.normalize_grad,
                     misfit_fn=misfit_factory(d_obs) if misfit_factory else None,
                     on_step=step_cb,
+                    x_init=x_init,
                 )
 
         n_solves = (
