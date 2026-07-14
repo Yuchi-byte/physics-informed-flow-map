@@ -102,6 +102,9 @@ def get_iwae_score_fn(model, reward_fn, inverse_scaler, mc_samples=4):
         ret = batched_reward_estimation(
             model, x, t, reward_fn, inverse_scaler, mc_samples, **model_kwargs
         )  # [B, N]
+        # Expose the actual MC posterior draws (m/s) used this step for visualization/diagnostics;
+        # additive, read via getattr in the drift fn (no effect on the returned gradient).
+        score_fn.last_x1_data = ret["x1_data"].detach()  # [B, mc_samples, C, H, W]
         reward = ret["reward"]  # [B, N]
         iwae = torch.logsumexp(reward, dim=1) - torch.log(
             torch.tensor(mc_samples, dtype=reward.dtype, device=reward.device)
@@ -110,6 +113,7 @@ def get_iwae_score_fn(model, reward_fn, inverse_scaler, mc_samples=4):
         grad = torch.autograd.grad(iwae, x)[0]
         return grad
 
+    score_fn.last_x1_data = None
     return score_fn
 
 
@@ -122,6 +126,7 @@ def get_sne_score_fn(model, reward_fn, inverse_scaler, mc_samples=4):
                     model, x, t, reward_fn, inverse_scaler, mc_samples, **model_kwargs
                 )  # [B, N]
             reward, x1_samples = ret["reward"], ret["x1_samples"]
+            score_fn.last_x1_data = ret["x1_data"].detach()  # [B, mc_samples, C, H, W]
             weights = torch.softmax(reward, dim=1)  # [B, N]
             weights_view = broadcast_to_shape(weights, x1_samples.shape)
             x1_twisted = (weights_view * x1_samples).sum(dim=1)
@@ -131,6 +136,7 @@ def get_sne_score_fn(model, reward_fn, inverse_scaler, mc_samples=4):
             correction = (x1_twisted - x1_uniform) / t_denom
         return correction
 
+    score_fn.last_x1_data = None
     return score_fn
 
 
@@ -270,6 +276,10 @@ def get_conditional_drift_fn(
 
         drift = base_drift + steering_drift_scaled * guidance_scale
 
+        # MC posterior draws x1~p(x1|xt) used by the iwae/sne estimators this step (m/s,
+        # [B, mc_samples, C, H, W]); None for dps/base (single-point Tweedie, no MC set).
+        mc_x1_data = getattr(steering_drift_fn, "last_x1_data", None)
+
         return drift, {
             "drift": drift,
             "uncond_drift": base_drift,
@@ -277,6 +287,7 @@ def get_conditional_drift_fn(
             "steering_drift_scaled": steering_drift_scaled,
             "sigma_t_sq": sigma_t_sq_val,
             "tweedie_estimate": tweedie_estimate,
+            "mc_x1_data": mc_x1_data,
         }
 
     return drift_fn

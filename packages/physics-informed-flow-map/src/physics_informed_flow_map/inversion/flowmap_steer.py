@@ -162,10 +162,15 @@ class FlowMapSteerModule:
                 xt = torch.nn.functional.interpolate(
                     x.detach(), size=est_mps.shape[-2:], mode="bilinear"
                 )[:, 0]
+                # The mc_samples posterior draws x1~p(x1|xt) the iwae/sne estimator used this
+                # step (native-res m/s -> [-1,1]); (n, mc, H, W). None for dps/base.
+                mc = ret.get("mc_x1_data")
+                mc_norm = mps_to_norm(mc) if mc is not None else None
                 self.on_step(
                     i,
                     mps_to_norm(est_mps),
                     xt=xt,
+                    mc_samples=mc_norm,
                     data_fidelity=float(((pred - d_obs) ** 2).mean()),
                     drift_norm=float(ret["uncond_drift"].flatten(1).norm(dim=1).mean()),
                     steering_norm=float(

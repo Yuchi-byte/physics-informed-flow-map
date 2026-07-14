@@ -407,6 +407,10 @@ def main(dcfg: DictConfig) -> None:
             # Native flow-map steering (FlowMapSteerModule), adapted to the shared [-1, 1] Inverter
             # contract. guidance=0 => base drift (unguided control: estimator "base", no solves).
             x0_mfm = init_noise()  # shared t=0 noise, reused across guided/unguided passes
+            # Per-step captures for the MC-posterior grids: the noisy state x_t and the
+            # mc_samples posterior draws x1~p(x1|x_t) the estimator used, EVERY step of the
+            # guided pass (fp16 CPU to keep 30x4x200 frames light). Rendered after inversion.
+            mc_cap: dict[str, list[torch.Tensor]] = {"xt": [], "mc": []}
 
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
                 estimator = (
@@ -414,12 +418,32 @@ def main(dcfg: DictConfig) -> None:
                 )
                 step_cb = None
                 if guidance_strength != 0.0 and cfg.n_frames > 0:
-                    step_cb = run.make_step_saver(
+                    traj_saver = run.make_step_saver(
                         f"{cfg.method.name}_g{guidance_strength:.2g}_mc{cfg.method.mc_samples}",
                         viz_traj,
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
                     )
+                    mc_cap["xt"].clear()
+                    mc_cap["mc"].clear()
+
+                    def step_cb(
+                        step: int,
+                        estimate: torch.Tensor,
+                        xt: torch.Tensor | None = None,
+                        mc_samples: torch.Tensor | None = None,
+                        **scalars: float,
+                    ) -> None:
+                        # Keep the existing trajectory grid + steps.jsonl (mc_samples is a
+                        # tensor, so it is captured here and NOT forwarded into scalars).
+                        traj_saver(step, estimate, xt=xt, **scalars)
+                        if xt is not None:
+                            mc_cap["xt"].append(xt.detach().to(torch.float16).cpu())
+                        if mc_samples is not None:
+                            mc_cap["mc"].append(
+                                mc_samples.detach().to(torch.float16).cpu()
+                            )
+
                 module = FlowMapSteerModule(
                     prior,
                     drift_estimator=estimator,
@@ -640,6 +664,22 @@ def main(dcfg: DictConfig) -> None:
     run.log_image(
         "d_obs_inverted_vs_true", dobs_cmp_out, caption=f"data-space fit · {caption}"
     )
+
+    # MFM MC-posterior grids: one tall static grid per particle (rows = every step, cols =
+    # noisy x_t + the mc_samples posterior draws that step). Only the iwae/sne estimators
+    # populate mc_cap; dps/base draw no MC set, so this is skipped for them.
+    if cfg.method.name in _MFM_METHODS and mc_cap["mc"]:
+        from physics_informed_flow_map.inversion.mc_posterior_viz import (
+            render_mc_posterior_grids,
+        )
+
+        xt = torch.stack(mc_cap["xt"]).float().numpy()  # (steps, n, H, W)
+        mc = torch.stack(mc_cap["mc"]).float().numpy()  # (steps, n, mc, H, W)
+        mc_dir = run.ckpt_dir.parent / "mc_posterior_viz"
+        paths = render_mc_posterior_grids(xt, mc, mc_dir, title_prefix=cmp_label)
+        print(f"[0004] wrote {len(paths)} MC-posterior grids -> {mc_dir}")
+        run.log_image("mc_posterior/particle_00", paths[0], caption=f"MC grid · {caption}")
+
     run.log(**summary)  # mirror to metrics.jsonl on the network volume
     run.finish(**summary)
 
