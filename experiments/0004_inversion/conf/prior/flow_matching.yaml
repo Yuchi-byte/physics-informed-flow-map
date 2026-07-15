@@ -1,1 +1,5 @@
-name: flow_matching  # flow-matching prior (0001); DiT via flow_matching.build_model
+# @package _global_
+prior:
+  name: flow_matching  # flow-matching prior (0001); DiT via flow_matching.build_model
+ckpt: checkpoints/0001_flow_matching_openfwi.pt
+model: { hidden: 768, depth: 12, num_heads: 12 }

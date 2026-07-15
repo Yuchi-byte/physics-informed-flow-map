@@ -1,1 +1,4 @@
-name: none  # no learned prior — the classical (hand-regularised) FWI baseline; ckpt is ignored
+# @package _global_
+prior:
+  name: none  # no learned prior — the classical (hand-regularised) FWI baseline
+ckpt: ""  # nothing to load

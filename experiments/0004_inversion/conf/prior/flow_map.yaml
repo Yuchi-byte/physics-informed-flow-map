@@ -1,1 +1,5 @@
-name: flow_map  # Meta-Flow-Map prior (0002); same DiT backbone, time-conditional posterior
+# @package _global_
+prior:
+  name: flow_map  # Meta-Flow-Map prior (0002); same DiT backbone, time-conditional posterior
+ckpt: checkpoints/0002_flow_map_openfwi.pt
+model: { hidden: 768, depth: 12, num_heads: 12 }
