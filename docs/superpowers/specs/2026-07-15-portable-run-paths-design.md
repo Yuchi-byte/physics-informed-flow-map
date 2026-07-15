@@ -126,11 +126,17 @@ with a real id in all three examples and drop the now-redundant `ckpt=`, `model.
 
 ```bash
 uv run python experiments/0004_inversion/run.py \
-  prior=diffusion method=dps method.misfit=ot \
-  +guidance_strength=2 target=flatvel_a_legacy_6044 steps=200 n_samples=10
+  prior=diffusion method=dps method.misfit=ot method.guidance_strength=2 \
+  target=flatvel_a_legacy_6044 steps=200 n_samples=10
 ```
 
 Identical on both machines.
+
+Note `method.guidance_strength=2`, not the `+guidance_strength=2` of the current README: the `+`
+creates a top-level key, `InversionConfig` is `extra="forbid"`, and the run dies with
+`Extra inputs are not permitted` before it ever reaches the prior. That is a third independent
+break in the existing example, alongside the `/workspace` path and the nonexistent Marmousi
+target; §4 fixes all three.
 
 ## Migration
 
