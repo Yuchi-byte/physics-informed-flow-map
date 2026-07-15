@@ -21,9 +21,9 @@ model:  # DiT backbone shape; must match the trained prior (e.g. 320/8 vs 256/6)
 
 hydra:
   run:
-    dir: /workspace/runs/0004_inversion/${prior.name}_${method.name}_${now:%Y-%m-%dT%H-%M-%SZ}
+    dir: runs/0004_inversion/${prior.name}_${method.name}_${now:%Y-%m-%dT%H-%M-%SZ}
   sweep:  # keep --multirun output under the gitignored runs/, not a root multirun/
-    dir: /workspace/runs/0004_inversion/${prior.name}_${method.name}_${now:%Y-%m-%dT%H-%M-%SZ}
+    dir: runs/0004_inversion/${prior.name}_${method.name}_${now:%Y-%m-%dT%H-%M-%SZ}
     subdir: ${hydra.job.num}
   job:
     chdir: false

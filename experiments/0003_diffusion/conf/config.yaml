@@ -11,6 +11,6 @@ seed: 0
 
 hydra:
   run:
-    dir: /workspace/runs/0003_diffusion/${dataset.name}_${now:%Y-%m-%dT%H-%M-%SZ}
+    dir: runs/0003_diffusion/${dataset.name}_${now:%Y-%m-%dT%H-%M-%SZ}
   job:
     chdir: false
