@@ -17,7 +17,18 @@ uv run python experiments/0004_inversion/run.py \
   ckpt=/workspace/runs/0002_flow_map/openfwi_mf_2026-07-08T10-23-48Z/checkpoints/step_89_ema.pt steps=5 \
   model.hidden=768 model.depth=12 model.num_heads=12 model.patch_size=4
 ```
-
+To run inversion on Marmousi using flow matching prior: 
+```
+uv run python experiments/0004_inversion/run.py \
+  prior=flow_matching method=flow_tilt method.misfit=l2 \
+  target=marmousi_fault05 steps=200 n_samples=10\
+  ckpt=/workspace/runs/0001_flow_matching/openfwi_2026-07-07T11-19-11Z/checkpoints/step_89_ema.pt \
+  model.hidden=768 model.depth=12 model.num_heads=12
+``` 
+To invert Marmousi using diffusion prior: 
+```
+uv run python experiments/0004_inversion/run.py prior=diffusion method=dps method.misfit=ot prior.denoiser_kind=dit target=marmousi_fault05 steps=200 n_samples=10 ckpt=/workspace/runs/0003_diffusion/openfwi_2026-07-07T23-26-16Z/checkpoints/step_59_ema.pt model.hidden=768 model.depth=12 model.num_heads=12
+```
 ## Layout
 
 ```
