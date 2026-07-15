@@ -5,30 +5,42 @@ related runs sharing machinery, not a single run. Prefer adding a *variant* to a
 existing framework over scaffolding a new number.
 
 
-## Running the scripts 
+## Running the scripts
 
-To invert curvefault_b_17: 
+Run from the repo root — `runs/`, `data/openfwi` and `checkpoints/` all resolve relative to it.
+Each `prior=` group pins its own checkpoint alias and backbone shape (`checkpoints/PROVENANCE.md`
+maps each alias to the run that produced it), so a target and a method are all an inversion needs.
+
+Flow-map prior, OT misfit — a fast plumbing check at 5 steps:
 
 ```
 uv run python experiments/0004_inversion/run.py \
-  prior=flow_map method=flow_tilt \
-  method.misfit=ot \
-  target=curvefault_b_17 \
-  ckpt=/workspace/runs/0002_flow_map/openfwi_mf_2026-07-08T10-23-48Z/checkpoints/step_89_ema.pt steps=5 \
-  model.hidden=768 model.depth=12 model.num_heads=12 model.patch_size=4
+  prior=flow_map method=flow_tilt method.misfit=ot target=flatvel_a_legacy_6044 steps=5
 ```
-To run inversion on Marmousi using flow matching prior: 
+
+Flow-matching prior, L2 misfit:
+
 ```
 uv run python experiments/0004_inversion/run.py \
   prior=flow_matching method=flow_tilt method.misfit=l2 \
-  target=marmousi_fault05 steps=200 n_samples=10\
-  ckpt=/workspace/runs/0001_flow_matching/openfwi_2026-07-07T11-19-11Z/checkpoints/step_89_ema.pt \
-  model.hidden=768 model.depth=12 model.num_heads=12
-``` 
-To invert Marmousi using diffusion prior: 
+  target=flatvel_a_legacy_6044 steps=200 n_samples=10
 ```
-uv run python experiments/0004_inversion/run.py prior=diffusion method=dps method.misfit=ot prior.denoiser_kind=dit target=marmousi_fault05 steps=200 n_samples=10 ckpt=/workspace/runs/0003_diffusion/openfwi_2026-07-07T23-26-16Z/checkpoints/step_59_ema.pt model.hidden=768 model.depth=12 model.num_heads=12
+
+Diffusion prior, canonical DPS:
+
 ```
+uv run python experiments/0004_inversion/run.py \
+  prior=diffusion method=dps method.misfit=ot method.guidance_strength=2 \
+  target=flatvel_a_legacy_6044 steps=200 n_samples=10
+```
+
+Target ids come from `data/inversion_bench/manifest.json` — rebuild it on a fresh machine with
+`uv run python -m physics_informed_flow_map.inversion.benchmark` (deterministic from
+`data/openfwi`; never sync it between machines). Pass `ckpt=` and `model.hidden=…` explicitly only
+to override a group's pinned prior, e.g. for a legacy 320/8 checkpoint.
+
+Guidance strength is `method.guidance_strength=…`, not `+guidance_strength=…`: the config is
+`extra="forbid"`, so a `+`-added top-level key is a `ValidationError`, not a silent no-op.
 ## Layout
 
 ```
