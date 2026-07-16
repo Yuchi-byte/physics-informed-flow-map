@@ -79,7 +79,9 @@ def test_log_artifact_strip_keys_uploads_slim_copy(
         uploaded_keys.append(set(torch.load(p, weights_only=False).keys()))
 
     monkeypatch.setattr(wandb.Artifact, "add_file", fake_add_file)
-    run.log_artifact(path, name="demo-model", aliases=["final"], strip_keys=("train_state",))
+    run.log_artifact(
+        path, name="demo-model", aliases=["final"], strip_keys=("train_state",)
+    )
 
     assert uploaded_keys and "train_state" not in uploaded_keys[0]
     assert "model" in uploaded_keys[0]
@@ -97,3 +99,35 @@ def test_save_checkpoint_suffix(tmp_path: Path) -> None:
     assert ckpt["step"] == 5
     assert ckpt["dataset"] == "demo"
     assert "model" in ckpt
+
+
+def test_make_step_saver_capture(tmp_path: Path) -> None:
+    from typing import Any
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    run = start_run("test_exp", tmp_path, {"lr": 0.1})
+
+    def viz(frames: torch.Tensor, path: Path) -> None:
+        fig, ax = plt.subplots()
+        ax.imshow(frames[0, 0].numpy())
+        fig.savefig(path)
+        plt.close(fig)
+
+    cap: dict[str, Any] = {}
+    cb = run.make_step_saver("k", viz, total_steps=3, n_frames=3, capture=cap)
+    for step in range(3):
+        cb(step, torch.rand(2, 1, 4, 4), data_fidelity=1.0 / (step + 1))
+
+    assert cap["steps"] == [0, 1, 2]
+    assert cap["frames"].shape == (3, 2, 1, 4, 4)  # (n_frames, B, C, H, W)
+    assert cap["total_steps"] == 3
+
+    # capture=None leaves behavior unchanged (renders, does not raise).
+    cb2 = run.make_step_saver("k2", viz, total_steps=2, n_frames=2, capture=None)
+    cb2(0, torch.rand(2, 1, 4, 4))
+    cb2(1, torch.rand(2, 1, 4, 4))
+    run.finish()

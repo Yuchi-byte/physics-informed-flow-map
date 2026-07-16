@@ -165,7 +165,9 @@ class Run:
                 ckpt = torch.load(path, map_location="cpu", weights_only=False)
                 slim = {k: v for k, v in ckpt.items() if k not in strip_keys}
                 if len(slim) < len(ckpt):
-                    upload = Path(td) / path.name  # same basename → same artifact layout
+                    upload = (
+                        Path(td) / path.name
+                    )  # same basename → same artifact layout
                     torch.save(slim, upload)
             artifact.add_file(str(upload))
             self.run.log_artifact(artifact, aliases=aliases)
@@ -179,7 +181,9 @@ class Run:
                 for version in collection.artifacts():
                     if not (set(version.aliases) & self._KEEP_ALIASES):
                         version.delete(delete_aliases=True)
-            except Exception as exc:  # offline mode / transient API errors must not kill training
+            except (
+                Exception
+            ) as exc:  # offline mode / transient API errors must not kill training
                 print(f"[wandb] skipped pruning superseded '{name}' versions: {exc}")
 
     def checkpoint_callback(
@@ -275,6 +279,7 @@ class Run:
         *,
         total_steps: int,
         n_frames: int = 3,
+        capture: dict[str, Any] | None = None,
     ) -> Callable[..., None]:
         """Return an ``on_step(step, x_est, xt=None, **scalars)`` callback for sampler
         trajectory logging.
@@ -318,7 +323,12 @@ class Run:
             if xt is not None:
                 xt_frames[step] = xt.detach().to("cpu", copy=True)
             if step == last_checkpoint:
-                frames = torch.stack([est_frames[s] for s in sorted(est_frames)])
+                est_stack = torch.stack([est_frames[s] for s in sorted(est_frames)])
+                if capture is not None:
+                    capture["frames"] = est_stack
+                    capture["steps"] = sorted(est_frames)
+                    capture["total_steps"] = total_steps
+                frames = est_stack
                 caption = f"{len(est_frames)} frames over {total_steps} steps"
                 if xt_frames:
                     noisy = torch.stack([xt_frames[s] for s in sorted(xt_frames)])
