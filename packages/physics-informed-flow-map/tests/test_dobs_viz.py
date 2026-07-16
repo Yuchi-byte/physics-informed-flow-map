@@ -12,6 +12,7 @@ import torch
 from physics_informed_flow_map.inversion.single_target import (
     _plot_seismic,
     fk_spectrum,
+    plot_dobs_spectrum_trajectory,
     plot_dobs_trajectory,
 )
 
@@ -124,3 +125,48 @@ def test_fk_spectrum_locates_single_tone() -> None:
     fi, ki = np.unravel_index(np.argmax(mag_db), mag_db.shape)
     assert np.isclose(f_axis[fi], f0, atol=f_axis[1] - f_axis[0])
     assert np.isclose(abs(k_axis[ki]), k0, atol=k_axis[1] - k_axis[0])
+
+
+def test_plot_dobs_spectrum_trajectory_writes_png(tmp_path: Path) -> None:
+    n_frames, n_src, n_rec, nt = 2, 5, 12, 40
+    v_true = torch.rand(70, 70) * 1000 + 1500
+    frames_norm = torch.rand(n_frames, 1, 16, 16) * 2 - 1
+    d_obs_true = torch.randn(n_src, n_rec, nt)
+    out = tmp_path / "fk_traj.png"
+    plot_dobs_spectrum_trajectory(
+        v_true,
+        frames_norm,
+        [0, 3],
+        d_obs_true,
+        _stub_forward(n_src, n_rec, nt),
+        out,
+        title="demo",
+        total_steps=4,
+    )
+    assert out.exists() and out.stat().st_size > 0
+
+
+def test_plot_dobs_spectrum_trajectory_panel_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import physics_informed_flow_map.inversion.single_target as st
+
+    seen: dict[str, tuple[int, int]] = {}
+    real = st.plt.subplots
+
+    def spy(nrows: int, ncols: int, **kw: object):
+        seen["shape"] = (nrows, ncols)
+        return real(nrows, ncols, **kw)
+
+    monkeypatch.setattr(st.plt, "subplots", spy)
+    plot_dobs_spectrum_trajectory(
+        torch.rand(70, 70),
+        torch.rand(2, 1, 16, 16),
+        [0, 3],
+        torch.randn(5, 12, 40),
+        _stub_forward(5, 12, 40),
+        tmp_path / "t.png",
+        title="d",
+        total_steps=4,
+    )
+    assert seen["shape"] == (1 + 5, 1 + 2)  # (1 + n_src) rows, (1 + n_frames) cols

@@ -456,6 +456,134 @@ def fk_spectrum(
     return mag_db, f_axis, k_axis
 
 
+def _fk_imshow(
+    ax: plt.Axes,
+    gather: np.ndarray,
+    *,
+    dt: float,
+    dx: float,
+    peak: float,
+    fmax: float,
+    floor_db: float = -80.0,
+    cmap: str = "magma",
+) -> AxesImage:
+    """imshow one ``(n_receivers, nt)`` gather's f-k spectrum: temporal frequency (Hz) up the
+    vertical axis (cropped to ``fmax``), signed wavenumber (cyc/m) across, magnitude in dB
+    relative to the shared ``peak``. ``vmin``/``vmax`` are fixed to ``floor_db``/``0`` so colour
+    reads the same in every panel."""
+    mag_db, f_axis, k_axis = fk_spectrum(gather, dt, dx, peak=peak, floor_db=floor_db)
+    fmask = f_axis <= fmax
+    img = mag_db[fmask]  # (n_freq_crop, n_rec)
+    extent = (
+        float(k_axis[0]),
+        float(k_axis[-1]),
+        float(f_axis[fmask][0]),
+        float(f_axis[fmask][-1]),
+    )
+    return ax.imshow(
+        img,
+        aspect="auto",
+        origin="lower",
+        extent=extent,
+        cmap=cmap,
+        vmin=floor_db,
+        vmax=0.0,
+    )
+
+
+def plot_dobs_spectrum_trajectory(
+    v_true: Tensor,
+    frames_norm: Tensor,
+    frame_steps: list[int],
+    d_obs_true: Tensor,
+    forward_fn: Callable[[Tensor], Tensor],
+    out_png: Path,
+    *,
+    title: str,
+    total_steps: int,
+    map_label: str = "Tweedie",
+    dt: float = 1e-3,
+    dx: float = 10.0,
+    fmax: float = 60.0,
+) -> None:
+    """f-k spectral twin of :func:`plot_dobs_trajectory` for sample 0. Row 0 is the identical
+    velocity-map row (true v + each prediction, viridis, shared scale). Rows below (one per
+    seismic source) replace each ``d_obs`` gather with its 2-D f-k spectrum: column 0 is the true
+    velocity's ``d_obs``, columns 1.. are the d_obs re-simulated from each ``frames_norm``
+    prediction via ``forward_fn``. All spectra share one global dB peak so colour is comparable.
+
+    ``frames_norm`` is ``(n_frames, 1, res, res)`` in [-1,1]; ``d_obs_true`` is
+    ``(n_src, n_rec, nt)``. ``dt``/``dx`` set the frequency/wavenumber axes; ``fmax`` crops the
+    frequency axis (default 60 Hz for the 15 Hz Ricker source)."""
+    with torch.no_grad():
+        d_frames = (
+            forward_fn(frames_norm).detach().cpu().numpy()
+        )  # (n_frames, n_src, n_rec, nt)
+    v_hat = to_mps_native(frames_norm).detach().cpu().numpy()  # (n_frames, 70, 70) m/s
+    vt = v_true.detach().cpu().numpy()
+    dt_arr = d_obs_true.detach().cpu().numpy()  # (n_src, n_rec, nt)
+    n_frames = int(frames_norm.shape[0])
+    n_src = int(dt_arr.shape[0])
+    n_cols = 1 + n_frames
+    vlo, vhi = float(vt.min()), float(vt.max())
+
+    # One shared linear-magnitude peak across the true column and every frame, all sources,
+    # so the dB scale (peak -> 0 dB) is comparable across the whole grid.
+    peak = 1.0
+    for s in range(n_src):
+        peak = max(peak, float(_fk_mag(dt_arr[s], dt, dx)[0].max()))
+        for j in range(n_frames):
+            peak = max(peak, float(_fk_mag(d_frames[j, s], dt, dx)[0].max()))
+
+    fig, axes = plt.subplots(
+        1 + n_src, n_cols, figsize=(2.1 * n_cols, 2.1 * (1 + n_src)), squeeze=False
+    )
+    # Row 0 — velocity maps (identical to plot_dobs_trajectory).
+    vimg = axes[0, 0].imshow(vt, cmap="viridis", vmin=vlo, vmax=vhi)
+    axes[0, 0].set_title("true v", fontsize=9)
+    for j in range(n_frames):
+        axes[0, 1 + j].imshow(v_hat[j], cmap="viridis", vmin=vlo, vmax=vhi)
+        axes[0, 1 + j].set_title(f"{map_label}\nstep {frame_steps[j]}", fontsize=9)
+    for c in range(n_cols):
+        axes[0, c].axis("off")
+    fig.colorbar(vimg, ax=axes[0, n_cols - 1], fraction=0.046, label="m/s")
+
+    # Rows 1..n_src — f-k spectra, column 0 = true, columns 1.. = frames.
+    im = None
+    for s in range(n_src):
+        r = 1 + s
+        im = _fk_imshow(axes[r, 0], dt_arr[s], dt=dt, dx=dx, peak=peak, fmax=fmax)
+        axes[r, 0].set_ylabel(f"source {s + 1}\nfrequency (Hz)", fontsize=8)
+        if s == 0:
+            axes[r, 0].set_title("true d_obs", fontsize=9)
+        for j in range(n_frames):
+            _fk_imshow(
+                axes[r, 1 + j], d_frames[j, s], dt=dt, dx=dx, peak=peak, fmax=fmax
+            )
+            if s == 0:
+                axes[r, 1 + j].set_title(f"step {frame_steps[j]}", fontsize=9)
+            axes[r, 1 + j].set_yticklabels([])
+        for c in range(n_cols):
+            if s < n_src - 1:
+                axes[r, c].set_xticklabels([])
+            else:
+                axes[r, c].set_xlabel("wavenumber (cyc/m)", fontsize=8)
+    fig.colorbar(
+        im,
+        ax=axes[1:, n_cols - 1].ravel().tolist(),
+        fraction=0.046,
+        label="magnitude (dB, rel. peak)",
+    )
+    fig.suptitle(
+        f"{title} · f-k\nd_obs f-k spectrum from {map_label} predictions over "
+        f"{total_steps} steps",
+        fontsize=10,
+    )
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _plot_seismic(
     d_obs: Tensor, gidx: int, out_png: Path, *, scale: str = "linear"
 ) -> None:
