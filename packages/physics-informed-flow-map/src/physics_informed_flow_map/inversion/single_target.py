@@ -16,6 +16,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import SymLogNorm
+from matplotlib.image import AxesImage
 import torch
 from torch import Tensor
 
@@ -161,17 +163,25 @@ def invert_and_report(
     _plot(
         v_true, vg[0], float(mae[0]), out_png, banner
     )  # sample 0: a representative draw
-    if out_npy is not None:  # persist every posterior draw, not just the plotted sample 0
+    if (
+        out_npy is not None
+    ):  # persist every posterior draw, not just the plotted sample 0
         np.savez(
             out_npy,
-            recon_mps=vg.detach().cpu().numpy(),  # (n, 70, 70) m/s — the n final inversions
+            recon_mps=vg.detach()
+            .cpu()
+            .numpy(),  # (n, 70, 70) m/s — the n final inversions
             v_true_mps=v_true.cpu().numpy(),  # (70, 70) m/s ground truth
             mae=mae.detach().cpu().numpy(),  # (n,) per-sample normalised MAE
             rmse=rmse.detach().cpu().numpy(),  # (n,) per-sample normalised RMSE
             target=label,
         )
-    if out_dobs_cmp_png is not None:  # data-space fit: observed vs re-simulated seismic (sample 0)
-        d_inv0 = pred_g[0]  # in-band prediction, matches how d_obs is compared for the misfit
+    if (
+        out_dobs_cmp_png is not None
+    ):  # data-space fit: observed vs re-simulated seismic (sample 0)
+        d_inv0 = pred_g[
+            0
+        ]  # in-band prediction, matches how d_obs is compared for the misfit
         plot_dobs_compare(
             d_obs,
             d_inv0,
@@ -181,7 +191,9 @@ def invert_and_report(
         if out_dobs_cmp_npz is not None:
             np.savez(
                 out_dobs_cmp_npz,
-                d_obs_inverted=d_inv0.detach().cpu().numpy(),  # (n_src, n_rec, nt) from v_hat[0]
+                d_obs_inverted=d_inv0.detach()
+                .cpu()
+                .numpy(),  # (n_src, n_rec, nt) from v_hat[0]
                 d_obs_true=d_obs.detach().cpu().numpy(),  # (n_src, n_rec, nt) observed
             )
     summary = {
@@ -245,13 +257,19 @@ def plot_dobs_compare(
     rabs = float(np.percentile(np.abs(resid), 99)) or 1.0
     r_rms = float(np.sqrt(np.mean(resid**2)))
     d_rms = float(np.sqrt(np.mean(dt**2))) or 1.0
-    cols = [("true d_obs", dt, vabs), ("inverted d_obs", di, vabs), ("inverted − true", resid, rabs)]
+    cols = [
+        ("true d_obs", dt, vabs),
+        ("inverted d_obs", di, vabs),
+        ("inverted − true", resid, rabs),
+    ]
     fig, axes = plt.subplots(n_src, 3, figsize=(9, 2.4 * n_src), squeeze=False)
     for s in range(n_src):
         for c, (name, data, scale) in enumerate(cols):
             ax = axes[s, c]
             # (n_receivers, nt) -> (nt, n_receivers): time on the vertical axis
-            im = ax.imshow(data[s].T, aspect="auto", cmap="RdBu_r", vmin=-scale, vmax=scale)
+            im = ax.imshow(
+                data[s].T, aspect="auto", cmap="RdBu_r", vmin=-scale, vmax=scale
+            )
             if s == 0:
                 ax.set_title(name, fontsize=10)
             ax.set_ylabel(f"source {s + 1}\ntime sample" if c == 0 else "", fontsize=8)
@@ -268,24 +286,48 @@ def plot_dobs_compare(
     plt.close(fig)
 
 
-def _plot_seismic(d_obs: Tensor, gidx: int, out_png: Path) -> None:
+def _seismic_imshow(
+    ax: plt.Axes, gather: np.ndarray, *, scale: str, vabs: float, cmap: str = "RdBu_r"
+) -> AxesImage:
+    """imshow one ``(n_receivers, nt)`` gather with time on the vertical axis, on a linear or
+    symmetric-log amplitude scale.
+
+    ``scale="linear"`` is the plain symmetric ``±vabs`` diverging map. ``scale="log"`` swaps in a
+    ``SymLogNorm`` (a ±``linthresh`` linear band around zero, log beyond) so low-amplitude coda is
+    lifted without discarding sign. ``vabs`` is a shared symmetric colour limit; pass one global
+    value across panels so they stay comparable."""
+    if scale not in ("linear", "log"):
+        raise ValueError(f"scale must be 'linear' | 'log', got {scale!r}")
+    data = gather.T  # (nt, n_receivers): time down
+    if scale == "log":
+        linthresh = max(vabs * 1e-2, 1e-12)
+        norm = SymLogNorm(linthresh=linthresh, vmin=-vabs, vmax=vabs)
+        return ax.imshow(data, aspect="auto", cmap=cmap, norm=norm)
+    return ax.imshow(data, aspect="auto", cmap=cmap, vmin=-vabs, vmax=vabs)
+
+
+def _plot_seismic(
+    d_obs: Tensor, gidx: int, out_png: Path, *, scale: str = "linear"
+) -> None:
     """Shot gathers of the observed seismic ``d_obs`` (n_sources, n_receivers, nt) — the input the
-    velocity is inverted from. One panel per source: time (down) x receiver, shared symmetric scale."""
+    velocity is inverted from. One panel per source: time (down) x receiver, shared symmetric scale.
+    ``scale`` selects linear or symmetric-log amplitude (:func:`_seismic_imshow`)."""
     d = d_obs.detach().cpu().numpy()
     n_src = d.shape[0]
     vabs = float(np.percentile(np.abs(d), 99)) or 1.0
     fig, axes = plt.subplots(1, n_src, figsize=(2.2 * n_src, 3.6), squeeze=False)
     for s in range(n_src):
         ax = axes[0, s]
-        # (n_receivers, nt) -> (nt, n_receivers): time on the vertical axis
-        im = ax.imshow(d[s].T, aspect="auto", cmap="RdBu_r", vmin=-vabs, vmax=vabs)
+        im = _seismic_imshow(ax, d[s], scale=scale, vabs=vabs)
         ax.set_title(f"source {s + 1}", fontsize=9)
         ax.set_xlabel("receiver", fontsize=8)
         ax.set_ylabel("time sample" if s == 0 else "", fontsize=8)
         if s > 0:
             ax.set_yticklabels([])
-    fig.suptitle(f"observed seismic d_obs · val map {gidx}", fontsize=10)
-    fig.colorbar(im, ax=axes[0, -1], fraction=0.046, label="amplitude")
+    tag = " · log" if scale == "log" else ""
+    fig.suptitle(f"observed seismic d_obs · val map {gidx}{tag}", fontsize=10)
+    label = "amplitude (symlog)" if scale == "log" else "amplitude"
+    fig.colorbar(im, ax=axes[0, -1], fraction=0.046, label=label)
     fig.tight_layout()
     fig.savefig(out_png, dpi=140, bbox_inches="tight")
     plt.close(fig)
