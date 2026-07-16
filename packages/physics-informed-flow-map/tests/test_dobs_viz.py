@@ -88,6 +88,17 @@ def test_plot_dobs_trajectory_panel_count(
     assert seen["shape"] == (1 + 5, 1 + 2)  # (1 + n_src) rows, (1 + n_frames) cols
 
 
+def test_run_emits_one_fk_grid() -> None:
+    # The traj_capture block must call plot_dobs_spectrum_trajectory and name the
+    # _dobs_fk_traj.png output (dB is its own scale — not looped over dobs_scales).
+    import physics_informed_flow_map.inversion.single_target as st
+
+    with open(st.__file__) as f:
+        body = f.read()
+    assert "plot_dobs_spectrum_trajectory(" in body
+    assert "_dobs_fk_traj.png" in body
+
+
 def test_fk_spectrum_axes_ranges() -> None:
     n_rec, nt, dt, dx = 70, 1001, 1e-3, 10.0
     gather = np.random.randn(n_rec, nt)

@@ -227,6 +227,18 @@ def invert_and_report(
                 total_steps=int(traj_capture["total_steps"]),
                 map_label=map_label,
             )
+        # f-k spectral twin: emitted once (dB is its own scale, no linear/log pair).
+        plot_dobs_spectrum_trajectory(
+            v_true,
+            frames0,
+            list(traj_capture["steps"]),
+            d_obs,
+            forward_fn,
+            out_png.with_name(f"{method_name}_g{gs:.2g}_dobs_fk_traj.png"),
+            title=f"{cmp_label or method_name} · {label} · sample 0",
+            total_steps=int(traj_capture["total_steps"]),
+            map_label=map_label,
+        )
     summary = {
         "inv/mae_mean": float(mae.mean()),
         "inv/rmse_mean": float(rmse.mean()),
