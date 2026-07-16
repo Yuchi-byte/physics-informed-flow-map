@@ -286,6 +286,88 @@ def plot_dobs_compare(
     plt.close(fig)
 
 
+def plot_dobs_trajectory(
+    v_true: Tensor,
+    frames_norm: Tensor,
+    frame_steps: list[int],
+    d_obs_true: Tensor,
+    forward_fn: Callable[[Tensor], Tensor],
+    out_png: Path,
+    *,
+    scale: str,
+    title: str,
+    total_steps: int,
+    map_label: str = "Tweedie",
+) -> None:
+    """Data-space trajectory grid for sample 0. Top row: the true velocity + each captured
+    ``frames_norm`` prediction (viridis, shared scale, titled with its trajectory step). Rows below:
+    one per seismic source — column 0 is the true velocity's ``d_obs``, columns 1.. are the d_obs
+    re-simulated from each prediction via ``forward_fn`` (shared symmetric scale, linear or symlog).
+
+    ``frames_norm`` is ``(n_frames, 1, res, res)`` normalized [-1,1]; ``d_obs_true`` is
+    ``(n_src, n_rec, nt)``. ``map_label`` names the prediction ("Tweedie" for prior methods,
+    "iterate" for the FWI baselines). The ``scale`` switch applies to the seismic rows only."""
+    if scale not in ("linear", "log"):
+        raise ValueError(f"scale must be 'linear' | 'log', got {scale!r}")
+    with torch.no_grad():
+        d_frames = (
+            forward_fn(frames_norm).detach().cpu().numpy()
+        )  # (n_frames, n_src, n_rec, nt)
+    v_hat = to_mps_native(frames_norm).detach().cpu().numpy()  # (n_frames, 70, 70) m/s
+    vt = v_true.detach().cpu().numpy()
+    dt = d_obs_true.detach().cpu().numpy()  # (n_src, n_rec, nt)
+    n_frames = int(frames_norm.shape[0])
+    n_src = int(dt.shape[0])
+    n_cols = 1 + n_frames
+    # One symmetric scale across the true column and every frame, so panels are comparable.
+    vabs = (
+        float(np.percentile(np.abs(np.concatenate([dt[None], d_frames], axis=0)), 99))
+        or 1.0
+    )
+    vlo, vhi = float(vt.min()), float(vt.max())
+
+    fig, axes = plt.subplots(
+        1 + n_src, n_cols, figsize=(2.1 * n_cols, 2.1 * (1 + n_src)), squeeze=False
+    )
+    # Row 0 — velocity maps (viridis; scale switch does NOT apply here).
+    vimg = axes[0, 0].imshow(vt, cmap="viridis", vmin=vlo, vmax=vhi)
+    axes[0, 0].set_title("true v", fontsize=9)
+    for j in range(n_frames):
+        axes[0, 1 + j].imshow(v_hat[j], cmap="viridis", vmin=vlo, vmax=vhi)
+        axes[0, 1 + j].set_title(f"{map_label}\nstep {frame_steps[j]}", fontsize=9)
+    for c in range(n_cols):
+        axes[0, c].axis("off")
+    fig.colorbar(vimg, ax=axes[0, n_cols - 1], fraction=0.046, label="m/s")
+
+    # Rows 1..n_src — shot gathers, column 0 = true, columns 1.. = frames.
+    im = None
+    for s in range(n_src):
+        r = 1 + s
+        im = _seismic_imshow(axes[r, 0], dt[s], scale=scale, vabs=vabs)
+        axes[r, 0].set_ylabel(f"source {s + 1}\ntime", fontsize=8)
+        if s == 0:
+            axes[r, 0].set_title("true d_obs", fontsize=9)
+        for j in range(n_frames):
+            _seismic_imshow(axes[r, 1 + j], d_frames[j, s], scale=scale, vabs=vabs)
+            if s == 0:
+                axes[r, 1 + j].set_title(f"step {frame_steps[j]}", fontsize=9)
+            axes[r, 1 + j].set_yticklabels([])
+        for c in range(n_cols):
+            axes[r, c].set_xticklabels([])
+    label = "amplitude (symlog)" if scale == "log" else "amplitude"
+    fig.colorbar(
+        im, ax=axes[1:, n_cols - 1].ravel().tolist(), fraction=0.046, label=label
+    )
+    tag = " · log" if scale == "log" else ""
+    fig.suptitle(
+        f"{title}{tag}\nd_obs from {map_label} predictions over {total_steps} steps",
+        fontsize=10,
+    )
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _seismic_imshow(
     ax: plt.Axes, gather: np.ndarray, *, scale: str, vabs: float, cmap: str = "RdBu_r"
 ) -> AxesImage:
