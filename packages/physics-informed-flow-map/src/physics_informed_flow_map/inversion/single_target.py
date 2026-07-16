@@ -419,6 +419,43 @@ def _seismic_imshow(
     return ax.imshow(data, aspect="auto", cmap=cmap, vmin=-vabs, vmax=vabs)
 
 
+def _fk_mag(
+    gather: np.ndarray, dt: float, dx: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Linear f-k magnitude of one ``(n_receivers, nt)`` gather. ``rfft`` over time gives the
+    positive-frequency half (the real signal's spectrum is Hermitian); a full ``fft`` +
+    ``fftshift`` over receivers gives signed wavenumber so left/right-going wavefronts separate.
+    Returns ``(mag, f_axis, k_axis)`` with ``mag`` shaped ``(n_freq, n_rec)`` = (f, k), both axes
+    ascending. ``dt`` in seconds, ``dx`` receiver spacing in metres."""
+    n_rec, nt = gather.shape
+    s = np.fft.fftshift(
+        np.fft.fft(np.fft.rfft(gather, axis=1), axis=0), axes=0
+    )  # (n_rec, n_freq): fft over receivers (centred), rfft over time
+    mag = np.abs(s).T  # (n_freq, n_rec) = (f, k)
+    f_axis = np.fft.rfftfreq(nt, dt)  # 0 .. f_Nyq, ascending
+    k_axis = np.fft.fftshift(np.fft.fftfreq(n_rec, dx))  # -k_Nyq .. +k_Nyq, ascending
+    return mag, f_axis, k_axis
+
+
+def fk_spectrum(
+    gather: np.ndarray,
+    dt: float,
+    dx: float,
+    *,
+    peak: float | None = None,
+    floor_db: float = -80.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """2-D f-k spectrum of one ``(n_receivers, nt)`` gather in dB. Magnitude is
+    ``20*log10(|S| / peak)`` floored at ``floor_db``; ``peak`` defaults to this gather's own
+    magnitude peak, but callers pass a shared global peak so panels stay comparable (the peak
+    then maps to 0 dB everywhere). Returns ``(mag_db, f_axis, k_axis)`` — see :func:`_fk_mag`
+    for axis conventions."""
+    mag, f_axis, k_axis = _fk_mag(gather, dt, dx)
+    p = (float(mag.max()) if peak is None else peak) or 1.0
+    mag_db = 20.0 * np.log10(np.clip(mag / p, 10.0 ** (floor_db / 20.0), None))
+    return mag_db, f_axis, k_axis
+
+
 def _plot_seismic(
     d_obs: Tensor, gidx: int, out_png: Path, *, scale: str = "linear"
 ) -> None:
