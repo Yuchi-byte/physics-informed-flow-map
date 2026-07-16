@@ -92,8 +92,8 @@ linear/log pair.
 The intermediate Tweedie frames are ephemeral (only PNGs + final reconstructions are
 persisted), so the exact twin of the shown PNG cannot be regenerated from a run dir. A
 throwaway validation script (kept in `scratchpad/`, not committed to package src) loads
-`runs/0004_inversion/flow_matching_flow_tilt_2026-07-16T20-36-27Z/d_obs_inverted_sample0.npz`
-(keys `d_obs_true`, `d_obs_inverted`, both `(n_src, n_rec, nt)`) and renders a small f-k
+`runs/0004_inversion/2026_07_15_marmousi_crop05_inversion/flow_matching_flow_tilt_2026-07-16T20-36-27Z_ot_g1_steps400/d_obs_inverted_sample0.npz`
+(keys `d_obs_true`, `d_obs_inverted`, both `(n_src, n_rec, nt)` = `(5, 70, 1001)`) and renders a small f-k
 grid: true vs final-inverted per source, using `fk_spectrum` + `_fk_imshow` with the real
 `dt`/`dx`. This confirms the transform and rendering on real gathers. The exact 7-column
 trajectory twin arrives on the next real inversion run via the wiring.
