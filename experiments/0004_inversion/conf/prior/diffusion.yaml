@@ -3,5 +3,5 @@ prior:
   name: diffusion  # diffusion prior (0003); a diffusers denoiser + DDPM scheduler
   denoiser_kind: dit  # unet | dit (the flow priors' DiT backbone as an eps-denoiser)
   num_train_timesteps: 1000  # DDPM schedule the prior was trained on
-ckpt: checkpoints/0003_diffusion_openfwi.pt
+ckpt: runs/0003_diffusion/openfwi_2026-07-07T23-26-16Z/checkpoints/step_59_ema.pt
 model: { hidden: 768, depth: 12, num_heads: 12 }

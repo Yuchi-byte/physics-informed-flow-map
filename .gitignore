@@ -45,12 +45,6 @@ ckpts/
 runs/
 multirun/  # Hydra --multirun default sweep dir (when not routed into runs/)
 reward_experiments/
-# Definitive prior checkpoints, addressed by stable alias from conf/prior/*.yaml. The weights
-# are copied out of a training run dir (rsync between machines); only the alias->run mapping is
-# tracked. Ignore the contents, not the directory: git cannot un-ignore a file inside an
-# ignored directory.
-checkpoints/*
-!checkpoints/PROVENANCE.md
 # Generated training artifacts inside vendored reference packages
 trained_models/
 **/trained_models/

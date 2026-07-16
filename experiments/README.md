@@ -7,9 +7,9 @@ existing framework over scaffolding a new number.
 
 ## Running the scripts
 
-Run from the repo root — `runs/`, `data/openfwi` and `checkpoints/` all resolve relative to it.
-Each `prior=` group pins its own checkpoint alias and backbone shape (`checkpoints/PROVENANCE.md`
-maps each alias to the run that produced it), so a target and a method are all an inversion needs.
+Run from the repo root — `runs/` and `data/openfwi` resolve relative to it. Each `prior=` group
+pins the trained checkpoint from its source run dir under `runs/` plus the matching backbone
+shape, so a target and a method are all an inversion needs.
 
 Flow-map prior, OT misfit — a fast plumbing check at 5 steps:
 
