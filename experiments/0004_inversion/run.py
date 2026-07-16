@@ -317,15 +317,17 @@ def main(dcfg: DictConfig) -> None:
     _noise_gen = torch.Generator(device=dev).manual_seed(cfg.seed)
 
     def init_noise() -> torch.Tensor:
-        return torch.randn(
-            n, channels, size, size, device=dev, generator=_noise_gen
-        )
+        return torch.randn(n, channels, size, size, device=dev, generator=_noise_gen)
+
     n_solves = (
         0  # forward (PDE) solves consumed by the guided pass (matched-cost reporting)
     )
     solves = {
         "n": 0
     }  # actual guided-pass solve count (FWI fills this; used for the figure banner)
+    traj_cap: dict[
+        str, object
+    ] = {}  # sample-0 trajectory frames, filled by the guided step saver
 
     if cfg.prior.name == "none":
         # Classical / realistic FWI: no learned prior. Optimise the velocity map directly against
@@ -366,6 +368,7 @@ def main(dcfg: DictConfig) -> None:
                     viz_traj,
                     total_steps=total,
                     n_frames=cfg.n_frames,
+                    capture=traj_cap,
                 )
             if realistic:
                 v_mps, ns = multiscale_fwi(
@@ -416,7 +419,9 @@ def main(dcfg: DictConfig) -> None:
         if cfg.method.name in _MFM_METHODS:
             # Native flow-map steering (FlowMapSteerModule), adapted to the shared [-1, 1] Inverter
             # contract. guidance=0 => base drift (unguided control: estimator "base", no solves).
-            x0_mfm = init_noise()  # shared t=0 noise, reused across guided/unguided passes
+            x0_mfm = (
+                init_noise()
+            )  # shared t=0 noise, reused across guided/unguided passes
             # Per-step captures for the MC-posterior grids: the noisy state x_t and the
             # mc_samples posterior draws x1~p(x1|x_t) the estimator used, EVERY step of the
             # guided pass (fp16 CPU to keep 30x4x200 frames light). Rendered after inversion.
@@ -433,6 +438,7 @@ def main(dcfg: DictConfig) -> None:
                         viz_traj,
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
+                        capture=traj_cap,
                     )
                     mc_cap["xt"].clear()
                     mc_cap["mc"].clear()
@@ -495,6 +501,7 @@ def main(dcfg: DictConfig) -> None:
                         viz_traj,
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
+                        capture=traj_cap,
                     )
                 return fmrg_e_sample(
                     velocity_fn,
@@ -530,6 +537,7 @@ def main(dcfg: DictConfig) -> None:
                         viz_traj,
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
+                        capture=traj_cap,
                     )
                 return guided_sample(
                     velocity_fn,
@@ -571,6 +579,7 @@ def main(dcfg: DictConfig) -> None:
                         viz_traj,
                         total_steps=cfg.method.iters or cfg.steps,
                         n_frames=cfg.n_frames,
+                        capture=traj_cap,
                     )
                 return red_diffeq_sample(
                     denoiser,
@@ -589,7 +598,9 @@ def main(dcfg: DictConfig) -> None:
                     on_step=step_cb,
                 )
         else:  # dps / unguided
-            x_init = init_noise()  # shared t=T noise, reused across guided/unguided passes
+            x_init = (
+                init_noise()
+            )  # shared t=T noise, reused across guided/unguided passes
 
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
                 step_cb = None
@@ -599,6 +610,7 @@ def main(dcfg: DictConfig) -> None:
                         viz_traj,
                         total_steps=cfg.steps,
                         n_frames=cfg.n_frames,
+                        capture=traj_cap,
                     )
                 return dps_sample(
                     denoiser,
@@ -634,7 +646,9 @@ def main(dcfg: DictConfig) -> None:
         return _base_invert(d_obs, guidance_strength)
 
     out = run.ckpt_dir.parent / "inversion.png"
-    obs_out = run.ckpt_dir.parent / "d_obs.png"
+    obs_out = (
+        run.ckpt_dir.parent / "d_obs"
+    )  # base; invert_and_report writes _linear/_log.png
     recon_out = run.ckpt_dir.parent / "reconstructions.npz"
     dobs_cmp_out = run.ckpt_dir.parent / "d_obs_inverted_vs_true.png"
     dobs_cmp_npz = run.ckpt_dir.parent / "d_obs_inverted_sample0.npz"
@@ -668,15 +682,34 @@ def main(dcfg: DictConfig) -> None:
         cost=solve_count,
         misfit_factory=misfit_factory,
         obs_cfg=cfg.obs,
+        traj_capture=traj_cap,
+        dobs_scales=("linear", "log"),
     )
     if cfg.prior.name == "none":
         n_solves = solves["n"]  # actual forward solves from the guided FWI pass
     summary["inv/n_solves"] = float(0 if cfg.method.name == "unguided" else n_solves)
     run.log_image("inversion", out, caption=caption)
-    run.log_image("d_obs", obs_out, caption=f"observed seismic · {caption}")
     run.log_image(
         "d_obs_inverted_vs_true", dobs_cmp_out, caption=f"data-space fit · {caption}"
     )
+    # d_obs and the Tweedie-d_obs trajectory grid, each in linear + symlog (invert_and_report
+    # wrote {stem}_{scale}.png; names mirrored here for wandb logging).
+    gs_log = cfg.method.guidance_strength if cfg.method.name != "unguided" else 0.0
+    for sc in ("linear", "log"):
+        dobs_png = run.ckpt_dir.parent / f"d_obs_{sc}.png"
+        if dobs_png.exists():
+            run.log_image(
+                f"d_obs_{sc}", dobs_png, caption=f"observed seismic ({sc}) · {caption}"
+            )
+        traj_png = (
+            run.ckpt_dir.parent / f"{cfg.method.name}_g{gs_log:.2g}_dobs_traj_{sc}.png"
+        )
+        if traj_png.exists():
+            run.log_image(
+                f"traj/dobs_{sc}",
+                traj_png,
+                caption=f"d_obs trajectory ({sc}) · {caption}",
+            )
 
     # MFM MC-posterior grids: one tall static grid per particle (rows = every step, cols =
     # noisy x_t + the mc_samples posterior draws that step). Only the iwae/sne estimators
@@ -691,7 +724,9 @@ def main(dcfg: DictConfig) -> None:
         mc_dir = run.ckpt_dir.parent / "mc_posterior_viz"
         paths = render_mc_posterior_grids(xt, mc, mc_dir, title_prefix=cmp_label)
         print(f"[0004] wrote {len(paths)} MC-posterior grids -> {mc_dir}")
-        run.log_image("mc_posterior/particle_00", paths[0], caption=f"MC grid · {caption}")
+        run.log_image(
+            "mc_posterior/particle_00", paths[0], caption=f"MC grid · {caption}"
+        )
 
     run.log(**summary)  # mirror to metrics.jsonl on the network volume
     run.finish(**summary)

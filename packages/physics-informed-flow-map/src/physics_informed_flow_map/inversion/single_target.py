@@ -9,7 +9,7 @@ ratio), and the ``true | v_hat | error`` figure.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import matplotlib
 
@@ -85,6 +85,9 @@ def invert_and_report(
     cost: Callable[[], float] | None = None,
     misfit_factory: Callable[[Tensor], MisfitFn] | None = None,
     obs_cfg: ObservationConfig | None = None,
+    traj_capture: dict[str, Any] | None = None,
+    dobs_scales: tuple[str, ...] = ("linear",),
+    forward_fn: Callable[[Tensor], Tensor] = seismic_forward,
 ) -> tuple[dict[str, float], str]:
     """Run guided + unguided inversion on a held-out map, score it, and write the figure.
 
@@ -121,7 +124,11 @@ def invert_and_report(
     print(f"target: {label} (global index {gidx}, native {tuple(v_true.shape)})")
 
     if out_obs_png is not None:
-        _plot_seismic(d_obs, gidx, out_obs_png)
+        base = out_obs_png.with_suffix("")  # accept "d_obs" or "d_obs.png"
+        for sc in dobs_scales:
+            _plot_seismic(
+                d_obs, gidx, base.with_name(f"{base.name}_{sc}.png"), scale=sc
+            )
 
     gs = guidance if method_name != "unguided" else 0.0
     guided = invert(d_obs, gs)
@@ -195,6 +202,30 @@ def invert_and_report(
                 .cpu()
                 .numpy(),  # (n_src, n_rec, nt) from v_hat[0]
                 d_obs_true=d_obs.detach().cpu().numpy(),  # (n_src, n_rec, nt) observed
+            )
+    if traj_capture and traj_capture.get("frames") is not None:
+        frames0 = traj_capture["frames"][:, 0]  # sample 0: (n_frames, C?, H, W)
+        if frames0.ndim == 3:  # FWI native path delivers (n_frames, H, W)
+            frames0 = frames0[:, None]
+        frames0 = frames0.to(device)
+        map_label = (
+            "iterate"
+            if method_name in ("classical_fwi", "realistic_fwi")
+            else "Tweedie"
+        )
+        traj_base = out_png.with_name(f"{method_name}_g{gs:.2g}_dobs_traj")
+        for sc in dobs_scales:
+            plot_dobs_trajectory(
+                v_true,
+                frames0,
+                list(traj_capture["steps"]),
+                d_obs,
+                forward_fn,
+                traj_base.with_name(f"{traj_base.name}_{sc}.png"),
+                scale=sc,
+                title=f"{cmp_label or method_name} · {label} · sample 0",
+                total_steps=int(traj_capture["total_steps"]),
+                map_label=map_label,
             )
     summary = {
         "inv/mae_mean": float(mae.mean()),
