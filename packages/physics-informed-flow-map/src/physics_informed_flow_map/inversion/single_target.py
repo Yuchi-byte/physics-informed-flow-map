@@ -195,6 +195,14 @@ def invert_and_report(
             out_dobs_cmp_png,
             title=f"{cmp_label or method_name} · {label} · sample 0",
         )
+        plot_dobs_spectrum_compare(  # f-k spectral twin, sibling _fk PNG
+            d_obs,
+            d_inv0,
+            out_dobs_cmp_png.with_name(
+                f"{out_dobs_cmp_png.stem}_fk{out_dobs_cmp_png.suffix}"
+            ),
+            title=f"{cmp_label or method_name} · {label} · sample 0",
+        )
         if out_dobs_cmp_npz is not None:
             np.savez(
                 out_dobs_cmp_npz,
@@ -407,6 +415,62 @@ def plot_dobs_trajectory(
         fontsize=10,
     )
     fig.tight_layout()
+    fig.savefig(out_png, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_dobs_spectrum_compare(
+    d_true: Tensor,
+    d_inv: Tensor,
+    out_png: Path,
+    *,
+    title: str,
+    dt: float = 1e-3,
+    dx: float = 10.0,
+    fmax: float = 60.0,
+) -> None:
+    """f-k spectral twin of :func:`plot_dobs_compare`. Columns: true d_obs | inverted d_obs |
+    residual (inverted − true), each rendered as its 2-D f-k spectrum in dB. All three columns
+    share one global dB peak (the loudest bin across the true and inverted gathers), so the
+    residual reads honestly as N dB below the data rather than being re-normalised to its own
+    peak. One row per source. Arrays are ``(n_src, n_receivers, nt)``; ``dt``/``dx`` set the
+    frequency/wavenumber axes and ``fmax`` crops the frequency axis (default 60 Hz)."""
+    d_t = d_true.detach().cpu().numpy()  # (n_src, n_rec, nt)
+    d_i = d_inv.detach().cpu().numpy()
+    resid = d_i - d_t
+    n_src = d_t.shape[0]
+
+    # Shared peak over the true + inverted gathers only (not the residual): 0 dB is the loudest
+    # data bin everywhere, so the residual column shows how far below the data the misfit sits.
+    peak = 1.0
+    for s in range(n_src):
+        peak = max(peak, float(_fk_mag(d_t[s], dt, dx)[0].max()))
+        peak = max(peak, float(_fk_mag(d_i[s], dt, dx)[0].max()))
+
+    cols = [
+        ("true d_obs", d_t),
+        ("inverted d_obs", d_i),
+        ("inverted − true", resid),
+    ]
+    fig, axes = plt.subplots(n_src, 3, figsize=(7.5, 2.4 * n_src), squeeze=False)
+    im = None
+    for s in range(n_src):
+        for c, (name, data) in enumerate(cols):
+            im = _fk_imshow(axes[s, c], data[s], dt=dt, dx=dx, peak=peak, fmax=fmax)
+            if s == 0:
+                axes[s, c].set_title(name, fontsize=10)
+            if c == 0:
+                axes[s, c].set_ylabel(f"source {s + 1}\nfrequency (Hz)", fontsize=8)
+            else:
+                axes[s, c].set_yticklabels([])
+            if s == n_src - 1:
+                axes[s, c].set_xlabel("wavenumber (cyc/m)", fontsize=8)
+            else:
+                axes[s, c].set_xticklabels([])
+    fig.colorbar(
+        im, ax=axes.ravel().tolist(), fraction=0.046, label="magnitude (dB, rel. peak)"
+    )
+    fig.suptitle(f"{title} · f-k spectrum", fontsize=11)
     fig.savefig(out_png, dpi=140, bbox_inches="tight")
     plt.close(fig)
 

@@ -12,6 +12,7 @@ import torch
 from physics_informed_flow_map.inversion.single_target import (
     _plot_seismic,
     fk_spectrum,
+    plot_dobs_spectrum_compare,
     plot_dobs_spectrum_trajectory,
     plot_dobs_trajectory,
 )
@@ -88,6 +89,34 @@ def test_plot_dobs_trajectory_panel_count(
     assert seen["shape"] == (1 + 5, 1 + 2)  # (1 + n_src) rows, (1 + n_frames) cols
 
 
+def test_plot_dobs_spectrum_compare_writes_png(tmp_path: Path) -> None:
+    n_src, n_rec, nt = 5, 12, 40
+    d_true = torch.randn(n_src, n_rec, nt)
+    d_inv = d_true + 0.1 * torch.randn(n_src, n_rec, nt)
+    out = tmp_path / "fk_compare.png"
+    plot_dobs_spectrum_compare(d_true, d_inv, out, title="demo")
+    assert out.exists() and out.stat().st_size > 0
+
+
+def test_plot_dobs_spectrum_compare_panel_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import physics_informed_flow_map.inversion.single_target as st
+
+    seen: dict[str, tuple[int, int]] = {}
+    real = st.plt.subplots
+
+    def spy(nrows: int, ncols: int, **kw: object):
+        seen["shape"] = (nrows, ncols)
+        return real(nrows, ncols, **kw)
+
+    monkeypatch.setattr(st.plt, "subplots", spy)
+    plot_dobs_spectrum_compare(
+        torch.randn(5, 12, 40), torch.randn(5, 12, 40), tmp_path / "c.png", title="d"
+    )
+    assert seen["shape"] == (5, 3)  # n_src rows, 3 columns (true | inverted | residual)
+
+
 def test_run_emits_one_fk_grid() -> None:
     # The traj_capture block must call plot_dobs_spectrum_trajectory and name the
     # _dobs_fk_traj.png output (dB is its own scale — not looped over dobs_scales).
@@ -97,6 +126,16 @@ def test_run_emits_one_fk_grid() -> None:
         body = f.read()
     assert "plot_dobs_spectrum_trajectory(" in body
     assert "_dobs_fk_traj.png" in body
+
+
+def test_run_emits_fk_compare() -> None:
+    # The out_dobs_cmp_png block must also emit the f-k spectral compare figure.
+    import physics_informed_flow_map.inversion.single_target as st
+
+    with open(st.__file__) as f:
+        body = f.read()
+    # >= 2 occurrences: the `def` plus at least one call site in the run driver.
+    assert body.count("plot_dobs_spectrum_compare(") >= 2
 
 
 def test_fk_spectrum_axes_ranges() -> None:
