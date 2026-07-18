@@ -86,7 +86,10 @@ training (sample cheap index pairs at train time) is the point. `v_i` is drawn f
 | CurveFault_B **train** maps (real) | large, structured differences |
 | Gaussian-blur of real maps, random σ | smooth / early-inversion states |
 | convex blends `α v_a + (1−α) v_b` | intermediate states |
-| flow-matching prior samples (0001 ckpt) | plausible-but-wrong maps |
+
+(Flow-matching prior samples were considered as a "plausible-but-wrong" source but dropped for
+the MVP: they add a 0001-checkpoint dependency and a sampling loop, and the Gaussian-blurred
+reals already stand in for the smooth intermediate states. Documented fallback, not built.)
 
 **Pairing sampler (train time).** Sample index pairs `(i, j)`; `target = MSE(v_i, v_j)`. Mix
 modes so the full distance range is populated: some pairs `(real, perturbation-of-same-real)`
@@ -150,7 +153,7 @@ a population claim.)
 |---|---|---|
 | `Encoder` (`physics/learned_misfit.py`) | `d → k`-vector, differentiable | torch |
 | `SiameseMisfit` / `make_learned_misfit` | freeze `z_obs`, expose `MisfitFn` | `Encoder`, ckpt |
-| bank builder (`0006/bank.py`) | `{real, blur, blend, prior} → (v, d)` cache | `simulate`, openfwi loader, 0001 ckpt |
+| bank builder (`0006/bank.py`) | `{real, blur, blend} → (v, d)` cache | `simulate`, openfwi loader |
 | pair sampler + target (`0006/pairs.py`) | index pairs + `MSE(v_i,v_j)` | bank |
 | train loop (`0006/run.py`) | fit φ, log val R²/alignment, ckpt | harness `Run`, above |
 | eval/diagnostics (`0006/eval.py`) | alignment + landscape figures | trained φ |
@@ -168,8 +171,8 @@ sampler distance coverage; `make_learned_misfit` matching `MisfitFn`.
 - **Euclidean-embedding capacity.** If option A underfits MSE, the expressive upgrade is a
   difference-feature MLP `h(|φ(d1)−φ(d2)|)`, `h(0)=0` — keeps symmetry & zero-diagonal, loses
   the metric guarantee. Out of scope for the MVP.
-- **Simulation cost of the bank.** Bounded by bank size × one forward solve; cached once. Prior
-  samples and blurred maps still each need a solve — cap bank size explicitly and log it.
+- **Simulation cost of the bank.** Bounded by bank size × one forward solve; cached once. Each
+  augmented map still needs a solve — cap bank size explicitly and log it.
 - **Family scope.** Trained on CurveFault_B only; cross-family generalization untested.
 
 ## 10. Out of scope

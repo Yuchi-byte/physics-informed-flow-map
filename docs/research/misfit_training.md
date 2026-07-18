@@ -41,8 +41,8 @@ The buildable version of this note lives in
   SSIM was considered but is not a metric (no triangle inequality) and only fits an expressive
   non-metric head, so it was dropped for the MVP.
 - **Training data = an offline pair bank** of `(v, d=simulate(v))` covering not just real maps
-  but the smooth/blurry/plausible-but-wrong maps an inversion actually visits (blur, blends,
-  prior samples). The forward solves are cached once so training samples pairs cheaply.
+  but the smooth/blurry maps an inversion actually visits (Gaussian blur, convex blends of real
+  maps). The forward solves are cached once so training samples pairs cheaply.
 - **Inference:** `φ(d_obs)` is frozen once, so `J` drops into `0004`'s existing `MisfitFn`
   interface as a third option alongside `l2` and `ot`.
 
