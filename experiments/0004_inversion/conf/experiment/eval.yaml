@@ -24,7 +24,7 @@ evaluation:
     - label: flowmap·mfm_g
       prior: { name: flow_map }
       ckpt: ""
-      method: { name: mfm_g, drift_estimator: iwae, sigma: 1000.0, renorm: false }
+      method: { name: mfm_g, drift_estimator: iwae, sigma: 1000.0, renorm: true }
     - label: diff·dps·g0.3
       prior: { name: diffusion, denoiser_kind: unet }
       ckpt: ""

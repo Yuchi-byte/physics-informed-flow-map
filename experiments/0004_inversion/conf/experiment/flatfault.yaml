@@ -27,7 +27,7 @@ evaluation:
       prior: { name: flow_map }
       ckpt: ${ckpt}
       model: { hidden: 320, depth: 8 }
-      method: { name: mfm_g, drift_estimator: iwae, sigma: 100.0, renorm: false, mc_samples: 4 }
+      method: { name: mfm_g, drift_estimator: iwae, sigma: 100.0, renorm: true, mc_samples: 4 }
     - label: diffusion·dps
       prior: { name: diffusion, denoiser_kind: dit }
       ckpt: ${diff_ckpt}

@@ -1,19 +1,20 @@
 name: mfm_g  # Meta Flow Maps gradient-based (IWAE) steering — paper Eq. 22 / prior-work.html 5.5
 drift_estimator: iwae  
 mc_samples: 4  # posterior draws v(0,1,eps|t_cond=t,x_cond=x_t) per step; wave solves/step scale with this
-# Likelihood temperature in r = -||F(v)-d||^2 / (2 sigma^2): sets both the IWAE weight
-# concentration and (with renorm=false) the steering strength. With noiseless d_obs (inverse
-# crime) there is no principled value — the paper's GMM inverse problem uses the TRUE
-# measurement noise. Swept 2026-07-02 on map 6044: σ100 best (MAE 0.195/SSIM 0.431, misfit
-# driven to 7.7% ≈ flow_tilt's), σ1000 barely steers (misfit_ratio 0.73); σ300 in between.
+# Likelihood temperature in r = -||F(v)-d||^2 / (2 sigma^2): sets the IWAE reward-weight
+# concentration. With renorm=true the steering magnitude is pinned to the base drift, so sigma
+# no longer sets steering strength — only how sharply the weights favour the best draw. Noiseless
+# d_obs (inverse crime) has no principled value — the paper's GMM inverse problem uses the TRUE
+# measurement noise. Swept 2026-07-02 on map 6044 (at renorm=false): σ100 best (MAE 0.195).
 sigma: 100.0
 guidance_strength: 1.0  # MFM-G steering scale (0 => unguided base drift, the control)
-# Theory (paper Eq. 38) steers with exactly sigma_t^2 * grad V_t, no renormalisation — but the
-# paper's ImageNet PRACTICE (F.3.6, Eq. 136) rescales the steering drift to ||base_drift||·λ, λ=1,
-# i.e. renorm=true. For FWI that pinning kills the gradient's self-attenuation and over-fits the
-# noiseless data hard (MAE 0.46 vs 0.20 on map 6044, and the same at eval scale — see JOURNAL
-# 2026-07-02 / results_steer_tune): keep false here.
-renorm: false
+# Rescale the steering drift to ||base_drift||·guidance_strength each step (the paper's ImageNet
+# practice, F.3.6 Eq. 136) so the data term is a first-order effect regardless of misfit scale —
+# without it the raw reward gradient is swamped by the reverse-SDE base drift (an O(1) OT potential
+# steers ~1e-9 of the base; even L2 is only ~1e-2). Tradeoff: on a noiseless inverse crime this
+# over-fits the exactly-known data off-manifold and can inflate model MAE (σ100/map 6044: 0.46 vs
+# 0.20 at renorm=false); the penalty weakens with realistic observation noise.
+renorm: true
 sde: true  # SDE (Euler-Maruyama); the paper's GMM uses both, its ImageNet steering uses ODE (250 Euler steps)
 misfit: l2  # guidance data-misfit: l2 | ot (Peng et al. OT potential; eval metrics stay L2)
 ot_k: 100.0  # ot only: bounded amplitude-weighting strength

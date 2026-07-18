@@ -142,7 +142,7 @@ class MethodConfig(Config):
     sigma: float = Field(
         1000.0, gt=0.0
     )  # likelihood temperature in r=-||F(v)-d||^2/(2σ²)
-    renorm: bool = False  # pin steering magnitude to the base-drift norm each step
+    renorm: bool = True  # pin steering magnitude to the base-drift norm each step
     sde: bool = True  # SDE (Euler-Maruyama) sampler; false => ODE (Euler)
     # RED-DiffEq knobs (diffusion prior; ignored by the other methods).
     eta_data: float = Field(
