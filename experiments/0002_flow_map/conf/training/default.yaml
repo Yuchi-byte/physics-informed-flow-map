@@ -1,55 +1,36 @@
-# Training schedule for the 0002 Meta-Flow-Map prior. Bound to run.py's TrainingConfig and
-# passed into physics_informed_flow_map.flow_matching.train.
-
 n_epochs: 10
-batch_size: 256
+batch_size: 64
 lr: 0.001  # peak Adam learning rate
 warmup_steps: 2000  # linear LR warmup, 0.1x -> 1x over this many optimizer steps
 num_workers: 4  # DataLoader workers
-precision: fp32  # "bf16" runs the loss forward under autocast (weights/optimizer stay fp32).
-                 # Prefer bf16 for openfwi runs — probed 2026-07-07 (b128, esd_teacher, RTX PRO
-                 # 4500 Blackwell): +34% it/s (3.34 vs 2.50), peak mem 24.4 vs 28.4 GB, step
-                 # losses within ±1% of fp32; b256 OOMs even under bf16, so bf16 buys speed,
-                 # not batch size (runs/0002_flow_map/_probes/teacher_probes_status.log).
+precision: bf16 
 resume_from: null  # raw-model checkpoint (step_<E>.pt) to resume from; n_epochs stays the TOTAL
 
 # --- Flow-map (off-diagonal) consistency term ---
-# The prior is a Meta Flow Map: beyond the diagonal flow-matching velocity v(s,s,·) it learns the
-# few-step map v(s,u,·) for s<u via a self-consistency (mutual-flow) loss. That term is OFF during
-# an initial warmup (pure flow matching), then its jump size u-s is annealed open.
-flow_map_warmup_steps: 1000  # off-diagonal consistency term turns on after this step (pure FM before)
-flow_map_anneal_end: 20000  # step by which the jump size u-s has annealed to its full range
-distillation_type: mf  # off-diagonal target: "mf" = self-distilled Mean-Flow (no teacher);
-                       # "esd_teacher" = distilled from a frozen teacher. run.py auto-switches this
-                       # to esd_teacher when teacher_ckpt is set below.
-loss_weighting: adaptive  # "adaptive" = mfm's per-sample reweighting (balances the hard off-diagonal
-                          # term against the easy diagonal FM); "l2" = plain MSE
+flow_map_warmup_steps: 0 # off-diagonal consistency term turns on after this step (pure FM before)
+flow_map_anneal_end: 0 # step by which the jump size u-s has annealed to its full range
+distillation_type: mf     # esd_teacher, lsd, psd, mf (vss from data) 
+loss_weighting: adaptive  # 'adaptive' or 'l2'. Adaptive recovers mfm's adaptive losses. If 'l2', those adaptive losses are set to None.  
+                          # And those are the loss_types:{l2, lv, adaptive} used in mfm's loss function. Loss_types determines how the losses between model prediction and targets are calculated. 
+                          # mfm sets their loss types to be adaptive for the three losses (fm, distill_fm, distillation). 
+                          # see mfm paper Appendix B.3 for adaptive loss. 
 
 # --- Conditioning schedule (the posterior pathway that inference / MFM-G steers) ---
-# t_cond is mfm's "conditioning time": the noise level at which the map is told it observed a
-# context state x_cond = x_{t_cond} along the path x_τ = (1-τ)·noise + τ·data. t_cond=0 observes
-# pure noise (no information -> unconditional); t_cond>0 observes a partially-revealed state, so the
-# map learns the posterior p(data | x_{t_cond}). Inference (FlowMapSteerModule) reuses exactly this:
-# it feeds the running state x_t back as (t_cond=t, x_cond=x_t) to draw one-shot posterior samples.
-# (mfm's velocity API fixes the name `t_cond`; we keep the `t_cond_*` knob names for traceability.)
+# Inference (FlowMapSteerModule) feeds the running state x_t back as (t_cond=t, x_cond=x_t) to draw one-shot posterior samples.
 uncond_prob: 0.1  # P(a training sample is unconditional, t_cond=0). 0.1 => 90% of samples train the
                   # conditional posterior pathway. (mfm cfg key: t_cond_0_rate)
-t_cond_power: 1.0  # shapes the nonzero t_cond ~ U(0,1)**power: 1 = uniform (from-data recipe, paper
-                   # 4.3.1); >1 concentrates near 0 (low-noise / nearly-clean observations)
+t_cond_power: 1.0 
 t_cond_warmup_steps: 0  # keep t_cond=0 (unconditional only) for this many steps before the schedule
                         # above kicks in
 
 # --- Teacher distillation (optional alternative to from-scratch "mf") ---
-teacher_ckpt: null  # frozen 0001 prior to distil from (local ckpt path or wandb artifact ref). Set
-                    # => distillation_type becomes esd_teacher + the student warm-starts from it.
-                    # null => from-scratch mf. Unconditional datasets only.
+teacher_ckpt: null  
 
-# --- Eval / checkpoint cadence ---
+
 eval_every_epochs: 0  # 0 = no periodic eval (only the final eval)
 ckpt_every_epochs: 0  # 0 = save only best + final checkpoints
 
-# Exponential moving average of weights (the eval/inference model when enabled)
 ema:
   enabled: false
-  decay: 0.9999  # EMA decay; closer to 1 = slower, smoother average
+  decay: 0.9999  
   warmup_steps: 0  # ramp the EMA decay up over this many steps before using `decay`

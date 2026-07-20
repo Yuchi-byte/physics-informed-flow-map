@@ -1,34 +1,7 @@
-"""Invert a held-out velocity map with a trained prior — the unified camp-A inversion entry.
-
-    uv run python experiments/0004_inversion/run.py prior=flow_matching method=flow_tilt ckpt=<...>
-    uv run python experiments/0004_inversion/run.py prior=flow_map     method=mfm_g     ckpt=<...>
-    uv run python experiments/0004_inversion/run.py prior=diffusion    method=dps       ckpt=<...>
-    uv run python experiments/0004_inversion/run.py --multirun prior=flow_map method=mfm_g,flow_tilt,unguided ckpt=<...>
-
-Loads a prior trained by one of the training frameworks (``0001_flow_matching``, ``0002_flow_map``,
-``0003_diffusion`` — do not retrain here), simulates seismic data ``d`` from a held-out
-(validation-split) OpenFWI map with the Deepwave forward operator, then steers the prior toward
+"""
+simulates seismic data ``d`` from a held-out (validation-split) OpenFWI map with the Deepwave forward operator, then steers the prior toward
 ``d`` to recover the velocity. The ``prior`` group picks the prior family/loader and the ``method``
 group picks the inference-time scheme:
-
-  * ``flow_tilt`` — DPS-style wave-equation tilting with the single-point Tweedie mean (flow priors).
-  * ``mfm_g`` / ``mfm_gf`` — Meta Flow Maps' gradient / gradient-free steering through the flow
-    map's own time-conditional posterior (paper Eq. 22 / Eq. 20; ``prior-work.html`` §5.5). flow_map.
-  * ``dps`` — canonical Diffusion Posterior Sampling (diffusion prior).
-  * ``unguided`` — prior sample, no physics (the control that shows the wave equation does the work).
-
-Scoring + figure are shared across all methods via ``inversion.single_target``; this entry only
-supplies how to load each prior and how to invert. ``eval.py`` is the multi-map sweep counterpart.
-
-Caveat: ``d_obs`` comes from the same noiseless forward operator used inside the guidance term
-(an "inverse crime"), so recovery is optimistic.
-
-for fmrg:
-To run a real inversion:
-uv run python experiments/0004_inversion/run.py prior=flow_map method=fmrg_e ckpt=<path> steps=200
-
-To sweep n_opt or guidance_strength:
-uv run python experiments/0004_inversion/run.py prior=flow_map method=fmrg_e ckpt=<path> method.n_opt=5 method.guidance_strength=0.5
 """
 
 from __future__ import annotations
@@ -69,49 +42,7 @@ from loaders import (  # noqa: E402
 
 EXPERIMENT = "0004_inversion"
 
-# prior family -> the inference-time methods it supports (the validated compatibility matrix).
-_COMPAT: dict[str, set[str]] = {
-    "flow_matching": {"unguided", "flow_tilt"},
-    "flow_map": {"unguided", "flow_tilt", "mfm_g", "mfm_gf", "fmrg_e"},
-    "diffusion": {"unguided", "dps", "red_diffeq"},
-    "none": {"classical_fwi", "realistic_fwi"},  # no learned prior: the FWI baselines
-}
-_PRIORS = set(_COMPAT)
-_METHODS = {m for ms in _COMPAT.values() for m in ms}
 _MFM_METHODS = {"mfm_g", "mfm_gf"}
-
-# Human-readable pieces for the data-space figure title ("<prior> + <estimator> + <misfit>").
-_PRIOR_DISP = {
-    "flow_matching": "flow-matching",
-    "flow_map": "flow-map",
-    "diffusion": "diffusion",
-    "none": "FWI",
-}
-_EST_DISP = {
-    "flow_tilt": "Tweedie",
-    "dps": "Tweedie",
-    "mfm_g": "MFM-G",
-    "mfm_gf": "MFM-GF",
-    "fmrg_e": "FMRG-E",
-    "red_diffeq": "RED-DiffEq",
-    "unguided": "unguided",
-    "classical_fwi": "classical FWI",
-    "realistic_fwi": "multiscale FWI",
-}
-
-
-def check_compatible(prior: str, method: str) -> None:
-    """Raise if ``prior`` cannot run ``method`` (the approved compatibility matrix)."""
-    if prior not in _PRIORS:
-        raise ValueError(f"unknown prior '{prior}' ({' | '.join(sorted(_PRIORS))})")
-    if method not in _METHODS:
-        raise ValueError(f"unknown method '{method}' ({' | '.join(sorted(_METHODS))})")
-    if method not in _COMPAT[prior]:
-        ok = ", ".join(p for p in sorted(_PRIORS) if method in _COMPAT[p])
-        raise ValueError(
-            f"method '{method}' is incompatible with prior '{prior}' "
-            f"(valid priors for '{method}': {ok})"
-        )
 
 
 class PriorConfig(Config):
@@ -126,19 +57,11 @@ class MethodConfig(Config):
     # 0 => unguided (the control invert_and_report runs for the misfit ratio).
     guidance_strength: float = 1.0
     normalize_grad: bool = True  # flow_tilt/dps only: unit-normalise the DPS gradient
-    # Guidance data-misfit: l2 (pointwise, the Gaussian log-likelihood) | ot (Peng et al.
-    # 2026 weighted+normalized trace-wise Wasserstein-2 potential — anti-cycle-skipping,
-    # amplitude-balanced; see physics.misfit). Evaluation metrics stay L2 regardless.
     misfit: str = "l2"
     ot_k: float = Field(100.0, ge=0.0)  # ot only: bounded amplitude-weighting strength
-    # How the drift toward the data is estimated. "tweedie" documents the single-point Tweedie
-    # estimate hard-wired into flow_tilt/dps (those code paths never read this field); only
-    # mfm_g/mfm_gf consume it, and must override it with an estimator mfm.utils.steering
     # accepts: iwae = MFM-G (gradient), sne = MFM-GF (gradient-free), dps = Tweedie baseline.
     drift_estimator: str = "tweedie"
-    mc_samples: int = Field(
-        4, gt=0
-    )  # posterior draws/step; wave solves/step scale with it
+    mc_samples: int = Field(4, gt=0)
     sigma: float = Field(
         1000.0, gt=0.0
     )  # likelihood temperature in r=-||F(v)-d||^2/(2σ²)
@@ -225,7 +148,7 @@ class InversionConfig(Config):
     target_index: int = Field(0, ge=0)  # index into the seed-0 validation split
     # Benchmark target id (e.g. style_a_03) from data/inversion_bench/manifest.json;
     # overrides target_index and needs no bulk data. Empty = legacy target_index path.
-    target: str = ""
+    target: str = ""  # eg. curvefault_b_17
     n_samples: int = Field(4, gt=0)
     steps: int = Field(200, gt=0)  # sampler / reverse steps
     n_frames: int = Field(6, ge=0)  # trajectory snapshots per inversion run (0 = off)
@@ -244,9 +167,6 @@ class InversionConfig(Config):
             raise ValueError(
                 "inversion targets OpenFWI velocity maps (dataset=openfwi)"
             )
-        check_compatible(self.prior.name, self.method.name)
-        for entry in self.evaluation.methods:  # validate the sweep entries too
-            check_compatible(entry.prior.name, entry.method.name)
         return self
 
 
@@ -266,40 +186,21 @@ def main(dcfg: DictConfig) -> None:
     name = f"invert-{cfg.prior.name}-{cfg.method.name}"
     if cfg.method.misfit != "l2":
         name += f"-{cfg.method.misfit}"
-    if not cfg.obs.is_clean:
-        name += f"-obs{cfg.obs.min_freq_hz:g}hz" if cfg.obs.min_freq_hz else "-obsnoise"
     run = start_run(EXPERIMENT, run_dir, cfg.dump(), name=name)
 
-    # Guidance data-misfit, built lazily from d_obs (the OT potential precomputes its
-    # weights/CDFs from the observation). None keeps the samplers' hard-wired L2 path
-    # byte-identical for existing runs; a band-limited benchmark needs the factory even
-    # for L2 so predictions are filtered before comparison (the guidance-side half of F).
     misfit_factory = (
         None
-        if cfg.method.misfit == "l2" and cfg.obs.min_freq_hz <= 0.0
+        if cfg.method.misfit == "l2"
         else lambda d: make_misfit(
             cfg.method.misfit,
             d,
             ot_k=cfg.method.ot_k,
-            min_freq_hz=cfg.obs.min_freq_hz,
         )
     )
 
-    # Per-step diagnostic misfits: always log OT alongside the L2 data_fidelity (built lazily
-    # from d_obs like misfit_factory), so any run's OT-vs-step trajectory can be plotted from
-    # steps.jsonl without re-simulation. Cheap — reuses the prediction already computed each step.
     def build_diag_misfits(d: torch.Tensor) -> dict[str, object]:
-        return {
-            "ot": make_misfit(
-                "ot", d, ot_k=cfg.method.ot_k, min_freq_hz=cfg.obs.min_freq_hz
-            )
-        }
+        return {"ot": make_misfit("ot", d, ot_k=cfg.method.ot_k)}
 
-    # Composite trajectory grid (rows = samples, cols = t=0 → t=1) — the same renderer
-    # 0001/0002 log as "trajectory". make_step_saver stacks the snapshots on dim 0 and,
-    # for samplers that report their noisy state, interleaves (x_t, estimate) row pairs
-    # (0003's layout); frames arrive [n_frames, B, C, H, W] (or without C from the
-    # native-grid FWI path).
     def viz_traj(frames: torch.Tensor, path: Path) -> None:
         cfg.dataset.visualize_trajectory(
             frames if frames.ndim == 5 else frames[:, :, None], path
@@ -309,11 +210,6 @@ def main(dcfg: DictConfig) -> None:
     n = cfg.n_samples
 
     # Shared t=0 noise bank: draw every prior's initial noise from an explicit device
-    # Generator seeded with cfg.seed so the n samples are byte-identical across prior
-    # families/methods (flow vs diffusion) on *any* device. Previously this held only by
-    # accident on CUDA — model construction consumed the CPU RNG stream while the noise was
-    # drawn from the untouched CUDA stream; on CPU (or if init RNG usage changed) the two
-    # priors diverged. Drawn once here and reused for the guided and unguided passes.
     _noise_gen = torch.Generator(device=dev).manual_seed(cfg.seed)
 
     def init_noise() -> torch.Tensor:
@@ -330,27 +226,16 @@ def main(dcfg: DictConfig) -> None:
     ] = {}  # sample-0 trajectory frames, filled by the guided step saver
 
     if cfg.prior.name == "none":
-        # Classical / realistic FWI: no learned prior. Optimise the velocity map directly against
-        # the data misfit at native 70x70 (the forward operator's grid — dataset.resolution is the
-        # prior's training size, irrelevant here). guidance=0 => the starting model (control).
         from physics_informed_flow_map.inversion.bridge import NATIVE
         from physics_informed_flow_map.physics.classical import (
             multiscale_fwi,
             regularized_fwi,
         )
-        from physics_informed_flow_map.physics.filters import highpass
         from physics_informed_flow_map.physics.forward import simulate
 
         realistic = cfg.method.name == "realistic_fwi"
 
-        # Band-limited benchmark: the classical loops compare their own forward solves to
-        # d_obs, so their operator gets the same guidance-side high-pass (part of F).
-        if cfg.obs.min_freq_hz > 0.0:
-
-            def forward_op(v: torch.Tensor) -> torch.Tensor:
-                return highpass(simulate(v), cfg.obs.min_freq_hz, 1e-3)
-        else:
-            forward_op = simulate
+        forward_op = simulate
 
         def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
             run_it = guidance_strength != 0.0
@@ -417,14 +302,9 @@ def main(dcfg: DictConfig) -> None:
         )
 
         if cfg.method.name in _MFM_METHODS:
-            # Native flow-map steering (FlowMapSteerModule), adapted to the shared [-1, 1] Inverter
-            # contract. guidance=0 => base drift (unguided control: estimator "base", no solves).
             x0_mfm = (
                 init_noise()
             )  # shared t=0 noise, reused across guided/unguided passes
-            # Per-step captures for the MC-posterior grids: the noisy state x_t and the
-            # mc_samples posterior draws x1~p(x1|x_t) the estimator used, EVERY step of the
-            # guided pass (fp16 CPU to keep 30x4x200 frames light). Rendered after inversion.
             mc_cap: dict[str, list[torch.Tensor]] = {"xt": [], "mc": []}
 
             def invert(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
@@ -450,8 +330,6 @@ def main(dcfg: DictConfig) -> None:
                         mc_samples: torch.Tensor | None = None,
                         **scalars: float,
                     ) -> None:
-                        # Keep the existing trajectory grid + steps.jsonl (mc_samples is a
-                        # tensor, so it is captured here and NOT forwarded into scalars).
                         traj_saver(step, estimate, xt=xt, **scalars)
                         if xt is not None:
                             mc_cap["xt"].append(xt.detach().to(torch.float16).cpu())
@@ -477,7 +355,7 @@ def main(dcfg: DictConfig) -> None:
                     on_step=step_cb,
                     x0=x0_mfm,
                 )
-                return mps_to_norm(module.invert(d_obs).v_hat)[:, None]
+                return mps_to_norm(module.invert(d_obs).v_hat_resolution)[:, None]
 
             n_solves = (
                 cfg.steps * cfg.method.mc_samples * n
@@ -635,10 +513,6 @@ def main(dcfg: DictConfig) -> None:
             else cfg.steps
         ) * n
 
-    # Fixed-seed sampling for reproducible figures: invert_and_report runs a guided then an
-    # unguided pass, so re-seed before each so both start from identical noise (the guided/unguided
-    # panels track the same prior sample). Every sampler here draws from the global RNG, so a single
-    # re-seed covers all prior families/methods; safe because there is no training loop to perturb.
     _base_invert: Inverter = invert
 
     def invert_fn(d_obs: torch.Tensor, guidance_strength: float) -> torch.Tensor:
@@ -652,17 +526,7 @@ def main(dcfg: DictConfig) -> None:
     recon_out = run.ckpt_dir.parent / "reconstructions.npz"
     dobs_cmp_out = run.ckpt_dir.parent / "d_obs_inverted_vs_true.png"
     dobs_cmp_npz = run.ckpt_dir.parent / "d_obs_inverted_sample0.npz"
-    cmp_label = (
-        f"{_PRIOR_DISP.get(cfg.prior.name, cfg.prior.name)} + "
-        f"{_EST_DISP.get(cfg.method.name, cfg.method.name)} + {cfg.method.misfit.upper()}"
-    )
-
-    def solve_count() -> float:
-        # Total forward solves of the guided pass, resolved after it runs (FWI fills solves["n"];
-        # the other methods know it up front). unguided does no physics -> 0.
-        if cfg.method.name == "unguided":
-            return 0.0
-        return float(solves["n"]) if cfg.prior.name == "none" else float(n_solves)
+    cmp_label = f"{cfg.prior.name} +{cfg.method.name} + {cfg.method.misfit.upper()}"
 
     summary, caption = invert_and_report(
         invert_fn,
@@ -679,7 +543,6 @@ def main(dcfg: DictConfig) -> None:
         out_dobs_cmp_png=dobs_cmp_out,
         out_dobs_cmp_npz=dobs_cmp_npz,
         cmp_label=cmp_label,
-        cost=solve_count,
         misfit_factory=misfit_factory,
         obs_cfg=cfg.obs,
         traj_capture=traj_cap,
@@ -711,9 +574,6 @@ def main(dcfg: DictConfig) -> None:
                 caption=f"d_obs trajectory ({sc}) · {caption}",
             )
 
-    # MFM MC-posterior grids: one tall static grid per particle (rows = every step, cols =
-    # noisy x_t + the mc_samples posterior draws that step). Only the iwae/sne estimators
-    # populate mc_cap; dps/base draw no MC set, so this is skipped for them.
     if cfg.method.name in _MFM_METHODS and mc_cap["mc"]:
         from physics_informed_flow_map.inversion.mc_posterior_viz import (
             render_mc_posterior_grids,

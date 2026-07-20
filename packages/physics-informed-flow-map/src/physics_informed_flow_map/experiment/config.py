@@ -1,10 +1,11 @@
 """Typed experiment configuration: a pydantic schema validated from Hydra output.
 
-Each experiment framework subclasses :class:`Config`, declaring its knobs as typed
-fields. A ``run.py`` entry point composes a Hydra ``DictConfig`` from its ``conf/``
+The Config class supplements hydra (that assembles a raw config dict from files + CLI).
+
+Then the values are passed to Config, which only validates rather than overriding any configuration parameters.
+CLI overrides always has the highest priority, followed by the yaml files. The default values in the Config class are the lowest priority.
+A ``run.py`` entry point composes a Hydra ``DictConfig`` from its ``conf/``
 tree, then calls :meth:`Config.from_dictconfig` to validate it into the schema.
-Unknown keys are rejected (``extra="forbid"``), so a typo'd override fails loudly
-instead of being silently ignored.
 """
 
 from __future__ import annotations
@@ -18,18 +19,13 @@ T = TypeVar("T", bound="Config")
 
 
 class Config(BaseModel):
-    """Base for experiment configs. Validates strictly; serialises round-trippably."""
-
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid"
+    )  # so that unknown keys (eg. typo'd override) are rejected and fails loudly.
 
     @classmethod
     def from_dictconfig(cls: type[T], cfg: DictConfig) -> T:
-        """Validate a Hydra-composed ``DictConfig`` into this typed schema.
-
-        Resolves interpolations, converts to a plain container, then validates.
-        ``extra="forbid"`` turns any key not declared on the subclass into a
-        ``ValidationError``.
-        """
+        """Validate a Hydra-composed ``DictConfig`` into this typed schema."""
         container = OmegaConf.to_container(cfg, resolve=True)
         return cls.model_validate(container)
 

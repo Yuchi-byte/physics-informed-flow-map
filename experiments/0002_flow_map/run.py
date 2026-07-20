@@ -1,24 +1,6 @@
-"""Train a meta flow map (mfm, from scratch) on swappable datasets via Hydra.
-
-    uv run python experiments/0002_flow_map/run.py                       # gaussians
-    uv run python experiments/0002_flow_map/run.py experiment=mnist
-    uv run python experiments/0002_flow_map/run.py experiment=openfwi
-    uv run python experiments/0002_flow_map/run.py experiment=smoke
-
-Same harness as 0001 (same datasets/model/EMA/eval/checkpoint), but the loss adds mfm's
+"""Same harness as 0001 (same datasets/model/EMA/eval/checkpoint), but the loss adds mfm's
 off-diagonal ``s<u`` consistency term (enabled after ``flow_map_warmup_steps``), training a
 flow map that maps between arbitrary interpolant times — not just the noise→data diagonal.
-
-Two regimes, selected by ``training.teacher_ckpt``:
-  * unset → train from scratch (the self-contained ``mf`` target, no teacher).
-  * set to a 0001 checkpoint (local path or ``wandb`` artifact ref) → distil the off-diagonal
-    from that frozen prior (``esd_teacher``) and warm-start the student from it. Unconditional
-    datasets only (gaussians, openfwi); the conditional teacher path is ImageNet-specific in mfm.
-
-    uv run python experiments/0002_flow_map/run.py experiment=openfwi \\
-        training=teacher training.teacher_ckpt=runs/0001_flow_matching/<run>/checkpoints/step_9_ema.pt
-
-Validate on gaussians → mnist → openfwi. Logs held-out FM loss as the run summary scalar.
 """
 
 from __future__ import annotations
@@ -36,13 +18,6 @@ from physics_informed_flow_map.experiment import Config, start_run
 from physics_informed_flow_map.flow_matching.datasets import (
     DatasetConfig,
     GaussiansDatasetConfig,
-    OpenFWIDatasetConfig,
-)
-from physics_informed_flow_map.flow_matching.family_eval import (
-    N_ENERGY_SAMPLES,
-    family_reference_grid,
-    per_family_energy_distance,
-    per_family_val_loss,
 )
 from physics_informed_flow_map.flow_matching.models import (
     DiTModelConfig,
@@ -60,6 +35,8 @@ from physics_informed_flow_map.flow_matching.sample import (
     sample_trajectory,
 )
 from physics_informed_flow_map.flow_matching.train import make_loss_fn, train
+
+from physics_informed_flow_map.training.validate import assess_overfit
 
 EXPERIMENT = "0002_flow_map"
 
@@ -79,14 +56,9 @@ class TrainingConfig(Config):
     flow_map_warmup_steps: int = Field(
         1000, ge=0
     )  # off-diagonal term on after this step
-    flow_map_anneal_end: int = Field(20000, gt=0)
+    flow_map_anneal_end: int = Field(20000, ge=0)
     distillation_type: str = "mf"
     loss_weighting: str = "adaptive"
-    # Conditioning schedule. t_cond is mfm's "conditioning time" = the noise level at which the
-    # map is told it observed a context state x_cond along x_τ=(1-τ)·noise+τ·data: t_cond=0 sees
-    # pure noise (unconditional), t_cond>0 sees a partial observation, so the map learns the
-    # posterior p(data | x_{t_cond}) that inference steers (mfm's velocity API fixes the name
-    # `t_cond`). uncond_prob = P(a sample is unconditional, t_cond=0); 0.1 ⇒ 90% conditional.
     uncond_prob: float = Field(0.1, ge=0.0, le=1.0)  # mfm cfg key: t_cond_0_rate
     t_cond_power: float = Field(
         1.0, gt=0.0
@@ -100,9 +72,6 @@ class TrainingConfig(Config):
     eval_every_epochs: int = Field(0, ge=0)
     ckpt_every_epochs: int = Field(0, ge=0)
     precision: str = "fp32"  # "bf16" runs the loss forward under autocast
-    # Path to a raw-model checkpoint (step_<E>.pt) from a prior run: loads the weights and,
-    # when the checkpoint carries train_state, the optimizer/scheduler/EMA/step too, then
-    # continues at epoch E+1. n_epochs stays the TOTAL epoch count, not an increment.
     resume_from: str | None = None
     ema: EmaConfig = EmaConfig()
 
@@ -120,8 +89,10 @@ class SamplingConfig(Config):
         default_factory=lambda: [0.2, 0.4, 0.6, 0.8, 0.9]
     )
     n_eval_viz: int = Field(64, gt=0)
-    n_traj_viz: int = Field(4, gt=0)   # samples shown in the trajectory grid
-    traj_every_epochs: int = Field(20, gt=0)  # save a trajectory viz every N eval epochs
+    n_traj_viz: int = Field(4, gt=0)  # samples shown in the trajectory grid
+    traj_every_epochs: int = Field(
+        20, gt=0
+    )  # save a trajectory viz every N eval epochs
 
 
 class FlowMapConfig(Config):
@@ -236,14 +207,11 @@ def main(dcfg: DictConfig) -> None:
         distillation_type = "esd_teacher"
         print(f"[{EXPERIMENT}] distilling from teacher {cfg.training.teacher_ckpt}")
 
-    # Enable the x_cond posterior-conditioning pathway (mfm's dead-init trap; see the helper).
-    # After any warm-start so it copies the warm-started x_embedder.
     if activate_x_cond_conditioning(model):
         print(f"[{EXPERIMENT}] activated x_cond conditioning (copied x_embedder)")
 
     # Resume: load weights (after x_cond activation so the checkpoint's trained embedder
-    # wins) and hand the checkpoint's train_state to the loop. Weights-only checkpoints
-    # (pre-resume-support) fall back to epoch-only resume with a fresh optimizer.
+    # wins) and hand the checkpoint's train_state to the loop.
     resume_state: dict | None = None
     if cfg.training.resume_from:
         ckpt = torch.load(
@@ -280,28 +248,15 @@ def main(dcfg: DictConfig) -> None:
     )
     val_loss_fn = make_loss_fn(cfg.dataset.num_classes)  # step=0 → pure-FM diagonal
 
-    # OpenFWI: per-family val losses + a one-time real-map reference grid (unconditional
-    # prior → samples can't be stratified by family; see family_eval module docstring).
-    val_by_family = (
-        cfg.dataset.build_val_by_family()
-        if isinstance(cfg.dataset, OpenFWIDatasetConfig)
-        else None
-    )
-    if val_by_family is not None:
-        ref_path = run.log_dir / "val_reference.png"
-        family_reference_grid(val_by_family, ref_path)
-        run.log_image(
-            "val_reference", ref_path, caption="held-out real maps per family"
-        )
-        run.update_config(dataset_fingerprint=cfg.dataset.fingerprint())
-
     # Fixed held-out references for the posterior-reconstruction panel.
     ref_batch = next(iter(val_loader))[0][: cfg.sampling.posterior_refs].to(device)
 
     # Fixed noise for reproducible per-epoch visualizations: same starting points every eval,
     # so the grids track model improvement on identical samples rather than fresh random draws.
     g = torch.Generator(device=device).manual_seed(cfg.seed)
-    eval_noise = torch.randn(cfg.sampling.n_eval_viz, *cfg.dataset.shape, device=device, generator=g)
+    eval_noise = torch.randn(
+        cfg.sampling.n_eval_viz, *cfg.dataset.shape, device=device, generator=g
+    )
     traj_noise = eval_noise[: cfg.sampling.n_traj_viz]
 
     @torch.no_grad()
@@ -311,26 +266,21 @@ def main(dcfg: DictConfig) -> None:
 
     @torch.no_grad()
     def compute_val_loss(m: BaseModel) -> tuple[float, dict[str, float]]:
-        """Global val loss + per-family val losses (empty dict for non-OpenFWI)."""
         m.eval()
-        if val_by_family is not None:
-            return per_family_val_loss(
-                lambda xb, lb: _batch_val_loss(m, xb, lb),
-                val_by_family,
-                cfg.training.batch_size,
-            )
         total, n = 0.0, 0
         for xb, lb in val_loader:
             total += _batch_val_loss(m, xb, lb)
             n += 1
-        return total / max(n, 1), {}
+        return total / max(n, 1)
 
     # Junction times of the few-step sampler — where the off-diagonal consistency metric
     # compares flow-map jumps against the fine ODE (must land on the ODE's Euler grid).
-    junction_ts = [k / cfg.sampling.few_steps for k in range(cfg.sampling.few_steps + 1)]
+    junction_ts = [
+        k / cfg.sampling.few_steps for k in range(cfg.sampling.few_steps + 1)
+    ]
 
     def on_eval(m: BaseModel, epoch: int) -> float | None:
-        s, ode_states = sample(
+        generated_sample, ode_states = sample(
             m,
             cfg.sampling.n_eval_viz,
             cfg.dataset.shape,
@@ -339,8 +289,9 @@ def main(dcfg: DictConfig) -> None:
             x_noise=eval_noise,
             return_states_at=junction_ts,
         )
+
         p = run.ckpt_dir.parent / f"samples_epoch{epoch}.png"
-        cfg.dataset.visualize(s, p)
+        cfg.dataset.visualize(generated_sample, p)
         run.log_image("samples", p, caption=f"epoch {epoch + 1} ODE")
         if (epoch + 1) % cfg.sampling.traj_every_epochs == 0:
             states, x1hats = sample_trajectory(
@@ -359,7 +310,7 @@ def main(dcfg: DictConfig) -> None:
                 pt,
                 caption=f"epoch {epoch + 1} ODE trajectory (row pairs: x_t, x1hat)",
             )
-        sf, few_hist = sample_few_step(
+        few_step_generated_sample, few_hist = sample_few_step(
             m,
             cfg.sampling.n_eval_viz,
             cfg.dataset.shape,
@@ -369,7 +320,7 @@ def main(dcfg: DictConfig) -> None:
             return_hist=True,
         )
         pf = run.ckpt_dir.parent / f"samples_fewstep_epoch{epoch}.png"
-        cfg.dataset.visualize(sf, pf)
+        cfg.dataset.visualize(few_step_generated_sample, pf)
         run.log_image(
             "samples_fewstep",
             pf,
@@ -397,9 +348,40 @@ def main(dcfg: DictConfig) -> None:
             pr,
             caption=f"epoch {epoch + 1}: rows=refs, cols=[ref, t={t_grid}]",
         )
-        val_loss, fam_losses = compute_val_loss(m)
-        if fam_losses:
-            run.log(epoch=epoch, **{f"val/loss/{f}": v for f, v in fam_losses.items()})
+
+        # Assess whether the generated images are overfitting by comparing with all training images.
+        min_mse_train_sample, min_mse = assess_overfit(generated_sample, loader)
+        min_mse_train_sample_few_step, min_mse_few_step = assess_overfit(
+            few_step_generated_sample, loader
+        )
+        # plot the images with the lowest mse side by side.
+
+        assess_overfit_p = run.ckpt_dir.parent / "assess_overfit.png"
+        cfg.dataset.visualize(min_mse_train_sample, assess_overfit_p)
+        run.log_image(
+            "assess_overfit",
+            assess_overfit_p,
+            caption=f"assess_overfit: min_mse={min_mse.mean().item():.4f}",
+        )
+        run.log(
+            epoch=epoch, **{"overfit/min_mse_training_image": min_mse.mean().item()}
+        )
+
+        assess_overfit_pf = run.ckpt_dir.parent / "assess_overfit_few_step.png"
+        cfg.dataset.visualize(min_mse_train_sample_few_step, assess_overfit_pf)
+        run.log_image(
+            "assess_overfit_few_step",
+            assess_overfit_pf,
+            caption=f"assess_overfit_few_step: min_mse={min_mse_few_step.mean().item():.4f}",
+        )
+        run.log(
+            epoch=epoch,
+            **{
+                "overfit/min_mse_training_image_few_step": min_mse_few_step.mean().item()
+            },
+        )
+
+        val_loss = compute_val_loss(m)
         return val_loss
 
     on_checkpoint = run.checkpoint_callback(
@@ -443,25 +425,11 @@ def main(dcfg: DictConfig) -> None:
     final_loss = sum(last) / len(last)
     eval_model = ema_model if ema_model is not None else model
 
-    final_val_loss, final_fam_losses = compute_val_loss(eval_model)
+    final_val_loss = compute_val_loss(eval_model)
     summary: dict[str, float] = {
         "val/loss": final_val_loss,
         "train/final_loss": final_loss,
     }
-    summary.update({f"val/loss/{f}": v for f, v in final_fam_losses.items()})
-    if val_by_family is not None:
-        # One shared generated pool vs each family's held-out maps: does the unconditional
-        # prior cover every family's region of velocity-map space?
-        pool = sample(
-            eval_model,
-            N_ENERGY_SAMPLES,
-            cfg.dataset.shape,
-            sampler_steps=cfg.sampling.sampler_steps,
-            device=device,
-        )
-        assert isinstance(pool, torch.Tensor)  # no return_states_at -> samples only
-        energies = per_family_energy_distance(pool, val_by_family)
-        summary.update({f"val/energy/{f}": v for f, v in energies.items()})
     run.finish(**summary)
 
 

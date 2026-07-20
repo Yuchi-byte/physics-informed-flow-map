@@ -110,7 +110,7 @@ class FlowMapSteerModule:
         # one extra wave solve per posterior sample per step, only when the hook is set.
         self.on_step = on_step
 
-    def invert(self, d_obs: Tensor) -> InversionResult:
+    def invert(self, d_obs: Tensor, invert_scalar=None) -> InversionResult:
         misfit_fn = self.misfit_factory(d_obs) if self.misfit_factory else None
         self._diag = self.diag_misfit_factory(d_obs) if self.diag_misfit_factory else {}
         drift_fn = get_conditional_drift_fn(
@@ -133,10 +133,8 @@ class FlowMapSteerModule:
         x1 = self._sample(x0, drift_fn, d_obs)
         # Wave solves: mc_samples reward sims per step per posterior sample (base drift is a
         # network eval, not a solve). dps uses one Tweedie sim per step.
-        per = 1 if self.drift_estimator == "dps" else self.mc_samples
-        return InversionResult(
-            to_mps_native(x1), n_solves=self.n_steps * per * self.n_samples
-        )
+
+        return InversionResult(torch.squeeze(x1), to_mps_native(x1))
 
     def _sample(
         self,
@@ -172,7 +170,8 @@ class FlowMapSteerModule:
                 mc = ret.get("mc_x1_data")
                 mc_norm = mps_to_norm(mc) if mc is not None else None
                 diag = {
-                    f"misfit_{k}": float(fn(pred).mean()) for k, fn in self._diag.items()
+                    f"misfit_{k}": float(fn(pred).mean())
+                    for k, fn in self._diag.items()
                 }
                 self.on_step(
                     i,

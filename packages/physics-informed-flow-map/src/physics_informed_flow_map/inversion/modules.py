@@ -68,7 +68,7 @@ class FlowTiltModule:
             normalize_grad=self.normalize_grad,
             misfit_fn=self.misfit_factory(d_obs) if self.misfit_factory else None,
         )
-        return InversionResult(to_mps_native(samples), n_solves=self.steps * b)
+        return InversionResult(torch.squeeze(samples), to_mps_native(samples))
 
 
 class ClassicalFWIModule:
@@ -110,7 +110,7 @@ class ClassicalFWIModule:
             init=self.init,
             device=self.device,
         )
-        return InversionResult(v_mps, n_solves=n_solves)
+        return InversionResult(v_mps, v_mps)
 
 
 class RealisticFWIModule:
@@ -155,7 +155,7 @@ class RealisticFWIModule:
             optimizer=self.optimizer,
             device=self.device,
         )
-        return InversionResult(v_mps, n_solves=n_solves)
+        return InversionResult(v_mps, v_mps)
 
 
 class DiffusionDPSModule:
@@ -200,9 +200,7 @@ class DiffusionDPSModule:
             normalize_grad=self.normalize_grad,
             misfit_fn=self.misfit_factory(d_obs) if self.misfit_factory else None,
         )
-        return InversionResult(
-            to_mps_native(samples), n_solves=self.steps * self.n_samples
-        )
+        return InversionResult(torch.squeeze(samples), to_mps_native(samples))
 
 
 class REDDiffEqModule:
@@ -254,6 +252,4 @@ class REDDiffEqModule:
             normalize_grad=self.normalize_grad,
             misfit_fn=self.misfit_factory(d_obs) if self.misfit_factory else None,
         )
-        return InversionResult(
-            to_mps_native(samples), n_solves=self.iters * self.n_samples
-        )
+        return InversionResult(torch.squeeze(samples), to_mps_native(samples))

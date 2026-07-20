@@ -109,11 +109,6 @@ def make_loss_fn(
     t_cond_power: float = 1.0,
     t_cond_warmup_steps: int = 0,
 ) -> Callable[..., Any]:
-    """mfm's SI consistency loss. Defaults to pure FM (off-diagonal disabled); a finite
-    ``num_warmup_steps`` enables the ``s<u`` flow-map term. ``loss_weighting="adaptive"`` uses
-    mfm's per-sample adaptive reweighting. ``uncond_prob<1`` trains the intermediate-state
-    posterior (the time-conditional flow map). Used for train and (at ``step=0``, so always
-    pure-FM) validation."""
     return cast(
         Callable[..., Any],
         get_consistency_loss_fn(

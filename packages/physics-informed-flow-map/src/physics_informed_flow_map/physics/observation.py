@@ -21,26 +21,32 @@ pure). Noise is added *after* band-limiting and stays broadband: the field situa
 
 from __future__ import annotations
 
-import zlib
 from dataclasses import dataclass
 
-import torch
 from pydantic import BaseModel, Field
 from torch import Tensor
 
-from .filters import highpass
 from .forward import simulate
 
 
 class ObservationConfig(BaseModel):
-    """How ``d_obs`` is generated from a true velocity map. Defaults = today's clean
-    inverse-crime benchmark, bit-for-bit."""
+    """How ``d_obs`` is generated from a true velocity map."""
 
-    min_freq_hz: float = Field(0.0, ge=0.0, description="high-pass ('missing lows'); 0=off")
-    noise_frac: float = Field(0.0, ge=0.0, description="sigma as a fraction of clean-data RMS")
-    noise_seed: int = Field(0, description="combined with the target key -> frozen realization")
-    grid_scale: int = Field(1, ge=1, description="generation-operator grid refinement (mismatch)")
-    wavelet_freq_scale: float = Field(1.0, gt=0.0, description="generation wavelet centre-freq multiplier")
+    min_freq_hz: float = Field(
+        0.0, ge=0.0, description="high-pass ('missing lows'); 0=off"
+    )
+    noise_frac: float = Field(
+        0.0, ge=0.0, description="sigma as a fraction of clean-data RMS"
+    )
+    noise_seed: int = Field(
+        0, description="combined with the target key -> frozen realization"
+    )
+    grid_scale: int = Field(
+        1, ge=1, description="generation-operator grid refinement (mismatch)"
+    )
+    wavelet_freq_scale: float = Field(
+        1.0, gt=0.0, description="generation wavelet centre-freq multiplier"
+    )
 
     @property
     def is_clean(self) -> bool:
@@ -58,8 +64,12 @@ class Observation:
     """A fixed observation: the data, and (when noise is on) the matched-σ bookkeeping."""
 
     d_obs: Tensor
-    sigma: float | None  # observation-noise std; None on noiseless configs (no principled value)
-    noise_floor: float | None  # E ||F(v_true) - d_obs||^2 = sigma^2 * numel (chi^2 mean)
+    sigma: (
+        float | None
+    )  # observation-noise std; None on noiseless configs (no principled value)
+    noise_floor: (
+        float | None
+    )  # E ||F(v_true) - d_obs||^2 = sigma^2 * numel (chi^2 mean)
 
 
 def observe(
@@ -81,16 +91,4 @@ def observe(
         freq_scale=cfg.wavelet_freq_scale,
         **sim_kwargs,  # type: ignore[arg-type]
     ).detach()
-    dt = float(sim_kwargs.get("dt", 1e-3))  # type: ignore[arg-type]
-    d_clean = highpass(d_clean, cfg.min_freq_hz, dt)
-    if cfg.noise_frac <= 0.0:
-        return Observation(d_obs=d_clean, sigma=None, noise_floor=None)
-    sigma = cfg.noise_frac * float(d_clean.pow(2).mean().sqrt())
-    gen = torch.Generator(device="cpu").manual_seed(
-        zlib.crc32(f"{key}|s{cfg.noise_seed}".encode())
-    )
-    eta = torch.randn(d_clean.shape, generator=gen, dtype=torch.float64)
-    d_obs = d_clean + sigma * eta.to(device=d_clean.device, dtype=d_clean.dtype)
-    return Observation(
-        d_obs=d_obs, sigma=sigma, noise_floor=sigma**2 * d_clean.numel()
-    )
+    return Observation(d_obs=d_clean, sigma=None, noise_floor=None)

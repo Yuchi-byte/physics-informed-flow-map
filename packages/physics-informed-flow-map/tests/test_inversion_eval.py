@@ -49,10 +49,9 @@ def test_aggregate_mean_std() -> None:
     pt_b = score_target(
         torch.stack([v_true + 900.0]), v_true, _identity(v_true), _identity
     )  # MAE 0.6
-    stats = InversionStats.aggregate("m", [pt_a, pt_b], solves=[7, 7])
+    stats = InversionStats.aggregate("m", [pt_a, pt_b])
 
     assert stats.n_targets == 2
-    assert stats.n_solves == 7.0
     assert abs(stats.agg["mae_mean"] - 0.4) < 1e-4  # mean(0.2, 0.6)
     assert abs(stats.agg["mae_std"] - 0.2) < 1e-4  # population std
 
@@ -63,14 +62,16 @@ def test_evaluator_loops_targets() -> None:
 
         def invert(self, d_obs: torch.Tensor) -> InversionResult:
             # Always returns 1500 m/s (-> -1 normalised): exact on target 0, off on target 1.
-            return InversionResult(torch.full((2, 8, 8), 1500.0), n_solves=5)
+            return InversionResult(
+                torch.full((2, 8, 8), 1500.0), torch.full((2, 8, 8), 1500.0)
+            )
 
     targets = [(0, torch.full((8, 8), 1500.0)), (1, torch.full((8, 8), 1800.0))]
     ev = Evaluator(targets, device=torch.device("cpu"), simulate_fn=_identity)
     stats = ev.evaluate(DummyModule())
 
     assert stats.module == "dummy"
-    assert stats.n_targets == 2 and stats.n_solves == 5.0
+    assert stats.n_targets == 2
     # Normalised MAE: 0 on target 0, |−1 − (−0.8)| = 0.2 on target 1 -> mean 0.1.
     assert abs(stats.agg["mae_mean"] - 0.1) < 1e-4
 

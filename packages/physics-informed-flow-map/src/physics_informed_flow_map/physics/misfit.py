@@ -48,7 +48,6 @@ from typing import Callable
 import torch
 from torch import Tensor
 
-from .filters import highpass
 
 # A misfit functional: predicted data (B, *trace_dims, nt) -> per-sample misfit (B,).
 # Sum over the batch for a guidance loss; per-sample values feed the MFM steering reward.
@@ -62,30 +61,15 @@ def make_misfit(
     d_obs: Tensor,
     *,
     ot_k: float = 100.0,
-    min_freq_hz: float = 0.0,
-    dt: float = 1e-3,
 ) -> MisfitFn:
-    """Build the named misfit against a fixed observation (``l2`` | ``ot``).
-
-    ``min_freq_hz > 0`` applies the benchmark's zero-phase high-pass to *predictions*
-    before the base misfit — the guidance-side half of the band-limited operator F
-    (``d_obs`` arrives already filtered from ``physics.observation.observe``; applying the
-    identical ``filters.highpass`` on both sides keeps the band limit part of F exactly,
-    design spec 2026-07-11 §2). ``dt`` is the record sampling interval the filter needs.
-    """
+    """Build the named misfit against a fixed observation (``l2`` | ``ot``)."""
     if name == "l2":
         base = l2_misfit(d_obs)
     elif name == "ot":
         base = OTMisfit(d_obs, k=ot_k)
     else:
         raise ValueError(f"unknown misfit '{name}' ({' | '.join(MISFITS)})")
-    if min_freq_hz <= 0.0:
-        return base
-
-    def banded(pred: Tensor) -> Tensor:
-        return base(highpass(pred, min_freq_hz, dt))
-
-    return banded
+    return base
 
 
 def l2_misfit(d_obs: Tensor) -> MisfitFn:

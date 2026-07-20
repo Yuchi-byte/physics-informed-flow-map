@@ -53,7 +53,10 @@ def test_ot_batch_shape() -> None:
     nt = 96
     d_obs = torch.stack([ricker(nt, 0.3), ricker(nt, 0.6)]).reshape(2, 1, nt)
     pred = torch.stack(
-        [torch.stack([ricker(nt, c), ricker(nt, c + 0.2)]).reshape(2, 1, nt) for c in (0.3, 0.4, 0.5)]
+        [
+            torch.stack([ricker(nt, c), ricker(nt, c + 0.2)]).reshape(2, 1, nt)
+            for c in (0.3, 0.4, 0.5)
+        ]
     )
     j = OTMisfit(d_obs)(pred)
     assert j.shape == (3,)
@@ -151,44 +154,3 @@ def test_ot_shape_mismatch_raises() -> None:
         pass
     else:
         raise AssertionError("mismatched trace shape must raise")
-
-
-def test_min_freq_wrapper_filters_predictions() -> None:
-    """The band-limited wrapper high-passes predictions before the base misfit: a pure
-    low-frequency prediction error becomes invisible; gradients still flow."""
-    import math
-
-    from physics_informed_flow_map.physics.filters import highpass
-    from physics_informed_flow_map.physics.misfit import make_misfit
-
-    dt = 1e-3
-    nt = 512
-    t = torch.arange(nt) * dt
-    win = torch.hann_window(nt)
-    base_sig = (torch.sin(2 * math.pi * 80 * t) * win).expand(1, 2, 3, nt)
-    d_obs = highpass(base_sig[0], 40.0, dt)  # observation arrives already band-limited
-
-    lo_err = (torch.sin(2 * math.pi * 8 * t) * win).expand(1, 2, 3, nt)
-    fn = make_misfit("l2", d_obs, min_freq_hz=40.0, dt=dt)
-    # Prediction = truth + pure low-frequency error -> in-band misfit ~ 0.
-    assert float(fn(base_sig + lo_err)) < 1e-6 * float(lo_err.pow(2).sum())
-    # Same error, unfiltered misfit: large (sanity that the wrapper is doing the work).
-    plain = make_misfit("l2", d_obs)
-    assert float(plain(base_sig + lo_err)) > 0.5 * float(lo_err.pow(2).sum())
-    # Gradient flows through the filter (guidance path).
-    pred = (base_sig + lo_err).clone().requires_grad_(True)
-    fn(pred).sum().backward()
-    assert pred.grad is not None and torch.isfinite(pred.grad).all()
-
-
-def test_min_freq_wrapper_composes_with_ot() -> None:
-    from physics_informed_flow_map.physics.misfit import make_misfit
-
-    torch.manual_seed(0)
-    d_obs = torch.randn(2, 3, 256)
-    pred = torch.randn(1, 2, 3, 256, requires_grad=True)
-    fn = make_misfit("ot", d_obs, ot_k=100.0, min_freq_hz=20.0, dt=1e-3)
-    val = fn(pred)
-    assert val.shape == (1,)
-    val.sum().backward()
-    assert pred.grad is not None and torch.isfinite(pred.grad).all()

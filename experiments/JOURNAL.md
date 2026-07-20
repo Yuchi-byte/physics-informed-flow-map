@@ -141,3 +141,10 @@ Format: `NNNN_slug/variant — headline metric (evidence)`
 * elastic FWI as opposed to acoustic FWI gives better estimates of the parameter models. Even just the velocity parameter. And it's more useful to the field. 
     * method: literature review. Ask field geologists whether elastic FWI is an untrodden frontier. 
     * why? Appling flow map to elastic FWI may have more practical value than acoustic FWI. 
+
+## Experiments 2026-07-18
+
+check mfm renorm=true works better (the change is already made to the configs). 
+run on curvefault_b_17, and Use L2 and OT, use mfm prior, drfit estimate = dps (and then try iwae). visualise the monte-carlo samples for iwae. Overall use n_samples =10 adn visualise their trajectory. All the codes are already in place in 0004 inversion, just make sure you turn on the correct switches. Also vary steps: 10, 200, 400. 
+turn off wandb. Everything should produce a folder in runs with the visualisation as we normally do. Make sure the evolution of d_obs (in log scale) is visualised too (code already exists). 
+Then in this chat, give me a summary statistics of all the runs so that i can compare. 

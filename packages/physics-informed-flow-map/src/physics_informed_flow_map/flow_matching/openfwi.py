@@ -79,7 +79,10 @@ class OpenFWIVelocityDataset(Dataset):
 
     def __getitem__(self, idx: int) -> tuple[Tensor, int]:
         x = torch.from_numpy(self._data[idx].copy()).float()
-        x = ((x - VMIN) / (VMAX - VMIN) * 2.0 - 1.0).clamp(-1.0, 1.0)
+        x = (x - VMIN) / (VMAX - VMIN) * 2.0 - 1.0
+        assert x.max() <= 1 and x.min() >= -1, (
+            "the traing velocity dataset has failed to normalise"
+        )
         if self.resolution != NATIVE:
             x = F.interpolate(
                 x[None],

@@ -38,13 +38,15 @@ def _make_gaussians(
     seed: int = 0,
 ) -> Dataset:
     g = torch.Generator().manual_seed(seed)
-    angles = 2 * math.pi * torch.arange(n_modes) / n_modes # shape is (n_modes,)
+    angles = 2 * math.pi * torch.arange(n_modes) / n_modes  # shape is (n_modes,)
     centers = torch.stack(
         [radius * torch.cos(angles), radius * torch.sin(angles)], dim=1
-    ) # shape is (n_modes, 2)
-    idx = torch.randint(0, n_modes, (n_samples,), generator=g) # shape is (n_samples,)
-    x = centers[idx] + std * torch.randn(n_samples, 2, generator=g) # shape is (n_samples, 2)
-    labels = torch.zeros(n_samples, dtype=torch.long) # shape is (n_samples,)
+    )  # shape is (n_modes, 2)
+    idx = torch.randint(0, n_modes, (n_samples,), generator=g)  # shape is (n_samples,)
+    x = centers[idx] + std * torch.randn(
+        n_samples, 2, generator=g
+    )  # shape is (n_samples, 2)
+    labels = torch.zeros(n_samples, dtype=torch.long)  # shape is (n_samples,)
     return TensorDataset(x.float(), labels)
 
 
@@ -289,14 +291,6 @@ class OpenFWIDatasetConfig(Config):
         full, train_idx, _ = self._split()
         train: Dataset = Subset(full, train_idx)
         return RandomHFlip(train) if self.hflip else train
-
-    def build_val_by_family(self) -> dict[str, Dataset]:
-        """The val split partitioned by family (for per-family eval metrics)."""
-        full, _, val_idx = self._split()
-        return {
-            family: Subset(full, [i for i in val_idx if sl.start <= i < sl.stop])
-            for family, sl in zip(full.family_names, full.family_slices)
-        }
 
     def build_val(self) -> Dataset:
         full, _, val_idx = self._split()

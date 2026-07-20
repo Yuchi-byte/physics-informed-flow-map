@@ -102,7 +102,9 @@ def fmrg_e_sample(
                     g_norm = grad.flatten(1).norm(dim=1).clamp_min(1e-12)
                     grad = grad / g_norm.view(-1, *([1] * (grad.ndim - 1)))
                     grad = grad * v_norm.view(-1, *([1] * (grad.ndim - 1)))
-                x1_opt = (x1_opt - guidance_strength * grad).detach().requires_grad_(True)
+                x1_opt = (
+                    (x1_opt - guidance_strength * grad).detach().requires_grad_(True)
+                )
 
             x1_opt = x1_opt.detach()
             correction = x1_opt - x1_hat
@@ -117,7 +119,8 @@ def fmrg_e_sample(
             data_fidelity = float(((forward_fn(x1_opt.detach()) - d_obs) ** 2).mean())
             correction_norm = float(correction.flatten(1).norm(dim=1).mean())
             on_step(
-                i, x1_opt.detach(),
+                i,
+                x1_opt.detach(),
                 xt=x.detach(),
                 data_fidelity=data_fidelity,
                 correction_norm=correction_norm,
@@ -166,7 +169,9 @@ class FmrgEModule:
         b = self.n_samples
         x0 = torch.randn(b, 1, self.resolution, self.resolution, device=self.device)
         t_cond = torch.zeros(b, device=self.device)
-        x_cond = torch.zeros_like(x0)  # explicit zeros: marginal (unconditional) velocity
+        x_cond = torch.zeros_like(
+            x0
+        )  # explicit zeros: marginal (unconditional) velocity
 
         def velocity_fn(x: Tensor, t: float) -> Tensor:
             tb = torch.full((b,), t, device=self.device)
@@ -184,6 +189,6 @@ class FmrgEModule:
             misfit_fn=self.misfit_factory(d_obs) if self.misfit_factory else None,
         )
         return InversionResult(
+            torch.squeeze(samples),
             to_mps_native(samples),
-            n_solves=self.steps * self.n_opt * b,
         )

@@ -1,4 +1,4 @@
 name: openfwi
 data_dir: data/openfwi
-families: [FlatVel_A]
+families: [CurveFault_B]
 resolution: 64

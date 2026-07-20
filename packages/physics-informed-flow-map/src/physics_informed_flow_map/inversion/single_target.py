@@ -22,7 +22,6 @@ import torch
 from torch import Tensor
 
 from ..flow_matching.datasets import OpenFWIDatasetConfig
-from ..physics.filters import highpass
 from ..physics.misfit import MisfitFn
 from ..physics.observation import Observation, ObservationConfig, observe
 from .benchmark import InversionBenchmark
@@ -40,7 +39,8 @@ def load_target(
     device: torch.device,
     *,
     target: str | None = None,
-    benchmark_root: Path | str = "data/inversion_bench",
+    benchmark_root: Path
+    | str = "/home/markhaoxiang/Projects/physics-informed-flow-map/data/inversion_bench",
     obs_cfg: ObservationConfig | None = None,
 ) -> tuple[int, str, Tensor, Observation]:
     """``(global_index, label, v_true native 70x70 m/s, observation)``.
@@ -109,20 +109,12 @@ def invert_and_report(
     only *adds* ``inv/guidance_misfit_{guided,unguided}`` to the summary — the scored metrics
     (MAE/RMSE/SSIM and the L2 misfit ratio) never change with the guidance misfit, so runs stay
     comparable across ``method.misfit`` settings.
-
-    ``obs_cfg`` selects the benchmark track. Under a band limit the L2 misfit metrics are
-    computed on high-passed predictions (the in-band operator F — a full-band comparison
-    would carry an unfixable low-band residual); with noise on, ``inv/misfit_over_floor``
-    reports the guided misfit against the known χ² noise floor (≈1 is perfect; <1 means
-    fitting noise) and ``inv/sigma_true`` records the matched σ.
     """
     gidx, label, v_true, observation = load_target(
         dataset_cfg, target_index, device, target=target, obs_cfg=obs_cfg
     )
     d_obs = observation.d_obs
-    min_freq = obs_cfg.min_freq_hz if obs_cfg is not None else 0.0
     print(f"target: {label} (global index {gidx}, native {tuple(v_true.shape)})")
-
     if out_obs_png is not None:
         base = out_obs_png.with_suffix("")  # accept "d_obs" or "d_obs.png"
         for sc in dobs_scales:
@@ -141,12 +133,10 @@ def invert_and_report(
     rmse = ((vh - vt) ** 2).mean(dim=(1, 2)).sqrt()
     ssim_mean = sum(ssim(vh[i], vt) for i in range(n)) / n
     with torch.no_grad():
-        pred_g_raw = seismic_forward(guided)
-        pred_u_raw = pred_g_raw if gs == 0.0 else seismic_forward(unguided)
+        pred_g = seismic_forward(guided)
+        pred_u = pred_g if gs == 0.0 else seismic_forward(unguided)
         # In-band comparison: the band limit is part of F (both sides); raw predictions
         # are kept for the guidance-misfit summary, whose factory applies its own filter.
-        pred_g = highpass(pred_g_raw, min_freq, 1e-3) if min_freq > 0.0 else pred_g_raw
-        pred_u = highpass(pred_u_raw, min_freq, 1e-3) if min_freq > 0.0 else pred_u_raw
     dm_g = ((pred_g - d_obs) ** 2).sum(dim=(1, 2, 3))
     dm_u = ((pred_u - d_obs) ** 2).sum(dim=(1, 2, 3))
     ratio = float(dm_g.mean() / dm_u.mean())
@@ -260,8 +250,8 @@ def invert_and_report(
     if misfit_factory is not None:
         with torch.no_grad():
             gm = misfit_factory(d_obs)  # applies its own band filter to raw predictions
-            summary["inv/guidance_misfit_guided"] = float(gm(pred_g_raw).mean())
-            summary["inv/guidance_misfit_unguided"] = float(gm(pred_u_raw).mean())
+            summary["inv/guidance_misfit_guided"] = float(gm(pred_g).mean())
+            summary["inv/guidance_misfit_unguided"] = float(gm(pred_u).mean())
     return summary, f"{method_name} · {label}"
 
 

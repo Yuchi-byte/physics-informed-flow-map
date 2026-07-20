@@ -7,16 +7,6 @@ product is what inference-time tilting / posterior sampling will use.
 
 Defaults match the OpenFWI Vel/Fault/Style acquisition: a 70x70 grid at 10 m spacing,
 5 surface Ricker sources at 15 Hz, 70 surface receivers, 1001 samples at 1 ms.
-
-Hardened-benchmark knobs (design spec 2026-07-11; all default to today's behavior):
-``grid_scale`` / ``freq_scale`` implement *generation-operator mismatch* (kill the inverse
-crime) — solve on a ``grid_scale``-times refined discretization (same physical survey,
-different numerical dispersion) and/or perturb the wavelet centre frequency, then return
-data on the standard ``(n_sources, n_receivers, nt)`` axes. The guidance operator keeps
-the defaults — that difference is the point. Band-limiting ("missing lows") is *not* a
-``simulate`` knob: it is applied to data by ``physics.filters.highpass``, identically on
-the generation side (``observe``) and the guidance/eval side, so the band limit is part of
-the operator F on both sides exactly by construction.
 """
 
 from __future__ import annotations

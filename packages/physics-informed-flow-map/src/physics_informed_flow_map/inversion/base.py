@@ -19,13 +19,11 @@ class InversionResult:
     """What an :class:`InversionModule` returns for one observation.
 
     Attributes:
-        v_hat: ``(n_samples, H, W)`` posterior velocity samples in m/s, native resolution.
-        n_solves: forward (PDE) solves consumed — the dominant FWI cost, for matched-cost
-            comparison across methods.
+        v_hat: ``(n_samples, H, W)`` posterior velocity samples in m/s. Same resolution as training dataloader's velocity map (i.e. that used for training the model).
     """
 
-    v_hat: Tensor
-    n_solves: int
+    v_hat_resolution: Tensor
+    v_hat_native: Tensor
 
 
 @runtime_checkable

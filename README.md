@@ -40,3 +40,32 @@ python scripts/train_custom.py \
     data_dir=/workspace/data/openfwi \
     trainer.batch_size=16
 ```
+
+## connect runpod to other ssh server
+
+Step 1 — On your local machine: connect to the pod with agent forwarding
+
+ssh-add ~/.ssh/id_ed25519
+ssh -A root@213.173.108.40 -p 36015
+
+Step 2 — On the pod (still on local machine): run it in tmux. Do the next two commands one by one. 
+
+tmux new -s xfer 
+
+rsync -avP -e "ssh -J tunneluser@xxx.xxx.xxx.xx -p 2xxx" \
+  /workspace/runs \
+  /workspace/marmousi \
+  xxx@localhost:destination/path
+
+## connect to headless vscode so that the training continues even when connection is down locally. 
+Step 1 -- connect to the ssh server. 
+ssh xxxxx 
+
+Step 2 run in tmux 
+tmux new -s name_of_the_session
+
+Step 3 follow the prompt and url to sign into github and grant permission. Then open the url so that the vscode UI opens in a browser like google chrome. 
+
+Step 4 in the remote vscode, do whatever is needed for the training as normal.
+
+Step 5 to quit the tmux session, Press Ctrl + b, then press : (colon) to open the command prompt. Type kill-session and press Enter.

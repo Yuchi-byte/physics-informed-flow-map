@@ -18,12 +18,22 @@ uv run python experiments/0004_inversion/run.py \
   prior=flow_map method=flow_tilt method.misfit=ot target=flatvel_a_legacy_6044 steps=5
 ```
 
-Flow-matching prior, L2 misfit:
+Flow-matching prior:
 
 ```
 uv run python experiments/0004_inversion/run.py \
-  prior=flow_matching method=flow_tilt method.misfit=l2 \
-  target=flatvel_a_legacy_6044 steps=200 n_samples=10
+  prior=flow_matching method=flow_tilt method.misfit=ot \
+  target=marmousi_fault05 steps=400 n_samples=10
+```
+
+flow map but reduced to flow-matching: 
+```
+uv run python experiments/0004_inversion/run.py \
+    prior=flow_map \
+    method=mfm_g \
+    method.drift_estimator=dps method.misfit=l2\
+    method.mc_samples=1 method.guidance_strength=3\
+    target=marmousi_fault00 steps=10 n_samples=10
 ```
 
 Diffusion prior, canonical DPS:
@@ -31,7 +41,7 @@ Diffusion prior, canonical DPS:
 ```
 uv run python experiments/0004_inversion/run.py \
   prior=diffusion method=dps method.misfit=ot method.guidance_strength=2 \
-  target=flatvel_a_legacy_6044 steps=200 n_samples=10
+  target=marmousi_fault05 steps=400 n_samples=10
 ```
 
 Target ids come from `data/inversion_bench/manifest.json` — rebuild it on a fresh machine with

@@ -26,7 +26,6 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from ..flow_matching.datasets import OpenFWIDatasetConfig
-from ..physics.filters import highpass
 from ..physics.forward import simulate
 from ..physics.observation import Observation, ObservationConfig, observe
 from .base import InversionModule
@@ -161,10 +160,7 @@ def score_target(
         mps_to_norm(v_true),
     )  # [-1, 1] for the OpenFWI-scale metrics
     misfit = torch.stack(
-        [
-            ((highpass(forward_fn(v_hat[i]), min_freq_hz, 1e-3) - d_obs) ** 2).sum()
-            for i in range(v_hat.shape[0])
-        ]
+        [(forward_fn(v_hat[i] - d_obs) ** 2).sum() for i in range(v_hat.shape[0])]
     )
     ssim_vals = torch.tensor([ssim(vh[i], vt) for i in range(vh.shape[0])])
     scores = {
@@ -189,25 +185,23 @@ class InversionStats:
 
     module: str
     n_targets: int
-    n_solves: float  # mean forward PDE solves per inversion
     per_target: list[dict[str, float]]
     agg: dict[str, float]  # "<metric>_mean" / "<metric>_std" across targets
 
     @classmethod
     def aggregate(
-        cls, module: str, per_target: list[dict[str, float]], solves: list[int]
+        cls, module: str, per_target: list[dict[str, float]]
     ) -> "InversionStats":
         agg: dict[str, float] = {}
         for key in per_target[0]:
             vals = torch.tensor([pt[key] for pt in per_target])
             agg[f"{key}_mean"] = float(vals.mean())
             agg[f"{key}_std"] = float(vals.std(unbiased=False))
-        mean_solves = sum(solves) / max(len(solves), 1)
-        return cls(module, len(per_target), mean_solves, per_target, agg)
+        return cls(module, len(per_target), per_target, agg)
 
     def summary(self) -> dict[str, float]:
         """Flat ``module``-prefixed aggregates (handy for a DataFrame row)."""
-        return {"n_targets": self.n_targets, "n_solves": self.n_solves, **self.agg}
+        return {"n_targets": self.n_targets, **self.agg}
 
     def __str__(self) -> str:
         cells = "  ".join(
@@ -220,7 +214,7 @@ class InversionStats:
             f"cov_err={self.agg['cov_err_mean']:.3g}"
         )
         return (
-            f"[{self.module}]  n={self.n_targets}  solves/inv={self.n_solves:.0f}\n"
+            f"[{self.module}]  n={self.n_targets} \n"
             f"  {cells}  misfit={self.agg['misfit_mean']:.3g}\n"
             f"  {dist}"
         )
@@ -278,13 +272,11 @@ class Evaluator:
 
     def evaluate(self, module: InversionModule) -> InversionStats:
         per_target: list[dict[str, float]] = []
-        solves: list[int] = []
         for (_, v_true), obs in zip(self.targets, self.observations):
             res = module.invert(obs.d_obs)
-            solves.append(res.n_solves)
             per_target.append(
                 score_target(
-                    res.v_hat.to(self.device),
+                    res.v_hat_resolution.to(self.device),
                     v_true,
                     obs.d_obs,
                     self.simulate_fn,
@@ -292,4 +284,4 @@ class Evaluator:
                     noise_floor=obs.noise_floor,
                 )
             )
-        return InversionStats.aggregate(module.name, per_target, solves)
+        return InversionStats.aggregate(module.name, per_target)

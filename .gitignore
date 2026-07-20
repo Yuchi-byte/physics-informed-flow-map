@@ -56,6 +56,7 @@ trained_models/
 *.webp
 
 # Data
+marmousi/
 csv/
 data/*
 # The inversion benchmark is script-regenerated (deterministic seeds; velocity maps are
