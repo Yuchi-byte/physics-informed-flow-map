@@ -27,7 +27,7 @@ from physics_informed_flow_map.inversion.single_target import (
     Inverter,
     invert_and_report,
 )
-from physics_informed_flow_map.physics.misfit import MISFITS, make_misfit
+from physics_informed_flow_map.physics.misfit import MISFITS, MisfitFn, make_misfit
 from physics_informed_flow_map.physics.observation import ObservationConfig
 from physics_informed_flow_map.physics.tilt import guided_sample
 
@@ -198,7 +198,7 @@ def main(dcfg: DictConfig) -> None:
         )
     )
 
-    def build_diag_misfits(d: torch.Tensor) -> dict[str, object]:
+    def build_diag_misfits(d: torch.Tensor) -> dict[str, MisfitFn]:
         return {"ot": make_misfit("ot", d, ot_k=cfg.method.ot_k)}
 
     def viz_traj(frames: torch.Tensor, path: Path) -> None:

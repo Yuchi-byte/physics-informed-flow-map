@@ -73,7 +73,9 @@ def ddpm_sample_trajectory(
     denoiser.eval()
     scheduler.set_timesteps(num_steps, device=device)  # type: ignore[attr-defined]
     n_frames = min(n_frames, num_steps)
-    capture = {round(i * (num_steps - 1) / max(n_frames - 1, 1)) for i in range(n_frames)}
+    capture = {
+        round(i * (num_steps - 1) / max(n_frames - 1, 1)) for i in range(n_frames)
+    }
     x = torch.randn(n_samples, *shape, device=device, generator=generator)
     states, x0hats = [], []
     for step_idx, t in enumerate(scheduler.timesteps):  # type: ignore[attr-defined]

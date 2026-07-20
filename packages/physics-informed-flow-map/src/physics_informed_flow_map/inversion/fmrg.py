@@ -27,7 +27,7 @@ the difference is entirely in what they do with the gradient.
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, cast
 
 import torch
 from mfm.models.base_model import BaseModel
@@ -175,7 +175,7 @@ class FmrgEModule:
 
         def velocity_fn(x: Tensor, t: float) -> Tensor:
             tb = torch.full((b,), t, device=self.device)
-            return self.prior.v(tb, tb, x, t_cond, x_cond)
+            return cast(Tensor, self.prior.v(tb, tb, x, t_cond, x_cond))
 
         samples = fmrg_e_sample(
             velocity_fn,

@@ -16,6 +16,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
 from matplotlib.colors import SymLogNorm
 from matplotlib.image import AxesImage
 import torch
@@ -50,20 +51,18 @@ def load_target(
     from the seed-0 validation split via the bulk dataset (legacy path). The label names
     the target for figures/captions; the global index goes to the run summary.
 
-    ``obs_cfg`` selects the benchmark track (band limit / frozen noise / operator
-    mismatch); ``None`` = the legacy clean inverse-crime observation. The noise key is
-    the benchmark id (or ``val{gidx}``), so a target's realization is identical across
-    runs and methods.
+    ``obs_cfg`` selects the observation model (generation-operator mismatch knobs);
+    ``None`` = the legacy clean inverse-crime observation.
     """
     cfg = obs_cfg or ObservationConfig()
     if target is not None:
         bench = InversionBenchmark(benchmark_root)
         gidx = int(bench.entry(target)["global_index"])
         v_true = bench.velocity(target).to(device)
-        return gidx, target, v_true, observe(v_true, cfg, key=target)
+        return gidx, target, v_true, observe(v_true, cfg)
     gidx, native = held_out_targets(dataset_cfg, target_index + 1)[target_index]
     v_true = native.to(device)
-    return gidx, f"val map {gidx}", v_true, observe(v_true, cfg, key=f"val{gidx}")
+    return gidx, f"val map {gidx}", v_true, observe(v_true, cfg)
 
 
 def invert_and_report(
@@ -396,6 +395,7 @@ def plot_dobs_trajectory(
         for c in range(n_cols):
             axes[r, c].set_xticklabels([])
     label = "amplitude (symlog)" if scale == "log" else "amplitude"
+    assert im is not None  # ≥1 source row, so the loop always drew
     fig.colorbar(
         im, ax=axes[1:, n_cols - 1].ravel().tolist(), fraction=0.046, label=label
     )
@@ -457,6 +457,7 @@ def plot_dobs_spectrum_compare(
                 axes[s, c].set_xlabel("wavenumber (cyc/m)", fontsize=8)
             else:
                 axes[s, c].set_xticklabels([])
+    assert im is not None  # ≥1 source row, so the loop always drew
     fig.colorbar(
         im, ax=axes.ravel().tolist(), fraction=0.046, label="magnitude (dB, rel. peak)"
     )
@@ -466,7 +467,7 @@ def plot_dobs_spectrum_compare(
 
 
 def _seismic_imshow(
-    ax: plt.Axes, gather: np.ndarray, *, scale: str, vabs: float, cmap: str = "RdBu_r"
+    ax: Axes, gather: np.ndarray, *, scale: str, vabs: float, cmap: str = "RdBu_r"
 ) -> AxesImage:
     """imshow one ``(n_receivers, nt)`` gather with time on the vertical axis, on a linear or
     symmetric-log amplitude scale.
@@ -523,7 +524,7 @@ def fk_spectrum(
 
 
 def _fk_imshow(
-    ax: plt.Axes,
+    ax: Axes,
     gather: np.ndarray,
     *,
     dt: float,
@@ -634,6 +635,7 @@ def plot_dobs_spectrum_trajectory(
                 axes[r, c].set_xticklabels([])
             else:
                 axes[r, c].set_xlabel("wavenumber (cyc/m)", fontsize=8)
+    assert im is not None  # ≥1 source row, so the loop always drew
     fig.colorbar(
         im,
         ax=axes[1:, n_cols - 1].ravel().tolist(),

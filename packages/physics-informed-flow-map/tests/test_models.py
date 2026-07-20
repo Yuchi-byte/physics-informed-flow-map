@@ -68,13 +68,17 @@ def test_dit_preset_param_counts() -> None:
     from physics_informed_flow_map.flow_matching.models import count_parameters
 
     dit_b = build_model(
-        (1, 64, 64), None, DiTModelConfig(hidden=768, depth=12, num_heads=12, patch_size=4)
+        (1, 64, 64),
+        None,
+        DiTModelConfig(hidden=768, depth=12, num_heads=12, patch_size=4),
     )
     n_b, _ = count_parameters(dit_b)
-    assert 100e6 < n_b < 180e6, f"dit_b params {n_b/1e6:.1f}M outside expected band"
+    assert 100e6 < n_b < 180e6, f"dit_b params {n_b / 1e6:.1f}M outside expected band"
 
     dit_m = build_model(
-        (1, 64, 64), None, DiTModelConfig(hidden=512, depth=8, num_heads=8, patch_size=4)
+        (1, 64, 64),
+        None,
+        DiTModelConfig(hidden=512, depth=8, num_heads=8, patch_size=4),
     )
     n_m, _ = count_parameters(dit_m)
-    assert 20e6 < n_m < 50e6, f"dit_m params {n_m/1e6:.1f}M outside expected band"
+    assert 20e6 < n_m < 50e6, f"dit_m params {n_m / 1e6:.1f}M outside expected band"

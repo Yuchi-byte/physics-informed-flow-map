@@ -265,7 +265,7 @@ def main(dcfg: DictConfig) -> None:
         return float(sum(opt_losses.values()).item())
 
     @torch.no_grad()
-    def compute_val_loss(m: BaseModel) -> tuple[float, dict[str, float]]:
+    def compute_val_loss(m: BaseModel) -> float:
         m.eval()
         total, n = 0.0, 0
         for xb, lb in val_loader:

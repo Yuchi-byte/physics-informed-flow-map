@@ -1,10 +1,12 @@
 """d_obs plotting: linear/symlog scale switch and the Tweedie-trajectory grid."""
 
 from pathlib import Path
+from typing import Any, Callable
 
 import matplotlib
 
 matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 import torch
@@ -33,7 +35,9 @@ def test_plot_seismic_rejects_bad_scale(tmp_path: Path) -> None:
         )
 
 
-def _stub_forward(n_src: int, n_rec: int, nt: int):
+def _stub_forward(
+    n_src: int, n_rec: int, nt: int
+) -> Callable[[torch.Tensor], torch.Tensor]:
     # frames_norm (n_frames,1,res,res) -> (n_frames, n_src, n_rec, nt)
     def fwd(frames: torch.Tensor) -> torch.Tensor:
         return torch.randn(frames.shape[0], n_src, n_rec, nt)
@@ -65,16 +69,14 @@ def test_plot_dobs_trajectory_writes_png(tmp_path: Path, scale: str) -> None:
 def test_plot_dobs_trajectory_panel_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import physics_informed_flow_map.inversion.single_target as st
-
     seen: dict[str, tuple[int, int]] = {}
-    real = st.plt.subplots
+    real = plt.subplots
 
-    def spy(nrows: int, ncols: int, **kw: object):
+    def spy(nrows: int, ncols: int, **kw: Any) -> object:
         seen["shape"] = (nrows, ncols)
         return real(nrows, ncols, **kw)
 
-    monkeypatch.setattr(st.plt, "subplots", spy)
+    monkeypatch.setattr(plt, "subplots", spy)
     plot_dobs_trajectory(
         torch.rand(70, 70),
         torch.rand(2, 1, 16, 16),
@@ -101,16 +103,14 @@ def test_plot_dobs_spectrum_compare_writes_png(tmp_path: Path) -> None:
 def test_plot_dobs_spectrum_compare_panel_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import physics_informed_flow_map.inversion.single_target as st
-
     seen: dict[str, tuple[int, int]] = {}
-    real = st.plt.subplots
+    real = plt.subplots
 
-    def spy(nrows: int, ncols: int, **kw: object):
+    def spy(nrows: int, ncols: int, **kw: Any) -> object:
         seen["shape"] = (nrows, ncols)
         return real(nrows, ncols, **kw)
 
-    monkeypatch.setattr(st.plt, "subplots", spy)
+    monkeypatch.setattr(plt, "subplots", spy)
     plot_dobs_spectrum_compare(
         torch.randn(5, 12, 40), torch.randn(5, 12, 40), tmp_path / "c.png", title="d"
     )
@@ -199,16 +199,14 @@ def test_plot_dobs_spectrum_trajectory_writes_png(tmp_path: Path) -> None:
 def test_plot_dobs_spectrum_trajectory_panel_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import physics_informed_flow_map.inversion.single_target as st
-
     seen: dict[str, tuple[int, int]] = {}
-    real = st.plt.subplots
+    real = plt.subplots
 
-    def spy(nrows: int, ncols: int, **kw: object):
+    def spy(nrows: int, ncols: int, **kw: Any) -> object:
         seen["shape"] = (nrows, ncols)
         return real(nrows, ncols, **kw)
 
-    monkeypatch.setattr(st.plt, "subplots", spy)
+    monkeypatch.setattr(plt, "subplots", spy)
     plot_dobs_spectrum_trajectory(
         torch.rand(70, 70),
         torch.rand(2, 1, 16, 16),

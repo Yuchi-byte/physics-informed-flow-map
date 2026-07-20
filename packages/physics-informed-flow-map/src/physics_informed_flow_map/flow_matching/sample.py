@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence, cast
+from typing import Literal, Sequence, cast, overload
 
 import torch
 from torch import Tensor
@@ -11,6 +11,32 @@ from torchdiffeq import odeint
 
 from mfm.SI.samplers import consistency_sampler_fn, ode_sampler_fn
 from mfm.models.base_model import BaseModel
+
+
+@overload
+def sample(
+    model: BaseModel,
+    n_samples: int,
+    shape: tuple[int, ...],
+    *,
+    sampler_steps: int,
+    device: torch.device,
+    x_noise: Tensor | None = ...,
+    return_states_at: None = ...,
+) -> Tensor: ...
+
+
+@overload
+def sample(
+    model: BaseModel,
+    n_samples: int,
+    shape: tuple[int, ...],
+    *,
+    sampler_steps: int,
+    device: torch.device,
+    x_noise: Tensor | None = ...,
+    return_states_at: Sequence[float],
+) -> tuple[Tensor, Tensor]: ...
 
 
 @torch.no_grad()
@@ -67,7 +93,7 @@ def sample(
 
     def ode_func(t: Tensor, x: Tensor) -> Tensor:
         tb = t.expand(x.shape[0])
-        return model.v(tb, tb, x, t_cond, x_noise)
+        return cast(Tensor, model.v(tb, tb, x, t_cond, x_noise))
 
     times = torch.linspace(0, 1, sampler_steps + 1, device=device)
     hist = odeint(ode_func, x_noise, times, method="euler", atol=1e-5, rtol=1e-5)
@@ -98,7 +124,7 @@ def sample_trajectory(
 
     def ode_func(t: Tensor, x: Tensor) -> Tensor:
         tb = t.expand(x.shape[0])
-        return model.v(tb, tb, x, t_cond, x_noise)
+        return cast(Tensor, model.v(tb, tb, x, t_cond, x_noise))
 
     times = torch.linspace(0, 1, sampler_steps + 1, device=device)
     hist = odeint(ode_func, x_noise, times, method="euler", atol=1e-5, rtol=1e-5)
@@ -107,6 +133,32 @@ def sample_trajectory(
     states = hist[indices]  # [n_frames, B, *shape]
     x1hats = [hist[i] + (1.0 - times[i]) * ode_func(times[i], hist[i]) for i in indices]
     return states, torch.stack(x1hats)
+
+
+@overload
+def sample_few_step(
+    model: BaseModel,
+    n_samples: int,
+    shape: tuple[int, ...],
+    *,
+    n_steps: int,
+    device: torch.device,
+    x_noise: Tensor | None = ...,
+    return_hist: Literal[False] = ...,
+) -> Tensor: ...
+
+
+@overload
+def sample_few_step(
+    model: BaseModel,
+    n_samples: int,
+    shape: tuple[int, ...],
+    *,
+    n_steps: int,
+    device: torch.device,
+    x_noise: Tensor | None = ...,
+    return_hist: Literal[True],
+) -> tuple[Tensor, Tensor]: ...
 
 
 @torch.no_grad()

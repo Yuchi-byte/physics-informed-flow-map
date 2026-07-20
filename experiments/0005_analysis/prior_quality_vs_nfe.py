@@ -1,8 +1,7 @@
 """Quality-vs-NFE analysis for the trained FlatVel_A priors (post-training, standalone).
 
 For each (model, sampler, NFE) point, draw 512 prior samples and score them with the
-per-family energy distance against the standard seed-0 held-out FlatVel_A split — the same
-metric as the training runs' final ``val/energy``. Four curves:
+energy distance against the standard seed-0 held-out FlatVel_A split. Four curves:
 
   * ``0002 flow map — few-step``: ``sample_few_step`` with ``n_steps = NFE`` (one model
     eval per jump; the off-diagonal path).
@@ -14,7 +13,7 @@ metric as the training runs' final ``val/energy``. Four curves:
     (``num_steps = NFE``).
 
 Fairness: every point is scored against the same 512 real reference maps (seed-0 draw from
-the val split, as in ``per_family_energy_distance``'s default); each point is repeated over
+the val split, matching the historical per-family evaluation); each point is repeated over
 several noise seeds for error bars; a real-vs-real noise floor (energy distance between two
 disjoint 512-map halves of the val split) anchors the y-axis.
 
@@ -33,7 +32,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, cast
 
 import matplotlib
 
@@ -43,14 +42,15 @@ import torch
 import wandb
 from diffusers import DDPMScheduler
 from torch import Tensor
+from torch.utils.data import Dataset
 
 from physics_informed_flow_map.baselines import build_denoiser
 from physics_informed_flow_map.baselines.diffusion_sample import ddpm_sample
 from physics_informed_flow_map.experiment import start_run
 from physics_informed_flow_map.flow_matching.datasets import OpenFWIDatasetConfig
 from physics_informed_flow_map.flow_matching.family_eval import (
+    N_ENERGY_REAL,
     energy_distance,
-    per_family_energy_distance,
 )
 from physics_informed_flow_map.flow_matching.models import DiTModelConfig, build_model
 from physics_informed_flow_map.flow_matching.sample import sample, sample_few_step
@@ -65,7 +65,8 @@ SHAPE = (1, 64, 64)
 # with the same DiT shape (the diffusion baseline swaps in a UNet denoiser).
 DIT = DiTModelConfig(hidden=256, depth=6, num_heads=8, patch_size=4)
 CKPT_FLOW_MAP = (
-    RUNS_ROOT / "0002_flow_map/openfwi_mf_2026-07-07T10-49-43Z/checkpoints/step_19_ema.pt"
+    RUNS_ROOT
+    / "0002_flow_map/openfwi_mf_2026-07-07T10-49-43Z/checkpoints/step_19_ema.pt"
 )
 CKPT_FM_PRIOR = (
     RUNS_ROOT
@@ -98,12 +99,17 @@ def _load_flow(ckpt: Path, device: torch.device) -> object:
 
 
 def _load_diffusion(ckpt: Path, device: torch.device) -> tuple[object, DDPMScheduler]:
-    denoiser = build_denoiser("unet", sample_size=SHAPE[1], channels=SHAPE[0]).to(device)
+    denoiser = build_denoiser("unet", sample_size=SHAPE[1], channels=SHAPE[0]).to(
+        device
+    )
     denoiser.load_state_dict(
         torch.load(ckpt, map_location=device, weights_only=False)["model"]
     )
     denoiser.eval()
-    return denoiser, DDPMScheduler(num_train_timesteps=NUM_TRAIN_TIMESTEPS)
+    scheduler = DDPMScheduler(  # type: ignore[no-untyped-call]  # diffusers is untyped
+        num_train_timesteps=NUM_TRAIN_TIMESTEPS
+    )
+    return denoiser, scheduler
 
 
 def _seeded_noise(n: int, seed: int, device: torch.device) -> Tensor:
@@ -116,12 +122,10 @@ def _gen_fewstep(
 ) -> Tensor:
     noise = _seeded_noise(n, seed, device)
     outs = [
-        sample_few_step(
-            model, b.shape[0], SHAPE, n_steps=nfe, device=device, x_noise=b
-        )
-        for b in noise.split(batch_size)
+        sample_few_step(model, b.shape[0], SHAPE, n_steps=nfe, device=device, x_noise=b)
+        for b in torch.split(noise, batch_size)
     ]
-    return torch.cat([o for o in outs])  # type: ignore[list-item]  # no return_hist -> Tensor
+    return torch.cat(outs)
 
 
 def _gen_ode(
@@ -130,15 +134,15 @@ def _gen_ode(
     noise = _seeded_noise(n, seed, device)
     outs = [
         sample(model, b.shape[0], SHAPE, sampler_steps=nfe, device=device, x_noise=b)
-        for b in noise.split(batch_size)
+        for b in torch.split(noise, batch_size)
     ]
-    return torch.cat([o for o in outs])  # type: ignore[list-item]  # no return_states_at -> Tensor
+    return torch.cat(outs)
 
 
 def _gen_ddpm(
     bundle: object, nfe: int, seed: int, n: int, batch_size: int, device: torch.device
 ) -> Tensor:
-    denoiser, scheduler = bundle  # type: ignore[misc]
+    denoiser, scheduler = cast("tuple[torch.nn.Module, DDPMScheduler]", bundle)
     g = torch.Generator(device=device).manual_seed(seed)
     outs = []
     done = 0
@@ -199,15 +203,18 @@ CURVES = [
 ]
 
 
-def noise_floor(val_ds, n: int, seeds: list[int], device: torch.device) -> list[float]:
+def noise_floor(
+    val_ds: Dataset, n: int, seeds: list[int], device: torch.device
+) -> list[float]:
     """Energy distance between two disjoint n-map halves of the val split, per seed."""
-    n_val = len(val_ds)
+    n_val = len(val_ds)  # type: ignore[arg-type]  # map-style dataset
     if 2 * n > n_val:
-        raise SystemExit(f"val split has {n_val} maps, need {2 * n} for the noise floor")
+        raise SystemExit(
+            f"val split has {n_val} maps, need {2 * n} for the noise floor"
+        )
     floors = []
     for seed in seeds:
-        # Offset the seed so the halves are not correlated with the seed-0 reference draw
-        # inside per_family_energy_distance.
+        # Offset the seed so the halves are not correlated with the seed-0 reference draw.
         perm = torch.randperm(
             n_val, generator=torch.Generator().manual_seed(1000 + seed)
         )[: 2 * n]
@@ -224,9 +231,7 @@ def crossover_nfe(target: float, nfes: list[int], means: list[float]) -> float |
             if e0 == e1:
                 return float(n1)
             frac = (e0 - target) / (e0 - e1)
-            return float(
-                math.exp(math.log(n0) + frac * (math.log(n1) - math.log(n0)))
-            )
+            return float(math.exp(math.log(n0) + frac * (math.log(n1) - math.log(n0))))
     return None
 
 
@@ -259,7 +264,7 @@ def main() -> None:
     dataset = OpenFWIDatasetConfig(
         families=[FAMILY], resolution=SHAPE[1], val_fraction=0.1, split_scheme="global"
     )
-    val_by_family = dataset.build_val_by_family()
+    val_ds = dataset.build_val()
 
     config = {
         "n_samples": args.n_samples,
@@ -274,7 +279,15 @@ def main() -> None:
     }
     run = start_run(EXPERIMENT, run_dir, config, name=f"{ANALYSIS}_{ts}")
 
-    floors = noise_floor(val_by_family[FAMILY], args.n_samples, seeds, device)
+    # The seed-0 reference draw every point is scored against (the historical
+    # per-family-eval reference: up to N_ENERGY_REAL maps, seed-0 permutation).
+    n_val = len(val_ds)  # type: ignore[arg-type]  # map-style dataset
+    ref_idx = torch.randperm(n_val, generator=torch.Generator().manual_seed(0))[
+        :N_ENERGY_REAL
+    ]
+    real_ref = torch.stack([val_ds[int(i)][0] for i in ref_idx]).to(device)
+
+    floors = noise_floor(val_ds, args.n_samples, seeds, device)
     floor_mean = sum(floors) / len(floors)
     print(f"real-vs-real noise floor: {floor_mean:.4f} (per-seed {floors})")
 
@@ -292,7 +305,7 @@ def main() -> None:
                     model, nfe, seed, args.n_samples, args.batch_size, device
                 )
                 gen_s = time.perf_counter() - t0
-                ed = per_family_energy_distance(pool, val_by_family)[FAMILY]
+                ed = energy_distance(pool, real_ref)
                 energies.append(ed)
                 rows.append((curve.key, nfe, seed, ed, gen_s))
             m = sum(energies) / len(energies)
@@ -314,7 +327,9 @@ def main() -> None:
     fig, ax = plt.subplots(figsize=(7, 4.5))
     for curve in CURVES:
         nfes, means, stds = results[curve.key]
-        ax.errorbar(nfes, means, yerr=stds, marker="o", ms=4, capsize=3, label=curve.label)
+        ax.errorbar(
+            nfes, means, yerr=stds, marker="o", ms=4, capsize=3, label=curve.label
+        )
     ax.axhline(floor_mean, color="gray", ls="--", lw=1, label="real-vs-real floor")
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -360,7 +375,10 @@ def main() -> None:
             f"~{cross:.0f} NFE (log-interpolated).",
         ]
     elif fm4 is not None:
-        lines += ["", f"**Crossover:** DDPM never reaches flow map @ 4 NFE ({fm4:.4f})."]
+        lines += [
+            "",
+            f"**Crossover:** DDPM never reaches flow map @ 4 NFE ({fm4:.4f}).",
+        ]
     (run_dir / "results.md").write_text("\n".join(lines) + "\n")
     print(f"\nwrote {run_dir / 'results.md'}")
 

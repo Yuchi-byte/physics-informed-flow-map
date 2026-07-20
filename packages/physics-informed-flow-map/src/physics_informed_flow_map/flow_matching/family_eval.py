@@ -15,6 +15,7 @@ be stratified by family. Per-family observability instead measures:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Mapping
 
 import matplotlib
 
@@ -52,7 +53,7 @@ def _stack_family(ds: Dataset, max_n: int, seed: int) -> Tensor:
 
 
 def family_reference_grid(
-    val_by_family: dict[str, Dataset], path: Path, *, n_per_family: int = 8
+    val_by_family: Mapping[str, Dataset], path: Path, *, n_per_family: int = 8
 ) -> None:
     """One row of real held-out maps per family, family-labeled, on the sample-grid scale."""
     families = list(val_by_family)

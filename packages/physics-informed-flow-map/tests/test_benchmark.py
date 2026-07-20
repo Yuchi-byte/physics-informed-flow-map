@@ -166,7 +166,7 @@ def test_load_target_by_benchmark_id(
     out = tmp_path / "bench"
     write_benchmark(bench_cfg, out)
     monkeypatch.setattr(
-        st, "observe", lambda v, cfg, key: Observation(torch.zeros(1), None, None)
+        st, "observe", lambda v, cfg: Observation(torch.zeros(1), None, None)
     )
     bench = InversionBenchmark(out)
     tid = bench.core_ids[0]

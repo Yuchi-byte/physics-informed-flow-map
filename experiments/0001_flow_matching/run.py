@@ -25,12 +25,6 @@ from physics_informed_flow_map.flow_matching.datasets import (
     GaussiansDatasetConfig,
     OpenFWIDatasetConfig,
 )
-from physics_informed_flow_map.flow_matching.family_eval import (
-    N_ENERGY_SAMPLES,
-    family_reference_grid,
-    per_family_energy_distance,
-    per_family_val_loss,
-)
 from physics_informed_flow_map.flow_matching.models import (
     DiTModelConfig,
     MLPModelConfig,
@@ -74,8 +68,10 @@ TrainingConfig.model_rebuild()
 class SamplingConfig(Config):
     sampler_steps: int = Field(100, gt=0)
     n_eval_viz: int = Field(64, gt=0)  # samples drawn for each per-epoch viz
-    n_traj_viz: int = Field(4, gt=0)   # samples shown in the trajectory grid
-    traj_every_epochs: int = Field(20, gt=0)  # save a trajectory viz every N eval epochs
+    n_traj_viz: int = Field(4, gt=0)  # samples shown in the trajectory grid
+    traj_every_epochs: int = Field(
+        20, gt=0
+    )  # save a trajectory viz every N eval epochs
 
 
 class FlowMatchingConfig(Config):
@@ -166,26 +162,17 @@ def main(dcfg: DictConfig) -> None:
     )
     val_loss_fn = make_loss_fn(cfg.dataset.num_classes)
 
-    # OpenFWI: per-family val losses + a one-time real-map reference grid (the priors are
-    # unconditional, so samples can't be stratified by family — the real grid is the visual
-    # reference; per-family losses and final energy distances are the coverage metrics).
-    val_by_family = (
-        cfg.dataset.build_val_by_family()
-        if isinstance(cfg.dataset, OpenFWIDatasetConfig)
-        else None
-    )
-    if val_by_family is not None:
-        ref_path = run.log_dir / "val_reference.png"
-        family_reference_grid(val_by_family, ref_path)
-        run.log_image(
-            "val_reference", ref_path, caption="held-out real maps per family"
-        )
+    # OpenFWI: pin the dataset identity into the run config (per-family evaluation was
+    # removed; the global val loss is the selection signal).
+    if isinstance(cfg.dataset, OpenFWIDatasetConfig):
         run.update_config(dataset_fingerprint=cfg.dataset.fingerprint())
 
     # Fixed noise for reproducible per-epoch visualizations: same starting points every eval,
     # so the grids track model improvement on identical samples rather than fresh random draws.
     g = torch.Generator(device=device).manual_seed(cfg.seed)
-    eval_noise = torch.randn(cfg.sampling.n_eval_viz, *cfg.dataset.shape, device=device, generator=g)
+    eval_noise = torch.randn(
+        cfg.sampling.n_eval_viz, *cfg.dataset.shape, device=device, generator=g
+    )
     traj_noise = eval_noise[: cfg.sampling.n_traj_viz]
 
     @torch.no_grad()
@@ -194,20 +181,13 @@ def main(dcfg: DictConfig) -> None:
         return float(sum(opt_losses.values()).item())
 
     @torch.no_grad()
-    def compute_val_loss(m: BaseModel) -> tuple[float, dict[str, float]]:
-        """Global val loss + per-family val losses (empty dict for non-OpenFWI)."""
+    def compute_val_loss(m: BaseModel) -> float:
         m.eval()
-        if val_by_family is not None:
-            return per_family_val_loss(
-                lambda xb, lb: _batch_val_loss(m, xb, lb),
-                val_by_family,
-                cfg.training.batch_size,
-            )
         total, n = 0.0, 0
         for xb, lb in val_loader:
             total += _batch_val_loss(m, xb, lb)
             n += 1
-        return total / max(n, 1), {}
+        return total / max(n, 1)
 
     def on_eval(m: BaseModel, epoch: int) -> float | None:
         s = sample(
@@ -238,10 +218,7 @@ def main(dcfg: DictConfig) -> None:
                 pt,
                 caption=f"epoch {epoch + 1} ODE trajectory (row pairs: x_t, x1hat)",
             )
-        val_loss, fam_losses = compute_val_loss(m)
-        if fam_losses:
-            run.log(epoch=epoch, **{f"val/loss/{f}": v for f, v in fam_losses.items()})
-        return val_loss
+        return compute_val_loss(m)
 
     on_checkpoint = run.checkpoint_callback(
         artifact_name=f"{cfg.dataset.name}-model",
@@ -276,24 +253,11 @@ def main(dcfg: DictConfig) -> None:
     final_loss = sum(last) / len(last)
     eval_model = ema_model if ema_model is not None else model
 
-    final_val_loss, final_fam_losses = compute_val_loss(eval_model)
+    final_val_loss = compute_val_loss(eval_model)
     summary: dict[str, float] = {
         "val/loss": final_val_loss,
         "train/final_loss": final_loss,
     }
-    summary.update({f"val/loss/{f}": v for f, v in final_fam_losses.items()})
-    if val_by_family is not None:
-        # One shared generated pool vs each family's held-out maps: does the unconditional
-        # prior cover every family's region of velocity-map space?
-        pool = sample(
-            eval_model,
-            N_ENERGY_SAMPLES,
-            cfg.dataset.shape,
-            sampler_steps=cfg.sampling.sampler_steps,
-            device=device,
-        )
-        energies = per_family_energy_distance(pool, val_by_family)
-        summary.update({f"val/energy/{f}": v for f, v in energies.items()})
     run.finish(**summary)
 
 

@@ -117,7 +117,7 @@ def test_ot_gradient_flows_and_matches_finite_difference() -> None:
     pred = obs_from(ricker(nt, 0.62)).unsqueeze(0).clone().requires_grad_(True)
 
     j = ot(pred).sum()
-    j.backward()
+    j.backward()  # type: ignore[no-untyped-call]
     grad = pred.grad
     assert grad is not None and torch.isfinite(grad).all()
     assert float(grad.abs().max()) > 0.0

@@ -110,7 +110,7 @@ class FlowMapSteerModule:
         # one extra wave solve per posterior sample per step, only when the hook is set.
         self.on_step = on_step
 
-    def invert(self, d_obs: Tensor, invert_scalar=None) -> InversionResult:
+    def invert(self, d_obs: Tensor) -> InversionResult:
         misfit_fn = self.misfit_factory(d_obs) if self.misfit_factory else None
         self._diag = self.diag_misfit_factory(d_obs) if self.diag_misfit_factory else {}
         drift_fn = get_conditional_drift_fn(
@@ -154,7 +154,7 @@ class FlowMapSteerModule:
         for i in tqdm(range(self.n_steps), desc=desc):
             t_cur = t_steps[i]
             dt = t_steps[i + 1] - t_cur
-            t_batched = torch.full((n,), t_cur, device=x.device)
+            t_batched = torch.full((n,), float(t_cur), device=x.device)
             drift, ret = drift_fn(x, t_batched)
 
             if self.on_step is not None:

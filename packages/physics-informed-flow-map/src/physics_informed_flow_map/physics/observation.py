@@ -73,15 +73,13 @@ class Observation:
 
 
 def observe(
-    v_true: Tensor, cfg: ObservationConfig, key: str, **sim_kwargs: object
+    v_true: Tensor, cfg: ObservationConfig, **sim_kwargs: object
 ) -> Observation:
     """Generate the fixed observation for one target.
 
     Args:
         v_true: ``(ny, nx)`` velocity in m/s.
         cfg: the observation model.
-        key: stable target identity (benchmark id, or ``val{gidx}`` on the legacy path) —
-            the noise realization is deterministic in ``(key, cfg.noise_seed)``.
         **sim_kwargs: forwarded to :func:`simulate` (survey geometry overrides; tests use
             a tiny survey, production uses the OpenFWI defaults).
     """

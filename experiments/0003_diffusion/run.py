@@ -35,12 +35,6 @@ from physics_informed_flow_map.flow_matching.datasets import (
     MNISTDatasetConfig,
     OpenFWIDatasetConfig,
 )
-from physics_informed_flow_map.flow_matching.family_eval import (
-    N_ENERGY_SAMPLES,
-    family_reference_grid,
-    per_family_energy_distance,
-    per_family_val_loss,
-)
 from physics_informed_flow_map.flow_matching.models import count_parameters
 
 EXPERIMENT = "0003_diffusion"
@@ -87,8 +81,10 @@ TrainingConfig.model_rebuild()
 
 class SamplingConfig(Config):
     n_eval_viz: int = Field(64, gt=0)  # samples drawn for each viz (per-epoch + final)
-    n_traj_viz: int = Field(4, gt=0)   # samples shown in the trajectory grid
-    traj_every_epochs: int = Field(20, gt=0)  # save a trajectory viz every N eval epochs
+    n_traj_viz: int = Field(4, gt=0)  # samples shown in the trajectory grid
+    traj_every_epochs: int = Field(
+        20, gt=0
+    )  # save a trajectory viz every N eval epochs
 
 
 class DiffusionBaselineConfig(Config):
@@ -123,7 +119,9 @@ def main(dcfg: DictConfig) -> None:
     run_dir = Path(HydraConfig.get().runtime.output_dir)
     # name= denoiser kind + run-dir basename (dataset + timestamp): the kind is the key
     # 0003 variant and the basename maps the wandb run 1:1 to its /workspace/runs folder.
-    run = start_run(EXPERIMENT, run_dir, cfg.dump(), name=f"{cfg.model.kind}_{run_dir.name}")
+    run = start_run(
+        EXPERIMENT, run_dir, cfg.dump(), name=f"{cfg.model.kind}_{run_dir.name}"
+    )
 
     channels, size, _ = cfg.dataset.shape
     shape = cfg.dataset.shape
@@ -170,19 +168,9 @@ def main(dcfg: DictConfig) -> None:
         persistent_workers=cfg.training.num_workers > 0,
     )
 
-    # OpenFWI: per-family val losses + a one-time real-map reference grid (unconditional
-    # prior → samples can't be stratified by family; see family_eval module docstring).
-    val_by_family = (
-        cfg.dataset.build_val_by_family()
-        if isinstance(cfg.dataset, OpenFWIDatasetConfig)
-        else None
-    )
-    if val_by_family is not None:
-        ref_path = run.log_dir / "val_reference.png"
-        family_reference_grid(val_by_family, ref_path)
-        run.log_image(
-            "val_reference", ref_path, caption="held-out real maps per family"
-        )
+    # OpenFWI: pin the dataset identity into the run config (per-family evaluation was
+    # removed; the global val loss is the selection signal).
+    if isinstance(cfg.dataset, OpenFWIDatasetConfig):
         run.update_config(dataset_fingerprint=cfg.dataset.fingerprint())
 
     @torch.no_grad()
@@ -195,20 +183,14 @@ def main(dcfg: DictConfig) -> None:
         return float(F.mse_loss(pred, noise).item())
 
     @torch.no_grad()
-    def compute_val_loss(model: nn.Module) -> tuple[float, dict[str, float]]:
-        """Mean predict-noise DDPM val loss, global + per family (empty for non-OpenFWI)."""
+    def compute_val_loss(model: nn.Module) -> float:
+        """Mean predict-noise DDPM val loss over the held-out split."""
         model.eval()
-        if val_by_family is not None:
-            return per_family_val_loss(
-                lambda xb, lb: _batch_val_loss(model, xb),
-                val_by_family,
-                cfg.training.batch_size,
-            )
         total, n = 0.0, 0
         for xb, _ in val_loader:
             total += _batch_val_loss(model, xb)
             n += 1
-        return total / max(n, 1), {}
+        return total / max(n, 1)
 
     def on_eval(model: nn.Module, epoch: int) -> float | None:
         # Fixed-seed generator so every epoch's grid samples the same noise (initial + ancestral):
@@ -246,10 +228,7 @@ def main(dcfg: DictConfig) -> None:
                 pt,
                 caption=f"epoch {epoch + 1} reverse-DDPM trajectory (row pairs: x_t, x0hat)",
             )
-        val_loss, fam_losses = compute_val_loss(model)
-        if fam_losses:
-            run.log(epoch=epoch, **{f"val/loss/{f}": v for f, v in fam_losses.items()})
-        return val_loss
+        return compute_val_loss(model)
 
     on_checkpoint = run.checkpoint_callback(
         artifact_name=f"{cfg.dataset.name}-diffusion",
@@ -290,32 +269,19 @@ def main(dcfg: DictConfig) -> None:
         n_samples=cfg.sampling.n_eval_viz,
         num_steps=cfg.diffusion.num_sample_steps,
         device=device,
-        generator=torch.Generator(device=device).manual_seed(cfg.seed),  # same fixed noise as the per-epoch grids
+        generator=torch.Generator(device=device).manual_seed(
+            cfg.seed
+        ),  # same fixed noise as the per-epoch grids
     )
     final_png = run.ckpt_dir.parent / "samples.png"
     cfg.dataset.visualize(samples, final_png)
     run.log_image("samples_final", final_png)
 
-    final_val_loss, final_fam_losses = compute_val_loss(eval_model)
+    final_val_loss = compute_val_loss(eval_model)
     summary: dict[str, float] = {
         "val/loss": final_val_loss,
         "train/final_loss": final_loss,
     }
-    summary.update({f"val/loss/{f}": v for f, v in final_fam_losses.items()})
-    if val_by_family is not None:
-        # One shared generated pool vs each family's held-out maps: does the unconditional
-        # prior cover every family's region of velocity-map space?
-        pool = ddpm_sample(
-            eval_model,
-            scheduler,
-            shape,
-            n_samples=N_ENERGY_SAMPLES,
-            num_steps=cfg.diffusion.num_sample_steps,
-            device=device,
-            generator=torch.Generator(device=device).manual_seed(cfg.seed),
-        )
-        energies = per_family_energy_distance(pool, val_by_family)
-        summary.update({f"val/energy/{f}": v for f, v in energies.items()})
     run.finish(**summary)
 
 

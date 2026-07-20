@@ -69,11 +69,7 @@ def dps_sample(
         Samples at ``t=0``, shape ``(n_samples, *shape)``.
     """
     scheduler.set_timesteps(num_steps, device=device)  # type: ignore[attr-defined]
-    x = (
-        x_init
-        if x_init is not None
-        else torch.randn(n_samples, *shape, device=device)
-    )
+    x = x_init if x_init is not None else torch.randn(n_samples, *shape, device=device)
     for step_idx, t in enumerate(scheduler.timesteps):  # type: ignore[attr-defined]
         x = x.detach().requires_grad_(True)
         eps = denoiser(x, t).sample

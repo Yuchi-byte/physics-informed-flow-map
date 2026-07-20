@@ -5,6 +5,8 @@ w.r.t. the velocity model (the VJP that inference-time tilting depends on). Runs
 small grid in double precision so finite differences are reliable.
 """
 
+from typing import Any
+
 import torch
 
 from physics_informed_flow_map.physics.forward import simulate
@@ -49,7 +51,14 @@ def test_grid_scale_same_physics_different_numerics() -> None:
     v[8:] = 2000.0
     d1 = _sim(v)
     d2 = simulate(
-        v, dx=10.0, dt=1e-3, nt=120, n_sources=1, n_receivers=12, freq=40.0, grid_scale=2
+        v,
+        dx=10.0,
+        dt=1e-3,
+        nt=120,
+        n_sources=1,
+        n_receivers=12,
+        freq=40.0,
+        grid_scale=2,
     )
     assert d2.shape == d1.shape
     assert torch.isfinite(d2).all()
@@ -64,7 +73,7 @@ def test_grid_scale_same_physics_different_numerics() -> None:
 def test_freq_scale_shifts_spectrum() -> None:
     v = torch.full((16, 16), 1500.0)
     v[8:] = 2000.0
-    kw = dict(dx=10.0, dt=1e-3, nt=120, n_sources=1, n_receivers=12)
+    kw: dict[str, Any] = dict(dx=10.0, dt=1e-3, nt=120, n_sources=1, n_receivers=12)
     f = torch.fft.rfftfreq(120, 1e-3)
 
     def peak_hz(d: torch.Tensor) -> float:

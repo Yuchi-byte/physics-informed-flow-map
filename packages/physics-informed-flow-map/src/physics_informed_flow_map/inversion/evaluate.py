@@ -241,9 +241,7 @@ class Evaluator:
         self.obs_cfg = obs_cfg or ObservationConfig()
         self.targets = [(gidx, v.to(device)) for gidx, v in targets]
         if simulate_fn is simulate:
-            self.observations = [
-                observe(v, self.obs_cfg, key=f"val{gidx}") for gidx, v in self.targets
-            ]
+            self.observations = [observe(v, self.obs_cfg) for _, v in self.targets]
         else:  # injected test operator: keep the legacy clean path (no hardening)
             self.observations = [
                 Observation(simulate_fn(v).detach(), None, None)

@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 def assess_overfit(
     generated_output: torch.Tensor, train_dataloader: DataLoader
-) -> tuple[torch.Tensor, float]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     generated_B = generated_output.shape[0]
     min_mse = (torch.ones(generated_B) * math.inf).to(generated_output.device)
     min_mse_image = torch.rand_like(generated_output)

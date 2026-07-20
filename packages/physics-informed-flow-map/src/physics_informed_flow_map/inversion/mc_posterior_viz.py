@@ -35,7 +35,11 @@ def _rgb(arr: np.ndarray, cmap: str, vmin: float, vmax: float) -> np.ndarray:
 
 def _cell_img(arr: np.ndarray, cmap: str, vmin: float, vmax: float) -> Image.Image:
     im = Image.fromarray(_rgb(arr, cmap, vmin, vmax))
-    return im.resize((CELL, CELL), Image.NEAREST) if im.size != (CELL, CELL) else im
+    return (
+        im.resize((CELL, CELL), Image.Resampling.NEAREST)
+        if im.size != (CELL, CELL)
+        else im
+    )
 
 
 def render_particle_grid(
@@ -65,8 +69,7 @@ def render_particle_grid(
         # column 0: noisy sampler state — per-step symmetric scale (its magnitude grows with
         # the SDE noise as t->0), so each step's structure stays visible regardless of scale.
         xt_abs = float(np.percentile(np.abs(xt[s]), 99)) or 1.0
-        canvas.paste(_cell_img(xt[s], "RdBu_r", -xt_abs, xt_abs),
-                     (LABELW + GAP, y0))
+        canvas.paste(_cell_img(xt[s], "RdBu_r", -xt_abs, xt_abs), (LABELW + GAP, y0))
         # columns 1..K: the MC posterior velocity draws (fixed prior scale)
         for j in range(k):
             x0 = LABELW + (1 + j) * (CELL + GAP) + GAP
@@ -88,7 +91,9 @@ def render_mc_posterior_grids(
     for p in range(n):
         out_png = out_dir / f"particle_{p:02d}.png"
         render_particle_grid(
-            xt[:, p], mc[:, p], out_png,
+            xt[:, p],
+            mc[:, p],
+            out_png,
             title=f"{title_prefix} · particle {p} · {steps} steps",
         )
         paths.append(out_png)

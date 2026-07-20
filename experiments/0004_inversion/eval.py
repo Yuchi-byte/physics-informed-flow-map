@@ -38,7 +38,7 @@ from physics_informed_flow_map.inversion import (
 
 sys.path.insert(0, str(Path(__file__).parent))
 from loaders import FLOW_PRIORS, load_diffusion_prior, load_flow_prior  # noqa: E402
-from run import EvalEntry, InversionConfig, check_compatible  # noqa: E402
+from run import EvalEntry, InversionConfig  # noqa: E402
 
 EXPERIMENT = "0004_inversion"
 _MFM_METHODS = {"mfm_g", "mfm_gf"}
@@ -65,32 +65,26 @@ def build_module(
     min_freq_hz: float = 0.0,
 ) -> InversionModule:
     """Construct the configured inverter for one sweep entry (prior loaded from its checkpoint)."""
-    check_compatible(entry.prior.name, entry.method.name)
+    if min_freq_hz > 0.0:
+        raise ValueError(
+            "guidance-side band-limiting was removed along with the highpass filter — "
+            "obs.min_freq_hz > 0 can no longer be honoured by the misfit"
+        )
     shape = (1, resolution, resolution)
     g = entry.method.guidance_strength
     # Guidance data-misfit knob (method.misfit: l2 | ot), built lazily from each target's
-    # d_obs; None keeps the samplers' hard-wired L2 path. A band-limited benchmark needs
-    # the factory even for L2 (predictions filtered before comparison — the guidance-side
-    # half of F). The prior-free FWI baselines reject non-l2 at config time.
+    # d_obs; None keeps the samplers' hard-wired L2 path. The prior-free FWI baselines
+    # reject non-l2 at config time.
     misfit_factory = (
         None
-        if entry.method.misfit == "l2" and min_freq_hz <= 0.0
-        else lambda d: make_misfit(
-            entry.method.misfit, d, ot_k=entry.method.ot_k, min_freq_hz=min_freq_hz
-        )
+        if entry.method.misfit == "l2"
+        else lambda d: make_misfit(entry.method.misfit, d, ot_k=entry.method.ot_k)
     )
 
     if entry.prior.name == "none":
         # Prior-free FWI baselines: optimise the velocity map directly against the data misfit
         # at the forward operator's native grid. g=0 => the starting model (0 solves), matching
         # run.py's control semantics.
-        if min_freq_hz > 0.0:
-            raise ValueError(
-                "band-limited benchmark not threaded through the eval.py FWI modules yet "
-                "— use run.py for classical/realistic FWI under obs.min_freq_hz > 0 "
-                "(its forward_op is wrapped); or thread highpass into Classical/Realistic"
-                "FWIModule first"
-            )
         if entry.method.name == "realistic_fwi":
             module: InversionModule = RealisticFWIModule(
                 freqs_hz=entry.method.freqs_hz,

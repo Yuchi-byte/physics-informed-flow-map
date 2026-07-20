@@ -15,7 +15,7 @@ testable without the wave solver.
 from __future__ import annotations
 
 import math
-from typing import Callable
+from typing import Callable, cast
 
 import torch
 import torch.nn.functional as F
@@ -83,7 +83,9 @@ def random_smooth_init(
     from the global RNG so a caller's ``manual_seed`` makes the restarts reproducible."""
     level = torch.empty(n, 1, 1, device=device).uniform_(-0.6, 0.6)
     noise = torch.randn(n, 1, coarse, coarse, device=device)
-    smooth = F.interpolate(noise, size=(h, w), mode="bicubic", align_corners=False)[:, 0]
+    smooth = F.interpolate(noise, size=(h, w), mode="bicubic", align_corners=False)[
+        :, 0
+    ]
     return (level + 0.4 * smooth).clamp(-1.0, 1.0)
 
 
@@ -150,7 +152,9 @@ def regularized_fwi(
     return _to_mps(x.detach()), iters * n_samples
 
 
-def lowpass_time(x: Tensor, fmax_hz: float, *, dt: float = 1e-3, taper: float = 1.3) -> Tensor:
+def lowpass_time(
+    x: Tensor, fmax_hz: float, *, dt: float = 1e-3, taper: float = 1.3
+) -> Tensor:
     """Differentiable low-pass along the last (time) axis via rFFT, with a raised-cosine taper
     from ``fmax_hz`` to ``taper * fmax_hz`` (no ringing). Used for multiscale FWI: filtering both
     the observed and modelled data to the same band lets the low frequencies (which are far less
@@ -161,7 +165,7 @@ def lowpass_time(x: Tensor, fmax_hz: float, *, dt: float = 1e-3, taper: float = 
     f1, f2 = fmax_hz, taper * fmax_hz
     ramp = ((f - f1) / (f2 - f1)).clamp(0.0, 1.0)
     win = 0.5 * (1.0 + torch.cos(math.pi * ramp))  # 1 below f1, cos taper to 0 at f2
-    return torch.fft.irfft(spec * win, n=nt, dim=-1)
+    return cast(Tensor, torch.fft.irfft(spec * win, n=nt, dim=-1))
 
 
 def multiscale_fwi(
@@ -221,26 +225,29 @@ def multiscale_fwi(
         d_filt = lowpass_time(d_obs, fmax, dt=dt)
         denom = (d_filt**2).sum().clamp_min(1e-12)
         if optimizer == "lbfgs":
-            opt = torch.optim.LBFGS(
+            lbfgs = torch.optim.LBFGS(
                 [x], lr=lr, max_iter=iters_per_stage, line_search_fn="strong_wolfe"
             )
 
             def closure() -> Tensor:
                 with torch.no_grad():
-                    x.clamp_(-1.0, 1.0)  # keep velocity in [VMIN, VMAX] at every trial point
-                opt.zero_grad()
+                    x.clamp_(
+                        -1.0, 1.0
+                    )  # keep velocity in [VMIN, VMAX] at every trial point
+                lbfgs.zero_grad()
                 loss = loss_at(fmax, d_filt, denom)
                 loss.backward()  # type: ignore[no-untyped-call]
                 return loss
 
-            opt.step(closure)  # runs up to iters_per_stage inner iterations
+            # runs up to iters_per_stage inner iterations
+            lbfgs.step(closure)  # type: ignore[no-untyped-call]
         else:  # adam
-            opt = torch.optim.Adam([x], lr=lr)
+            adam = torch.optim.Adam([x], lr=lr)
             for _ in range(iters_per_stage):
-                opt.zero_grad()
+                adam.zero_grad()
                 loss = loss_at(fmax, d_filt, denom)
                 loss.backward()  # type: ignore[no-untyped-call]
-                opt.step()
+                adam.step()
                 with torch.no_grad():
                     x.clamp_(-1.0, 1.0)
         with torch.no_grad():
