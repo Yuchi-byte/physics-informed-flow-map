@@ -68,9 +68,10 @@ data/inversion_bench/*
 # Weights & Biases
 wandb/
 
-# Environment / secrets
+# Environment / secrets (template stays tracked as .secrets.example)
 .env
 .env*
+.secrets
 
 # Misc
 *.log

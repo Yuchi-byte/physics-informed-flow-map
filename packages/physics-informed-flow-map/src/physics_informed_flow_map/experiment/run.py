@@ -18,6 +18,7 @@ behind the files it actually produced.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -33,6 +34,28 @@ import wandb
 matplotlib.use("Agg")
 
 DEFAULT_PROJECT = "physics-informed-flow-map"
+
+
+def _load_secrets(start: Path) -> None:
+    """Load ``KEY=VALUE`` lines from the nearest ``.secrets`` file into the environment.
+
+    Walks up from ``start`` (then from the cwd, for run dirs outside the repo tree) to
+    find the repo-root ``.secrets`` (git-ignored; template in ``.secrets.example``).
+    Real environment variables win over file values, and empty values are skipped —
+    e.g. a blank ``WANDB_ENTITY`` falls through to the wandb default entity.
+    """
+    for anchor in (start, Path.cwd().resolve()):
+        for directory in [anchor, *anchor.parents]:
+            secrets = directory / ".secrets"
+            if secrets.is_file():
+                for line in secrets.read_text().splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, _, value = line.partition("=")
+                    if value.strip():
+                        os.environ.setdefault(key.strip(), value.strip())
+                return
 
 
 def _git(*args: str) -> str:
@@ -371,9 +394,12 @@ def start_run(
 
     Each ``experiment`` gets its own wandb project by default (override with ``project``).
     ``run_dir`` is the Hydra run directory; ``config`` is ``Config.dump()``. Connectivity is
-    wandb-native via ``WANDB_MODE`` (default online).
+    wandb-native via ``WANDB_MODE`` (default online); the upload entity comes from
+    ``WANDB_ENTITY``, settable per-checkout via the repo-root ``.secrets`` file
+    (see :func:`_load_secrets`).
     """
     run_dir = Path(run_dir)
+    _load_secrets(run_dir.resolve())
     run_dir.mkdir(parents=True, exist_ok=True)
     # checkpoints/ and the jsonl mirrors are created lazily on first use (Run), so
     # analysis-style runs that never touch them stay free of empty scaffolding.
